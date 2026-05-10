@@ -19,6 +19,8 @@ import {
   zoneKindSelectPlaceholderLabel,
 } from './zoneKindHelpers.ts';
 import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
+import { PoiExpositionSeedConfigPanel } from './PoiExpositionSeedConfigPanel.tsx';
+import { PoiShopkeeperSeedConfigPanel } from './PoiShopkeeperSeedConfigPanel.tsx';
 
 type PointOfInterestImport = {
   id: string;
@@ -1125,6 +1127,8 @@ export const PointOfInterest = () => {
       </div>
 
       <ContentMapMarkersMovedNotice subject="Point of interest markers" />
+      <PoiExpositionSeedConfigPanel />
+      <PoiShopkeeperSeedConfigPanel />
 
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">
         <div className="flex items-center justify-between mb-4">

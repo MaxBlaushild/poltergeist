@@ -133,16 +133,17 @@ type ZoneSeedDraft struct {
 }
 
 type ZoneSeedPointOfInterestDraft struct {
-	DraftID          uuid.UUID `json:"draftId"`
-	PlaceID          string    `json:"placeId"`
-	Name             string    `json:"name"`
-	Address          string    `json:"address,omitempty"`
-	Types            []string  `json:"types,omitempty"`
-	Latitude         float64   `json:"latitude"`
-	Longitude        float64   `json:"longitude"`
-	Rating           float64   `json:"rating,omitempty"`
-	UserRatingCount  int32     `json:"userRatingCount,omitempty"`
-	EditorialSummary string    `json:"editorialSummary,omitempty"`
+	DraftID          uuid.UUID                     `json:"draftId"`
+	PlaceID          string                        `json:"placeId"`
+	Name             string                        `json:"name"`
+	Address          string                        `json:"address,omitempty"`
+	MarkerCategory   PointOfInterestMarkerCategory `json:"markerCategory,omitempty"`
+	Types            []string                      `json:"types,omitempty"`
+	Latitude         float64                       `json:"latitude"`
+	Longitude        float64                       `json:"longitude"`
+	Rating           float64                       `json:"rating,omitempty"`
+	UserRatingCount  int32                         `json:"userRatingCount,omitempty"`
+	EditorialSummary string                        `json:"editorialSummary,omitempty"`
 }
 
 type ZoneSeedCharacterDraft struct {

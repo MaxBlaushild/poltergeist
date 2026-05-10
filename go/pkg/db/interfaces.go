@@ -58,6 +58,8 @@ type DbClient interface {
 	MonsterTemplateSuggestionDraft() MonsterTemplateSuggestionDraftHandle
 	UserLearnedRecipe() UserLearnedRecipeHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
+	PointOfInterestExpositionSeedConfig() PointOfInterestExpositionSeedConfigHandle
+	PointOfInterestShopkeeperSeedConfig() PointOfInterestShopkeeperSeedConfigHandle
 	ZoneShroudConfig() ZoneShroudConfigHandle
 	Tutorial() TutorialHandle
 	AuditItem() AuditItemHandle
@@ -677,6 +679,16 @@ type NewUserStarterConfigHandle interface {
 	Get(ctx context.Context) (*models.NewUserStarterConfig, error)
 	Upsert(ctx context.Context, config *models.NewUserStarterConfig) (*models.NewUserStarterConfig, error)
 	ApplyToUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type PointOfInterestExpositionSeedConfigHandle interface {
+	Get(ctx context.Context) (*models.PointOfInterestExpositionSeedConfig, error)
+	Upsert(ctx context.Context, config *models.PointOfInterestExpositionSeedConfig) (*models.PointOfInterestExpositionSeedConfig, error)
+}
+
+type PointOfInterestShopkeeperSeedConfigHandle interface {
+	Get(ctx context.Context) (*models.PointOfInterestShopkeeperSeedConfig, error)
+	Upsert(ctx context.Context, config *models.PointOfInterestShopkeeperSeedConfig) (*models.PointOfInterestShopkeeperSeedConfig, error)
 }
 
 type ZoneShroudConfigHandle interface {

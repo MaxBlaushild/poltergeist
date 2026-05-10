@@ -78,10 +78,10 @@ Return JSON only:
           "scenarioOpenEnded": true,
           "scenarioBeats": ["beat one", "beat two"],
           "expositionTitle": "required for exposition steps",
-          "expositionDescription": "required for exposition steps",
-          "expositionSpeakerName": "required for exposition steps",
+          "expositionDescription": "required for exposition steps; 3-5 sentences that establish who is involved, what happened, when this trace is from, where the player is finding it, and why it matters now",
+          "expositionSpeakerName": "required overall source label for exposition steps",
           "expositionPortraitUrl": "optional portrait url for exposition steps",
-          "expositionDialogue": ["line one", "line two"],
+          "expositionDialogue": ["Speaker One: line one", "Speaker Two: line two", "Speaker One: line three"],
           "monsterTemplateNames": ["names chosen from allowed monster templates"],
           "encounterTone": ["urban", "scrappy"],
           "outcomes": [
@@ -144,11 +144,12 @@ Rules:
 - Make scenarioPrompt explicit, vivid, and production-usable.
 - Use exposition nodes for lore reveals, witness accounts, ambient warnings, magical residue, discoverable testimony, briefings, and omen-reading beats that deepen the quest without demanding an open-ended player answer.
 - expositionTitle should feel like a reusable 2-5 word template title, not a full sentence.
-- expositionDescription should read like a dungeon master introducing a vivid discoverable moment in 2-4 sentences, with concrete imagery and why this reveal matters right now.
-- expositionSpeakerName should be a reusable 2-4 word voice label like "Witness Echo", "Marginal Warning", or "Shrine Whisper", not a specifically named NPC.
+- expositionDescription should read like a dungeon master introducing a vivid discoverable moment in 3-5 sentences, making the who, what, when, and where legible before landing on why this reveal matters right now.
+- Let exposition content include 1-3 clearly identified story characters or social roles when that sharpens the scene, as long as they still feel like reusable neighborhood figures instead of deep canon-specific one-offs.
+- expositionSpeakerName should be a reusable 2-4 word source label like "Witness Echo", "Marginal Warning", "Shrine Whisper", or "Overheard Couriers". When expositionDialogue contains multiple overheard speakers, expositionSpeakerName should name the overall source rather than replace those individual speakers.
 - expositionPortraitUrl may be empty, but when present it must be a direct https URL, not a made-up social profile or unrelated web page.
-- expositionDialogue should contain 2-4 short in-world lines that can be delivered as found writing, a witness echo, a magical imprint, or an unnamed local voice.
-- Exposition content should stay reusable and should not depend on a specifically named NPC, business, or one-off landmark.
+- expositionDialogue should contain 3-5 short in-world lines. When the beat works as overheard or recovered conversation, write the lines in "Speaker: line" format and let 2-3 different speakers trade lines.
+- Exposition content should stay reusable, but it may include lightly named or clearly described incidental characters so long as it does not depend on a specific business, one-off landmark, or a unique canon NPC.
 - Use failure branches for fail-forward consequences, setbacks, detours, or escalations instead of dead ends.
 - Around half the drafts should include at least one failure branch when it fits naturally.
 - When a draft clearly belongs to one primary family such as investigation, delivery, negotiation, pursuit, containment, omen_chasing, ritual_interruption, survival, rescue, or combat_finale, include that exact slug in internalTags.
@@ -161,12 +162,12 @@ Rules:
 `
 
 const (
-	questArchetypeSuggestionDuplicateSimilarityThreshold = 0.72
-	questArchetypeSuggestionRecentSimilarityPenaltyStart = 0.48
-	questArchetypeSuggestionConsultTimeout               = 90 * time.Second
-	questArchetypeSuggestionAvoidancePromptLimit         = 12
-	questArchetypeSuggestionLocationPromptLimit          = 40
-	questArchetypeSuggestionMonsterPromptLimit           = 72
+	questArchetypeSuggestionDuplicateSimilarityThreshold  = 0.72
+	questArchetypeSuggestionRecentSimilarityPenaltyStart  = 0.48
+	questArchetypeSuggestionConsultTimeout                = 90 * time.Second
+	questArchetypeSuggestionAvoidancePromptLimit          = 12
+	questArchetypeSuggestionLocationPromptLimit           = 40
+	questArchetypeSuggestionMonsterPromptLimit            = 72
 	questArchetypeSuggestionSpeakerPortraitPlaceholderURL = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png"
 )
 
@@ -1065,15 +1066,15 @@ func questArchetypeSuggestionDraftNodesForAnalysis(
 			ChallengeQuestion:     step.ChallengeQuestion,
 			ChallengeDescription:  step.ChallengeDescription,
 			ScenarioPrompt:        step.ScenarioPrompt,
-				ScenarioOpenEnded:     step.ScenarioOpenEnded,
-				ScenarioBeats:         append([]string(nil), step.ScenarioBeats...),
-				ExpositionTitle:       step.ExpositionTitle,
-				ExpositionDescription: step.ExpositionDescription,
-				ExpositionSpeakerName: step.ExpositionSpeakerName,
-				ExpositionPortraitURL: step.ExpositionPortraitURL,
-				ExpositionDialogue:    append([]string(nil), step.ExpositionDialogue...),
-				MonsterTemplateNames:  append([]string(nil), step.MonsterTemplateNames...),
-				MonsterTemplateIDs:    append([]string(nil), step.MonsterTemplateIDs...),
+			ScenarioOpenEnded:     step.ScenarioOpenEnded,
+			ScenarioBeats:         append([]string(nil), step.ScenarioBeats...),
+			ExpositionTitle:       step.ExpositionTitle,
+			ExpositionDescription: step.ExpositionDescription,
+			ExpositionSpeakerName: step.ExpositionSpeakerName,
+			ExpositionPortraitURL: step.ExpositionPortraitURL,
+			ExpositionDialogue:    append([]string(nil), step.ExpositionDialogue...),
+			MonsterTemplateNames:  append([]string(nil), step.MonsterTemplateNames...),
+			MonsterTemplateIDs:    append([]string(nil), step.MonsterTemplateIDs...),
 			EncounterTone:         append([]string(nil), step.EncounterTone...),
 		}
 		if index+1 < len(draft.Steps) {
@@ -1780,16 +1781,16 @@ func sanitizeQuestArchetypeSuggestionNode(
 		ChallengeSubmissionType: step.ChallengeSubmissionType,
 		ChallengeProficiency:    step.ChallengeProficiency,
 		ChallengeStatTags:       step.ChallengeStatTags,
-			ScenarioPrompt:          step.ScenarioPrompt,
-			ScenarioOpenEnded:       step.ScenarioOpenEnded,
-			ScenarioBeats:           step.ScenarioBeats,
-			ExpositionTitle:         step.ExpositionTitle,
-			ExpositionDescription:   step.ExpositionDescription,
-			ExpositionSpeakerName:   step.ExpositionSpeakerName,
-			ExpositionPortraitURL:   step.ExpositionPortraitURL,
-			ExpositionDialogue:      step.ExpositionDialogue,
-			MonsterTemplateNames:    step.MonsterTemplateNames,
-			MonsterTemplateIDs:      step.MonsterTemplateIDs,
+		ScenarioPrompt:          step.ScenarioPrompt,
+		ScenarioOpenEnded:       step.ScenarioOpenEnded,
+		ScenarioBeats:           step.ScenarioBeats,
+		ExpositionTitle:         step.ExpositionTitle,
+		ExpositionDescription:   step.ExpositionDescription,
+		ExpositionSpeakerName:   step.ExpositionSpeakerName,
+		ExpositionPortraitURL:   step.ExpositionPortraitURL,
+		ExpositionDialogue:      step.ExpositionDialogue,
+		MonsterTemplateNames:    step.MonsterTemplateNames,
+		MonsterTemplateIDs:      step.MonsterTemplateIDs,
 		EncounterTone:           step.EncounterTone,
 	}, warnings
 }
@@ -1955,16 +1956,16 @@ func questArchetypeSuggestionNodesAsSteps(
 			ChallengeSubmissionType: node.ChallengeSubmissionType,
 			ChallengeProficiency:    node.ChallengeProficiency,
 			ChallengeStatTags:       append([]string(nil), node.ChallengeStatTags...),
-				ScenarioPrompt:          node.ScenarioPrompt,
-				ScenarioOpenEnded:       node.ScenarioOpenEnded,
-				ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
-				ExpositionTitle:         node.ExpositionTitle,
-				ExpositionDescription:   node.ExpositionDescription,
-				ExpositionSpeakerName:   node.ExpositionSpeakerName,
-				ExpositionPortraitURL:   node.ExpositionPortraitURL,
-				ExpositionDialogue:      append([]string(nil), node.ExpositionDialogue...),
-				MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
-				MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
+			ScenarioPrompt:          node.ScenarioPrompt,
+			ScenarioOpenEnded:       node.ScenarioOpenEnded,
+			ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
+			ExpositionTitle:         node.ExpositionTitle,
+			ExpositionDescription:   node.ExpositionDescription,
+			ExpositionSpeakerName:   node.ExpositionSpeakerName,
+			ExpositionPortraitURL:   node.ExpositionPortraitURL,
+			ExpositionDialogue:      append([]string(nil), node.ExpositionDialogue...),
+			MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
+			MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
 			EncounterTone:           append([]string(nil), node.EncounterTone...),
 		})
 	}
@@ -2112,7 +2113,7 @@ func sanitizeQuestArchetypeSuggestionStep(
 		if step.ExpositionPortraitURL == "" {
 			step.ExpositionPortraitURL = buildSuggestionExpositionPortraitURL(step)
 		}
-		if suggestionNarrativeTextNeedsExpansion(step.ExpositionDescription, 16, 2, nil) {
+		if suggestionNarrativeTextNeedsExpansion(step.ExpositionDescription, 28, 3, nil) {
 			step.ExpositionDescription = buildSuggestionExpositionDescription(step)
 			if strings.TrimSpace(payload.ExpositionDescription) == "" {
 				warnings = append(warnings, "exposition description was empty")
@@ -2479,11 +2480,11 @@ func buildSuggestionChallengeRealityBridgeDescription(
 }
 
 func suggestionExpositionDialogueNeedsExpansion(lines []string) bool {
-	if len(lines) < 2 {
+	if len(lines) < 3 {
 		return true
 	}
 	combined := strings.Join(lines, " ")
-	return suggestionNarrativeTextNeedsExpansion(combined, 10, 1, nil)
+	return suggestionNarrativeTextNeedsExpansion(combined, 18, 1, nil)
 }
 
 func buildSuggestionExpositionFallbackTitle(
@@ -2582,39 +2583,30 @@ func buildSuggestionExpositionDescription(
 		location = "site"
 	}
 
-	fragments := make([]string, 0, 6)
-	appendSuggestionScenarioFragment(&fragments, step.ExpositionDescription)
-	appendSuggestionScenarioFragment(&fragments, step.TemplateConcept)
-	for _, item := range step.PotentialContent {
-		appendSuggestionScenarioFragment(&fragments, item)
-	}
-	for _, line := range step.ExpositionDialogue {
-		appendSuggestionScenarioFragment(&fragments, line)
-	}
+	fragments := suggestionExpositionFragments(step)
 	if len(fragments) == 0 {
 		fragments = append(fragments, "a discoverable magical trace is still hanging over the scene")
 	}
 
-	opening := buildSuggestionScenarioOpeningSentence(location, fragments[0])
-	detail := ""
-	for _, fragment := range fragments[1:] {
-		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
-		if candidate == "" || strings.EqualFold(candidate, opening) {
-			continue
-		}
-		detail = candidate
-		break
-	}
-	if detail == "" {
-		detail = buildSuggestionExpositionFallbackDetail(step)
-	}
-
+	opening := buildSuggestionExpositionOpeningSentence(
+		location,
+		buildSuggestionExpositionWhenPhrase(step),
+		buildSuggestionExpositionRevealClause(fragments[0]),
+	)
+	actors := buildSuggestionExpositionActorSentence(step)
+	detail := buildSuggestionExpositionFallbackDetail(step)
 	closing := buildSuggestionExpositionFallbackClosing(step)
 	parts := []string{opening}
-	if detail != "" && !strings.EqualFold(detail, opening) {
+	if actors != "" && !strings.EqualFold(actors, opening) {
+		parts = append(parts, actors)
+	}
+	if detail != "" && !strings.EqualFold(detail, opening) && !strings.EqualFold(detail, actors) {
 		parts = append(parts, detail)
 	}
-	if closing != "" && !strings.EqualFold(closing, opening) && !strings.EqualFold(closing, detail) {
+	if closing != "" &&
+		!strings.EqualFold(closing, opening) &&
+		!strings.EqualFold(closing, actors) &&
+		!strings.EqualFold(closing, detail) {
 		parts = append(parts, closing)
 	}
 	return strings.Join(parts, " ")
@@ -2623,29 +2615,366 @@ func buildSuggestionExpositionDescription(
 func buildSuggestionExpositionDialogue(
 	step models.QuestArchetypeSuggestionStep,
 ) []string {
+	if suggestionExpositionSupportsConversation(step) {
+		speakers := buildSuggestionExpositionCharacterLabels(step)
+		location := strings.TrimSpace(step.LocationConcept)
+		lineOne := "Something here is still trying to warn people."
+		if location != "" {
+			lineOne = fmt.Sprintf("Keep your voice down. Something at the %s is still trying to warn people.", location)
+		}
+		lineTwo := trimSuggestionTerminalPunctuation(buildSuggestionExpositionDialogueDetailLine(step))
+		if lineTwo == "" {
+			lineTwo = "The warning is too specific to be rumor."
+		}
+		lineThree := buildSuggestionExpositionDialogueUrgency(step)
+		return normalizeSuggestionLines([]string{
+			fmt.Sprintf("%s: %s", speakers[0], lineOne),
+			fmt.Sprintf("%s: %s.", speakers[1], lineTwo),
+			fmt.Sprintf("%s: %s", speakers[0], lineThree),
+		})
+	}
+
 	lineOne := fmt.Sprintf(
-		"The %s still feels wrong if you stop long enough to read it.",
+		"Something at the %s is still trying to tell the story of what went wrong.",
 		strings.TrimSpace(step.LocationConcept),
 	)
 	if strings.TrimSpace(step.LocationConcept) == "" {
 		lineOne = "Something here is still trying to tell the story of what went wrong."
 	}
 
-	lineTwo := ""
-	for _, fragment := range append([]string{step.TemplateConcept}, step.PotentialContent...) {
+	lineTwo := buildSuggestionExpositionDialogueDetailLine(step)
+	lineThree := buildSuggestionExpositionDialogueUrgency(step)
+	return normalizeSuggestionLines([]string{lineOne, lineTwo, lineThree})
+}
+
+func suggestionExpositionFragments(
+	step models.QuestArchetypeSuggestionStep,
+) []string {
+	fragments := make([]string, 0, 8)
+	appendSuggestionScenarioFragment(&fragments, step.ExpositionDescription)
+	for _, item := range step.PotentialContent {
+		appendSuggestionScenarioFragment(&fragments, item)
+	}
+	for _, message := range suggestionExpositionDialogueMessages(step) {
+		appendSuggestionScenarioFragment(&fragments, message.Text)
+	}
+	appendSuggestionScenarioFragment(&fragments, step.TemplateConcept)
+	return fragments
+}
+
+func suggestionExpositionDialogueMessages(
+	step models.QuestArchetypeSuggestionStep,
+) models.DialogueSequence {
+	speakerName := strings.TrimSpace(step.ExpositionSpeakerName)
+	if speakerName == "" {
+		speakerName = buildSuggestionExpositionSpeakerName(step)
+	}
+	return models.DialogueSequenceFromSpeakerIdentityLines(
+		step.ExpositionDialogue,
+		speakerName,
+		strings.TrimSpace(step.ExpositionPortraitURL),
+	)
+}
+
+func suggestionExpositionSpeakerNames(
+	step models.QuestArchetypeSuggestionStep,
+) []string {
+	dialogue := suggestionExpositionDialogueMessages(step)
+	if len(dialogue) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(dialogue))
+	seen := map[string]struct{}{}
+	for _, message := range dialogue {
+		name := strings.TrimSpace(message.SpeakerName)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func buildSuggestionExpositionOpeningSentence(
+	location string,
+	whenPhrase string,
+	revealClause string,
+) string {
+	if strings.TrimSpace(location) == "" {
+		location = "site"
+	}
+	revealClause = trimSuggestionTerminalPunctuation(revealClause)
+	if revealClause == "" {
+		revealClause = "a discoverable warning is still hanging over the scene"
+	}
+	whenPhrase = trimSuggestionTerminalPunctuation(whenPhrase)
+	if whenPhrase == "" {
+		return fmt.Sprintf("At the %s, %s.", location, revealClause)
+	}
+	return fmt.Sprintf("At the %s, %s, %s.", location, whenPhrase, revealClause)
+}
+
+func buildSuggestionExpositionWhenPhrase(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	combined := strings.ToLower(strings.Join([]string{
+		step.LocationConcept,
+		step.ExpositionTitle,
+		step.TemplateConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+		strings.Join(step.PotentialContent, " "),
+		strings.Join(step.ExpositionDialogue, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "dawn"),
+		strings.Contains(combined, "morning"),
+		strings.Contains(combined, "sunrise"):
+		return "earlier this morning"
+	case strings.Contains(combined, "night"),
+		strings.Contains(combined, "moon"),
+		strings.Contains(combined, "evening"),
+		strings.Contains(combined, "lantern"),
+		strings.Contains(combined, "festival"),
+		strings.Contains(combined, "club"),
+		strings.Contains(combined, "storm"):
+		return "earlier tonight"
+	case strings.Contains(combined, "market"),
+		strings.Contains(combined, "shift"),
+		strings.Contains(combined, "harbor"),
+		strings.Contains(combined, "dock"),
+		strings.Contains(combined, "courier"),
+		strings.Contains(combined, "rail"),
+		strings.Contains(combined, "factory"),
+		strings.Contains(combined, "warehouse"):
+		return "earlier this shift"
+	default:
+		return "moments ago"
+	}
+}
+
+func buildSuggestionExpositionRevealClause(fragment string) string {
+	normalized := normalizeSuggestionScenarioFragment(fragment)
+	if normalized == "" {
+		return "a discoverable warning is still hanging over the scene"
+	}
+	lower := lowerCaseSuggestionFirstRune(normalized)
+	for _, prefix := range []string{
+		"read ",
+		"follow ",
+		"track ",
+		"identify ",
+		"interrupt ",
+		"stop ",
+		"listen ",
+		"survey ",
+		"search ",
+		"watch ",
+		"document ",
+		"compare ",
+		"decode ",
+	} {
+		if strings.HasPrefix(lower, prefix) {
+			return "the scene is still arranged like someone meant the next witness to " + lower
+		}
+	}
+	for _, hint := range []string{
+		" is ",
+		" are ",
+		" was ",
+		" were ",
+		" feels ",
+		" feel ",
+		" reads ",
+		" read ",
+		" hangs ",
+		" hang ",
+		" clings ",
+		" cling ",
+		" glows ",
+		" glow ",
+		" lingers ",
+		" linger ",
+		" points ",
+		" point ",
+		" warns ",
+		" warn ",
+		" keeps ",
+		" keep ",
+		" echoes ",
+		" echo ",
+	} {
+		if strings.Contains(" "+lower+" ", hint) {
+			return lower
+		}
+	}
+	if strings.HasPrefix(lower, "the ") || strings.HasPrefix(lower, "a ") || strings.HasPrefix(lower, "an ") {
+		return lower
+	}
+	return "there are " + lower
+}
+
+func buildSuggestionExpositionActorSentence(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	speakers := suggestionExpositionSpeakerNames(step)
+	switch {
+	case len(speakers) >= 2:
+		return fmt.Sprintf(
+			"The lingering exchange between %s and %s makes the people behind the warning legible, not just the magic around it.",
+			speakers[0],
+			speakers[1],
+		)
+	case len(speakers) == 1:
+		return fmt.Sprintf(
+			"%s sounds close enough to the scene to count as testimony instead of rumor.",
+			speakers[0],
+		)
+	case len(step.LocationMetadataTags) > 0:
+		return fmt.Sprintf(
+			"Whoever left it behind knew the %s details well enough to turn the whole place into a pointed warning.",
+			humanizeSuggestionTag(step.LocationMetadataTags[0]),
+		)
+	default:
+		return "Whoever left it behind knew exactly what was happening here and expected the next person through to need the warning."
+	}
+}
+
+func suggestionExpositionSupportsConversation(
+	step models.QuestArchetypeSuggestionStep,
+) bool {
+	if len(suggestionExpositionSpeakerNames(step)) >= 2 {
+		return true
+	}
+	combined := strings.ToLower(strings.Join([]string{
+		step.LocationConcept,
+		step.ExpositionTitle,
+		step.TemplateConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+		strings.Join(step.PotentialContent, " "),
+		strings.Join(step.ExpositionDialogue, " "),
+	}, " "))
+	for _, keyword := range []string{
+		"market",
+		"street",
+		"alley",
+		"vendor",
+		"courier",
+		"dock",
+		"harbor",
+		"gate",
+		"bridge",
+		"station",
+		"platform",
+		"plaza",
+		"checkpoint",
+		"warehouse",
+		"factory",
+		"rooftop",
+		"tower",
+		"club",
+		"crowd",
+		"ferry",
+		"lookout",
+		"runner",
+		"guard",
+	} {
+		if strings.Contains(combined, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildSuggestionExpositionCharacterLabels(
+	step models.QuestArchetypeSuggestionStep,
+) []string {
+	if speakers := suggestionExpositionSpeakerNames(step); len(speakers) >= 2 {
+		return []string{speakers[0], speakers[1]}
+	}
+	combined := strings.ToLower(strings.Join([]string{
+		step.LocationConcept,
+		step.ExpositionTitle,
+		step.TemplateConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+		strings.Join(step.PotentialContent, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "market"),
+		strings.Contains(combined, "vendor"),
+		strings.Contains(combined, "plaza"):
+		return []string{"Stall Keeper", "Harried Courier"}
+	case strings.Contains(combined, "dock"),
+		strings.Contains(combined, "harbor"),
+		strings.Contains(combined, "ferry"),
+		strings.Contains(combined, "canal"):
+		return []string{"Dock Porter", "River Courier"}
+	case strings.Contains(combined, "roof"),
+		strings.Contains(combined, "tower"),
+		strings.Contains(combined, "bridge"),
+		strings.Contains(combined, "lookout"):
+		return []string{"Lookout", "Winded Runner"}
+	case strings.Contains(combined, "station"),
+		strings.Contains(combined, "platform"),
+		strings.Contains(combined, "rail"),
+		strings.Contains(combined, "checkpoint"):
+		return []string{"Platform Guard", "Late Courier"}
+	case strings.Contains(combined, "factory"),
+		strings.Contains(combined, "warehouse"),
+		strings.Contains(combined, "foundry"):
+		return []string{"Shift Foreman", "Grease-Stained Runner"}
+	case strings.Contains(combined, "shrine"),
+		strings.Contains(combined, "temple"),
+		strings.Contains(combined, "ritual"):
+		return []string{"Junior Acolyte", "Bell Keeper"}
+	default:
+		return []string{"Local Witness", "Breathless Courier"}
+	}
+}
+
+func buildSuggestionExpositionDialogueDetailLine(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	for _, fragment := range suggestionExpositionFragments(step) {
 		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
 		if candidate == "" {
 			continue
 		}
-		lineTwo = candidate
-		break
+		return candidate
 	}
-	if lineTwo == "" {
-		lineTwo = buildSuggestionExpositionFallbackDetail(step)
-	}
+	return buildSuggestionExpositionFallbackDetail(step)
+}
 
-	lineThree := buildSuggestionExpositionFallbackClosing(step)
-	return normalizeSuggestionLines([]string{lineOne, lineTwo, lineThree})
+func buildSuggestionExpositionDialogueUrgency(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	combined := strings.ToLower(strings.Join([]string{
+		step.TemplateConcept,
+		step.ExpositionTitle,
+		strings.Join(step.PotentialContent, " "),
+		strings.Join(step.ExpositionDialogue, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "omen"), strings.Contains(combined, "prophecy"):
+		return "If nobody reads the signs now, the district is going to feel this warning the hard way."
+	case strings.Contains(combined, "ritual"),
+		strings.Contains(combined, "summon"),
+		strings.Contains(combined, "circle"),
+		strings.Contains(combined, "ward"),
+		strings.Contains(combined, "sigil"):
+		return "If nobody acts on it now, whatever started here is going to keep spreading."
+	case strings.Contains(combined, "witness"),
+		strings.Contains(combined, "testimony"),
+		strings.Contains(combined, "message"),
+		strings.Contains(combined, "courier"):
+		return "If nobody carries this forward now, the next person through is going to walk in blind."
+	default:
+		return "If nobody acts on it now, the next turn in the route is only going to get worse."
+	}
 }
 
 func normalizeSuggestionAbsoluteURL(raw string) string {
@@ -3298,6 +3627,10 @@ func lowerCaseSuggestionFirstRune(input string) string {
 	}
 	runes[0] = []rune(strings.ToLower(string(runes[0])))[0]
 	return string(runes)
+}
+
+func trimSuggestionTerminalPunctuation(input string) string {
+	return strings.TrimSpace(strings.TrimRight(input, ".!?"))
 }
 
 func normalizeSuggestionSource(raw string) string {

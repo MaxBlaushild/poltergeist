@@ -151,15 +151,61 @@ func DialogueSequenceFromSpeakerIdentityLines(
 	trimmedPortraitURL := strings.TrimSpace(portraitURL)
 	messages := make([]DialogueMessage, 0, len(lines))
 	for _, line := range lines {
+		resolvedSpeakerName := trimmedSpeakerName
+		resolvedText := strings.TrimSpace(line)
+		if overrideSpeakerName, overrideText, ok := parseDialogueSpeakerOverride(line); ok {
+			resolvedSpeakerName = overrideSpeakerName
+			resolvedText = overrideText
+		}
 		messages = append(messages, DialogueMessage{
 			Speaker:     "character",
-			Text:        line,
+			Text:        resolvedText,
 			Order:       len(messages),
-			SpeakerName: trimmedSpeakerName,
+			SpeakerName: resolvedSpeakerName,
 			PortraitURL: trimmedPortraitURL,
 		})
 	}
 	return normalizeDialogueSequence(messages)
+}
+
+func parseDialogueSpeakerOverride(line string) (string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", "", false
+	}
+	colonIndex := strings.IndexRune(trimmed, ':')
+	if colonIndex <= 0 || colonIndex >= len(trimmed)-1 {
+		return "", trimmed, false
+	}
+
+	speakerName := strings.TrimSpace(trimmed[:colonIndex])
+	text := strings.TrimSpace(trimmed[colonIndex+1:])
+	if speakerName == "" || text == "" {
+		return "", trimmed, false
+	}
+	if len([]rune(speakerName)) > 40 || len(strings.Fields(speakerName)) > 5 {
+		return "", trimmed, false
+	}
+
+	for _, char := range speakerName {
+		switch {
+		case (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9'):
+			continue
+		case char == ' ' || char == '\'' || char == '-' || char == '&':
+			continue
+		default:
+			return "", trimmed, false
+		}
+	}
+
+	lower := strings.ToLower(speakerName)
+	for _, prefix := range []string{"at ", "in ", "on ", "from ", "with ", "when "} {
+		if strings.HasPrefix(lower, prefix) {
+			return "", trimmed, false
+		}
+	}
+
+	return speakerName, text, true
 }
 
 // MetadataJSONB is a generic type for JSONB metadata fields

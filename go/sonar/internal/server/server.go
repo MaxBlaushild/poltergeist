@@ -368,6 +368,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
 	r.GET("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getNewUserStarterConfig))
 	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
+	r.GET("/sonar/admin/point-of-interest-exposition-seed-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestExpositionSeedConfig))
+	r.PUT("/sonar/admin/point-of-interest-exposition-seed-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updatePointOfInterestExpositionSeedConfig))
+	r.GET("/sonar/admin/point-of-interest-shopkeeper-seed-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestShopkeeperSeedConfig))
+	r.PUT("/sonar/admin/point-of-interest-shopkeeper-seed-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updatePointOfInterestShopkeeperSeedConfig))
 	r.GET("/sonar/admin/zone-shroud-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneShroudConfig))
 	r.POST("/sonar/admin/zone-shroud-config/generate-pattern-tile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateZoneShroudPatternTile))
 	r.GET("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialConfig))
@@ -476,6 +480,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/challenge-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplateGenerationJobs))
 	r.GET("/sonar/admin/challenge-template-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplateGenerationJob))
 	r.POST("/sonar/admin/zone-flavor-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneFlavorGenerationJob))
+	r.POST("/sonar/admin/zone-flavor-generation-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneFlavorGenerationJobs))
 	r.GET("/sonar/admin/zone-flavor-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneFlavorGenerationJobs))
 	r.GET("/sonar/admin/zone-flavor-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneFlavorGenerationJob))
 	r.POST("/sonar/admin/zone-tag-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneTagGenerationJob))
@@ -6671,12 +6676,6 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 		return
 	}
 
-	settings, err := normalizeZoneSeedDraftRequest(requestBody.zoneSeedDraftRequest)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	seen := make(map[uuid.UUID]struct{}, len(requestBody.ZoneIDs))
 	zoneIDs := make([]uuid.UUID, 0, len(requestBody.ZoneIDs))
 	for _, zoneIDStr := range requestBody.ZoneIDs {
@@ -6696,7 +6695,12 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 		return
 	}
 
-	createdJobs := make([]*models.ZoneSeedJob, 0, len(zoneIDs))
+	type resolvedBulkZoneSeedJob struct {
+		zoneID   uuid.UUID
+		settings *normalizedZoneSeedDraftRequest
+	}
+
+	resolvedJobs := make([]resolvedBulkZoneSeedJob, 0, len(zoneIDs))
 	for _, zoneID := range zoneIDs {
 		zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
 		if err != nil {
@@ -6708,27 +6712,28 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 			return
 		}
 
-		resolvedSettings := settings
-		if settings.CountMode == models.ZoneSeedCountModeCurrentAware {
-			resolvedSettings, err = s.resolveZoneSeedDraftRequest(ctx, zone, requestBody.zoneSeedDraftRequest)
-			if err != nil {
-				var resolutionErr *zoneSeedDraftResolutionError
-				if stdErrors.As(err, &resolutionErr) {
-					ctx.JSON(resolutionErr.statusCode, gin.H{"error": resolutionErr.Error()})
-					return
-				}
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		resolvedSettings, err := s.resolveZoneSeedDraftRequest(ctx, zone, requestBody.zoneSeedDraftRequest)
+		if err != nil {
+			var resolutionErr *zoneSeedDraftResolutionError
+			if stdErrors.As(err, &resolutionErr) {
+				ctx.JSON(resolutionErr.statusCode, gin.H{"error": resolutionErr.Error()})
 				return
 			}
-		} else if resolvedSettings != nil && resolvedSettings.ZoneKind == "" {
-			settingsCopy := *resolvedSettings
-			settingsCopy.ZoneKind = zoneSeedEffectiveKind(zone, "")
-			resolvedSettings = &settingsCopy
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
-		job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, resolvedSettings)
+		resolvedJobs = append(resolvedJobs, resolvedBulkZoneSeedJob{
+			zoneID:   zoneID,
+			settings: resolvedSettings,
+		})
+	}
+
+	createdJobs := make([]*models.ZoneSeedJob, 0, len(resolvedJobs))
+	for _, resolvedJob := range resolvedJobs {
+		job, err := s.createAndEnqueueZoneSeedJob(ctx, resolvedJob.zoneID, resolvedJob.settings)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to queue zone %s: %v", zoneID, err)})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to queue zone %s: %v", resolvedJob.zoneID, err)})
 			return
 		}
 		createdJobs = append(createdJobs, job)

@@ -874,10 +874,6 @@ const buildSeedDraftPayload = (params: {
     return { payload };
   }
 
-  if (!params.autoRecommendation) {
-    return { error: 'Auto mode needs a zone with valid boundary geometry.' };
-  }
-
   const payload: ZoneSeedDraftPayload = {
     seedMode: 'auto',
     countMode: params.countMode,
@@ -1420,18 +1416,14 @@ export const ZoneSeedJobs = () => {
       setError('Select at least one zone for bulk queueing.');
       return;
     }
-    if (seedMode !== 'manual') {
-      setError('Auto mode is only available for single-zone drafts.');
-      return;
-    }
 
     const { payload, error: payloadError } = buildSeedDraftPayload({
-      seedMode: 'manual',
+      seedMode,
       countMode,
       zoneKind,
       manualCountInputs,
-      autoOverrideInputs: {},
-      autoRecommendation: null,
+      autoOverrideInputs,
+      autoRecommendation,
       requiredPlaceTags,
       shopkeeperItemTags,
     });
@@ -1686,8 +1678,9 @@ export const ZoneSeedJobs = () => {
               </button>
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              Auto mode uses the selected zone boundary area to recommend
-              counts. Bulk queueing stays manual-only.
+              Auto mode previews recommendations from the selected zone here.
+              Bulk queueing resolves each selected zone separately using its
+              own boundary area and saved kind unless you override it below.
             </p>
           </div>
           <div className="mt-4">
@@ -1760,8 +1753,12 @@ export const ZoneSeedJobs = () => {
                     Auto mode is unavailable for this zone
                   </div>
                   <div className="mt-1 text-xs text-red-700">
-                    This zone needs valid boundary geometry before auto
-                    inference can be queued.
+                    This selected preview zone needs valid boundary geometry
+                    before a single auto draft can be queued.
+                  </div>
+                  <div className="mt-1 text-xs text-red-700">
+                    Bulk auto queueing can still work for other selected zones
+                    that have valid boundaries.
                   </div>
                 </>
               )}
@@ -2024,10 +2021,13 @@ export const ZoneSeedJobs = () => {
                 </h3>
                 <p className="text-xs text-gray-500">
                   Queue this same seed configuration across many zones at once.
+                  Auto mode infers counts per zone, and leaving zone kind blank
+                  keeps each zone&apos;s existing kind.
                 </p>
-                {seedMode === 'auto' && (
+                {seedMode === 'auto' && countMode === 'current_aware' && (
                   <p className="mt-1 text-xs text-amber-700">
-                    Switch back to manual mode to bulk queue drafts.
+                    Each selected zone will subtract its existing live content
+                    from the auto target before the job is queued.
                   </p>
                 )}
               </div>
@@ -2086,15 +2086,13 @@ export const ZoneSeedJobs = () => {
             <button
               className="mt-4 w-full rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-60"
               onClick={handleBulkCreateDrafts}
-              disabled={
-                creatingBulkDrafts ||
-                bulkTargetZones.length === 0 ||
-                seedMode !== 'manual'
-              }
+              disabled={creatingBulkDrafts || bulkTargetZones.length === 0}
             >
               {creatingBulkDrafts
                 ? 'Queuing bulk drafts...'
-                : `Queue for ${bulkTargetZones.length} zones`}
+                : seedMode === 'auto'
+                  ? `Queue auto drafts for ${bulkTargetZones.length} zones`
+                  : `Queue for ${bulkTargetZones.length} zones`}
             </button>
           </div>
         </div>

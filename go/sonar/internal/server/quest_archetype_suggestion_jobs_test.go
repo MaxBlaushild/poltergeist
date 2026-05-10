@@ -48,6 +48,37 @@ func TestBuildQuestArchetypeSuggestionExpositionTemplateUsesReusableDefaults(t *
 	}
 }
 
+func TestBuildQuestArchetypeSuggestionExpositionTemplateParsesOverheardDialogueSpeakers(t *testing.T) {
+	template := buildQuestArchetypeSuggestionExpositionTemplate(
+		models.QuestArchetypeSuggestionStep{
+			ExpositionTitle:       "Overheard Couriers",
+			ExpositionDescription: "At the floodlit market gate, rain is still dripping from the warning chalk where two couriers nearly came to blows.",
+			ExpositionSpeakerName: "Overheard Couriers",
+			ExpositionDialogue: []string{
+				"Night Porter: Keep your voice down. The gate crew already saw the package.",
+				"Harried Courier: Then move. If the route closes here, the whole handoff dies in the street.",
+			},
+		},
+		&models.ZoneKind{Slug: "city"},
+	)
+
+	if template == nil {
+		t.Fatalf("expected template")
+	}
+	if len(template.Dialogue) != 2 {
+		t.Fatalf("expected dialogue lines to carry through, got %+v", template.Dialogue)
+	}
+	if template.Dialogue[0].SpeakerName != "Night Porter" {
+		t.Fatalf("expected prefixed first speaker to carry through, got %+v", template.Dialogue[0])
+	}
+	if template.Dialogue[0].Text != "Keep your voice down. The gate crew already saw the package." {
+		t.Fatalf("expected prefixed first text to carry through, got %+v", template.Dialogue[0])
+	}
+	if template.Dialogue[1].SpeakerName != "Harried Courier" {
+		t.Fatalf("expected prefixed second speaker to carry through, got %+v", template.Dialogue[1])
+	}
+}
+
 func TestRepairQuestArchetypeSuggestionDraftLocationArchetypesUsesConceptAndRequiredHints(t *testing.T) {
 	bookNookID := uuid.New()
 	observatoryID := uuid.New()

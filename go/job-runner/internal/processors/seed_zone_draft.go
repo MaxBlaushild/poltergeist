@@ -122,31 +122,46 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	characters := []models.ZoneSeedCharacterDraft{}
 	poiDrafts := make([]models.ZoneSeedPointOfInterestDraft, 0, len(places))
 	for _, place := range places {
-		poiDrafts = append(poiDrafts, models.ZoneSeedPointOfInterestDraft{
-			DraftID:          uuid.New(),
-			PlaceID:          place.ID,
-			Name:             place.DisplayName.Text,
-			Address:          place.FormattedAddress,
-			Types:            place.Types,
-			Latitude:         place.Location.Latitude,
-			Longitude:        place.Location.Longitude,
-			Rating:           place.Rating,
-			UserRatingCount:  valueOrZero(place.UserRatingCount),
-			EditorialSummary: place.EditorialSummary.Text,
-		})
+		poiDrafts = append(poiDrafts, zoneSeedPointOfInterestDraftFromPlace(place))
 	}
 	if len(places) > 0 {
 		characters = p.generateCharacters(*zone, branding, places)
 	}
+	usedShopkeeperNames := map[string]struct{}{}
+	pointOfInterestShopkeeperProfiles := models.DefaultPointOfInterestShopkeeperSeedProfiles()
+	pointOfInterestShopkeeperConfig, err := p.dbClient.PointOfInterestShopkeeperSeedConfig().Get(ctx)
+	if err != nil {
+		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to load point of interest shopkeeper seed config: %w", err))
+	}
+	if pointOfInterestShopkeeperConfig != nil {
+		pointOfInterestShopkeeperProfiles = pointOfInterestShopkeeperConfig.Profiles
+	}
+	characters = append(
+		characters,
+		generateZoneSeedPointOfInterestShopkeepersWithProfiles(
+			*zone,
+			poiDrafts,
+			usedShopkeeperNames,
+			pointOfInterestShopkeeperProfiles,
+		)...,
+	)
 	shopkeeperItemTags := normalizeZoneSeedShopkeeperItemTags(job.ShopkeeperItemTags)
 	if len(shopkeeperItemTags) > 0 {
-		characters = append(characters, generateZoneSeedShopkeepers(*zone, shopkeeperItemTags)...)
+		characters = append(characters, generateZoneSeedShopkeepersWithUsedNames(*zone, shopkeeperItemTags, usedShopkeeperNames)...)
 	}
 	effectiveZoneKind := strings.TrimSpace(job.ZoneKind)
 	if effectiveZoneKind == "" {
 		effectiveZoneKind = strings.TrimSpace(zone.Kind)
 	}
-	expositions := generateZoneSeedExpositions(
+	pointOfInterestExpositionProfiles := models.DefaultPointOfInterestExpositionSeedProfiles()
+	pointOfInterestExpositionConfig, err := p.dbClient.PointOfInterestExpositionSeedConfig().Get(ctx)
+	if err != nil {
+		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to load point of interest exposition seed config: %w", err))
+	}
+	if pointOfInterestExpositionConfig != nil {
+		pointOfInterestExpositionProfiles = pointOfInterestExpositionConfig.Profiles
+	}
+	expositions := generateZoneSeedExpositionsWithProfiles(
 		job.ID,
 		*zone,
 		branding,
@@ -154,6 +169,7 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		poiDrafts,
 		characters,
 		job.ExpositionCount,
+		pointOfInterestExpositionProfiles,
 	)
 
 	quests := []models.ZoneSeedQuestDraft{}
@@ -219,6 +235,40 @@ type questGenerationResponse struct {
 			RarityTier  string `json:"rarityTier"`
 		} `json:"rewardItem,omitempty"`
 	} `json:"quests"`
+}
+
+type zoneSeedWeightedShopkeeperTag struct {
+	tag    string
+	weight int
+}
+
+type zoneSeedPointOfInterestShopkeeperProfile struct {
+	spawnChanceBasisPoints int
+	candidates             []zoneSeedWeightedShopkeeperTag
+}
+
+func zoneSeedPointOfInterestDraftFromPlace(place googlemaps.Place) models.ZoneSeedPointOfInterestDraft {
+	displayText := strings.TrimSpace(place.PrimaryTypeDisplayName.Text)
+	if displayText == "" {
+		displayText = strings.TrimSpace(place.DisplayName.Text)
+	}
+	return models.ZoneSeedPointOfInterestDraft{
+		DraftID:          uuid.New(),
+		PlaceID:          place.ID,
+		Name:             place.DisplayName.Text,
+		Address:          place.FormattedAddress,
+		MarkerCategory:   models.InferPointOfInterestMarkerCategory(place.PrimaryType, place.Types, displayText, googlePlaceBool(place.ServesCoffee), googlePlaceBool(place.ServesBeer), googlePlaceBool(place.ServesWine), googlePlaceBool(place.ServesCocktails), googlePlaceBool(place.LiveMusic)),
+		Types:            place.Types,
+		Latitude:         place.Location.Latitude,
+		Longitude:        place.Location.Longitude,
+		Rating:           place.Rating,
+		UserRatingCount:  valueOrZero(place.UserRatingCount),
+		EditorialSummary: place.EditorialSummary.Text,
+	}
+}
+
+func googlePlaceBool(value *bool) bool {
+	return value != nil && *value
 }
 
 type mainQuestNodeDraftResponse struct {
@@ -562,8 +612,18 @@ func normalizeZoneSeedShopkeeperItemTags(input models.StringArray) []string {
 }
 
 func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneSeedCharacterDraft {
+	return generateZoneSeedShopkeepersWithUsedNames(zone, tags, map[string]struct{}{})
+}
+
+func generateZoneSeedShopkeepersWithUsedNames(
+	zone models.Zone,
+	tags []string,
+	usedNames map[string]struct{},
+) []models.ZoneSeedCharacterDraft {
+	if usedNames == nil {
+		usedNames = map[string]struct{}{}
+	}
 	shopkeepers := make([]models.ZoneSeedCharacterDraft, 0, len(tags))
-	usedNames := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		lat := zone.Latitude
 		lng := zone.Longitude
@@ -599,6 +659,203 @@ func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneS
 		})
 	}
 	return shopkeepers
+}
+
+func generateZoneSeedPointOfInterestShopkeepers(
+	zone models.Zone,
+	pois []models.ZoneSeedPointOfInterestDraft,
+	usedNames map[string]struct{},
+) []models.ZoneSeedCharacterDraft {
+	return generateZoneSeedPointOfInterestShopkeepersWithProfiles(zone, pois, usedNames, nil)
+}
+
+func generateZoneSeedPointOfInterestShopkeepersWithProfiles(
+	zone models.Zone,
+	pois []models.ZoneSeedPointOfInterestDraft,
+	usedNames map[string]struct{},
+	profiles []models.PointOfInterestShopkeeperSeedProfile,
+) []models.ZoneSeedCharacterDraft {
+	if usedNames == nil {
+		usedNames = map[string]struct{}{}
+	}
+	shopkeepers := make([]models.ZoneSeedCharacterDraft, 0, len(pois))
+	for _, poi := range pois {
+		shopkeeper, ok := generateZoneSeedPointOfInterestShopkeeperWithProfiles(zone, poi, usedNames, profiles)
+		if !ok {
+			continue
+		}
+		shopkeepers = append(shopkeepers, shopkeeper)
+	}
+	return shopkeepers
+}
+
+func generateZoneSeedPointOfInterestShopkeeper(
+	zone models.Zone,
+	poi models.ZoneSeedPointOfInterestDraft,
+	usedNames map[string]struct{},
+) (models.ZoneSeedCharacterDraft, bool) {
+	return generateZoneSeedPointOfInterestShopkeeperWithProfiles(zone, poi, usedNames, nil)
+}
+
+func generateZoneSeedPointOfInterestShopkeeperWithProfiles(
+	zone models.Zone,
+	poi models.ZoneSeedPointOfInterestDraft,
+	usedNames map[string]struct{},
+	profiles []models.PointOfInterestShopkeeperSeedProfile,
+) (models.ZoneSeedCharacterDraft, bool) {
+	seedKey := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%s|%s|%s|%s", zone.Name, poi.PlaceID, poi.Name, poi.MarkerCategory)))
+	if seedKey == "" {
+		seedKey = fmt.Sprintf("%f|%f", poi.Latitude, poi.Longitude)
+	}
+	tag, ok := zoneSeedPointOfInterestShopkeeperTag(
+		zoneSeedPointOfInterestDraftMarkerCategory(poi),
+		seedKey,
+		profiles,
+	)
+	if !ok {
+		return models.ZoneSeedCharacterDraft{}, false
+	}
+	return buildZoneSeedPointOfInterestShopkeeper(zone, poi, tag, usedNames), true
+}
+
+func buildZoneSeedPointOfInterestShopkeeper(
+	zone models.Zone,
+	poi models.ZoneSeedPointOfInterestDraft,
+	tag string,
+	usedNames map[string]struct{},
+) models.ZoneSeedCharacterDraft {
+	if usedNames == nil {
+		usedNames = map[string]struct{}{}
+	}
+	tagLabel := humanizeShopkeeperTag(tag)
+	locationName := strings.TrimSpace(poi.Name)
+	locationLabel := locationName
+	if locationLabel == "" {
+		locationLabel = strings.TrimSpace(zone.Name)
+	}
+
+	description := fmt.Sprintf(
+		"A resident merchant at %s who curates %s wares for travelers and regulars alike.",
+		locationLabel,
+		tagLabel,
+	)
+	if locationLabel == "" {
+		description = fmt.Sprintf(
+			"A resident merchant who curates %s wares for travelers and regulars alike.",
+			tagLabel,
+		)
+	}
+
+	shopkeeperName := generateZoneSeedShopkeeperName(tag+"|"+locationLabel, zone.Name, usedNames)
+	dialogueLocation := locationLabel
+	if dialogueLocation == "" {
+		dialogueLocation = zone.Name
+	}
+
+	return models.ZoneSeedCharacterDraft{
+		DraftID:      uuid.New(),
+		Name:         shopkeeperName,
+		Description:  description,
+		Dialogue:     generateZoneSeedShopkeeperDialogue(tag, dialogueLocation, shopkeeperName),
+		PlaceID:      poi.PlaceID,
+		Latitude:     float64Ptr(poi.Latitude),
+		Longitude:    float64Ptr(poi.Longitude),
+		ShopItemTags: models.StringArray{tag},
+	}
+}
+
+func zoneSeedPointOfInterestDraftMarkerCategory(
+	poi models.ZoneSeedPointOfInterestDraft,
+) models.PointOfInterestMarkerCategory {
+	if normalized := models.NormalizePointOfInterestMarkerCategory(string(poi.MarkerCategory)); normalized != models.PointOfInterestMarkerCategoryGeneric || strings.TrimSpace(string(poi.MarkerCategory)) != "" {
+		return normalized
+	}
+	displayText := strings.TrimSpace(poi.Name)
+	if displayText == "" {
+		displayText = strings.TrimSpace(poi.EditorialSummary)
+	}
+	return models.InferPointOfInterestMarkerCategory("", poi.Types, displayText, false, false, false, false, false)
+}
+
+func zoneSeedPointOfInterestShopkeeperTag(
+	category models.PointOfInterestMarkerCategory,
+	seedKey string,
+	profiles []models.PointOfInterestShopkeeperSeedProfile,
+) (string, bool) {
+	spawnRoll := stableZoneSeedDraftHash(seedKey + "|spawn")
+	selectionRoll := stableZoneSeedDraftHash(seedKey + "|selection")
+	return zoneSeedPointOfInterestShopkeeperTagForRollsWithProfiles(category, spawnRoll, selectionRoll, profiles)
+}
+
+func zoneSeedPointOfInterestShopkeeperTagForRolls(
+	category models.PointOfInterestMarkerCategory,
+	spawnRoll int,
+	selectionRoll int,
+) (string, bool) {
+	return zoneSeedPointOfInterestShopkeeperTagForRollsWithProfiles(category, spawnRoll, selectionRoll, nil)
+}
+
+func zoneSeedPointOfInterestShopkeeperTagForRollsWithProfiles(
+	category models.PointOfInterestMarkerCategory,
+	spawnRoll int,
+	selectionRoll int,
+	profiles []models.PointOfInterestShopkeeperSeedProfile,
+) (string, bool) {
+	profile := zoneSeedPointOfInterestShopkeeperProfileForCategory(category, profiles)
+	if profile.spawnChanceBasisPoints <= 0 || len(profile.candidates) == 0 {
+		return "", false
+	}
+
+	normalizedSpawnRoll := spawnRoll % 10_000
+	if normalizedSpawnRoll < 0 {
+		normalizedSpawnRoll += 10_000
+	}
+	if normalizedSpawnRoll >= profile.spawnChanceBasisPoints {
+		return "", false
+	}
+
+	totalWeight := 0
+	for _, candidate := range profile.candidates {
+		if candidate.weight > 0 && strings.TrimSpace(candidate.tag) != "" {
+			totalWeight += candidate.weight
+		}
+	}
+	if totalWeight <= 0 {
+		return "", false
+	}
+
+	normalizedSelectionRoll := selectionRoll % totalWeight
+	if normalizedSelectionRoll < 0 {
+		normalizedSelectionRoll += totalWeight
+	}
+	for _, candidate := range profile.candidates {
+		if candidate.weight <= 0 || strings.TrimSpace(candidate.tag) == "" {
+			continue
+		}
+		if normalizedSelectionRoll < candidate.weight {
+			return candidate.tag, true
+		}
+		normalizedSelectionRoll -= candidate.weight
+	}
+	return "", false
+}
+
+func zoneSeedPointOfInterestShopkeeperProfileForCategory(
+	category models.PointOfInterestMarkerCategory,
+	profiles []models.PointOfInterestShopkeeperSeedProfile,
+) zoneSeedPointOfInterestShopkeeperProfile {
+	profile := models.PointOfInterestShopkeeperSeedProfileForCategory(profiles, category)
+	candidates := make([]zoneSeedWeightedShopkeeperTag, 0, len(profile.Candidates))
+	for _, candidate := range profile.Candidates {
+		candidates = append(candidates, zoneSeedWeightedShopkeeperTag{
+			tag:    candidate.Tag,
+			weight: candidate.Weight,
+		})
+	}
+	return zoneSeedPointOfInterestShopkeeperProfile{
+		spawnChanceBasisPoints: profile.SpawnChanceBasisPoints,
+		candidates:             candidates,
+	}
 }
 
 func float64Ptr(v float64) *float64 {
@@ -771,6 +1028,11 @@ type zoneSeedExpositionTheme struct {
 	meetingSpot string
 }
 
+type zoneSeedPointOfInterestExpositionProfile struct {
+	firstSpawnChanceBasisPoints  int
+	secondSpawnChanceBasisPoints int
+}
+
 func generateZoneSeedExpositions(
 	jobID uuid.UUID,
 	zone models.Zone,
@@ -780,12 +1042,34 @@ func generateZoneSeedExpositions(
 	characters []models.ZoneSeedCharacterDraft,
 	count int,
 ) []models.ZoneSeedExpositionDraft {
+	return generateZoneSeedExpositionsWithProfiles(jobID, zone, branding, zoneKind, pois, characters, count, nil)
+}
+
+func generateZoneSeedExpositionsWithProfiles(
+	jobID uuid.UUID,
+	zone models.Zone,
+	branding *zoneBrandingResponse,
+	zoneKind string,
+	pois []models.ZoneSeedPointOfInterestDraft,
+	characters []models.ZoneSeedCharacterDraft,
+	count int,
+	profiles []models.PointOfInterestExpositionSeedProfile,
+) []models.ZoneSeedExpositionDraft {
 	if count <= 0 {
 		return nil
 	}
 
-	results := make([]models.ZoneSeedExpositionDraft, 0, count)
-	for index := 0; index < count; index++ {
+	results := generateZoneSeedPointOfInterestExpositions(
+		jobID,
+		zone,
+		branding,
+		zoneKind,
+		pois,
+		characters,
+		count,
+		profiles,
+	)
+	for index := len(results); index < count; index++ {
 		hash := stableZoneSeedDraftHash(
 			fmt.Sprintf("%s|%s|%s|%d", jobID.String(), zone.ID.String(), zoneKind, index),
 		)
@@ -801,6 +1085,139 @@ func generateZoneSeedExpositions(
 	return results
 }
 
+func generateZoneSeedPointOfInterestExpositions(
+	jobID uuid.UUID,
+	zone models.Zone,
+	branding *zoneBrandingResponse,
+	zoneKind string,
+	pois []models.ZoneSeedPointOfInterestDraft,
+	characters []models.ZoneSeedCharacterDraft,
+	count int,
+	profiles []models.PointOfInterestExpositionSeedProfile,
+) []models.ZoneSeedExpositionDraft {
+	if count <= 0 || len(pois) == 0 {
+		return nil
+	}
+
+	type expositionCandidate struct {
+		priority int
+		draft    models.ZoneSeedExpositionDraft
+	}
+
+	candidates := make([]expositionCandidate, 0, len(pois))
+	for idx := range pois {
+		poi := pois[idx]
+		seedKey := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%s|%s|%s|%s", jobID.String(), poi.PlaceID, poi.Name, poi.MarkerCategory)))
+		if seedKey == "" {
+			seedKey = fmt.Sprintf("%s|%d|%f|%f", jobID.String(), idx, poi.Latitude, poi.Longitude)
+		}
+
+		expositionCount := zoneSeedPointOfInterestExpositionCount(
+			zoneSeedPointOfInterestDraftMarkerCategory(poi),
+			seedKey,
+			profiles,
+		)
+		for slot := 0; slot < expositionCount; slot++ {
+			hash := stableZoneSeedDraftHash(
+				fmt.Sprintf("%s|%s|%s|poi-exposition|%d", jobID.String(), zone.ID.String(), seedKey, slot),
+			)
+			priority := stableZoneSeedDraftHash(seedKey + fmt.Sprintf("|priority|%d", slot))
+			candidates = append(candidates, expositionCandidate{
+				priority: priority,
+				draft:    buildZoneSeedExpositionDraft(hash, zone, branding, zoneKind, &poi, characters),
+			})
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].priority != candidates[j].priority {
+			return candidates[i].priority < candidates[j].priority
+		}
+		if candidates[i].draft.PlaceID != candidates[j].draft.PlaceID {
+			return candidates[i].draft.PlaceID < candidates[j].draft.PlaceID
+		}
+		return candidates[i].draft.DraftID.String() < candidates[j].draft.DraftID.String()
+	})
+
+	results := make([]models.ZoneSeedExpositionDraft, 0, minInt(count, len(candidates)))
+	for _, candidate := range candidates {
+		if len(results) >= count {
+			break
+		}
+		results = append(results, candidate.draft)
+	}
+	return results
+}
+
+func zoneSeedPointOfInterestExpositionCount(
+	category models.PointOfInterestMarkerCategory,
+	seedKey string,
+	profiles []models.PointOfInterestExpositionSeedProfile,
+) int {
+	firstRoll := stableZoneSeedDraftHash(seedKey + "|first-exposition")
+	secondRoll := stableZoneSeedDraftHash(seedKey + "|second-exposition")
+	return zoneSeedPointOfInterestExpositionCountForRollsWithProfiles(category, firstRoll, secondRoll, profiles)
+}
+
+func zoneSeedPointOfInterestExpositionCountForRolls(
+	category models.PointOfInterestMarkerCategory,
+	firstRoll int,
+	secondRoll int,
+) int {
+	return zoneSeedPointOfInterestExpositionCountForRollsWithProfiles(category, firstRoll, secondRoll, nil)
+}
+
+func zoneSeedPointOfInterestExpositionCountForRollsWithProfiles(
+	category models.PointOfInterestMarkerCategory,
+	firstRoll int,
+	secondRoll int,
+	profiles []models.PointOfInterestExpositionSeedProfile,
+) int {
+	profile := zoneSeedPointOfInterestExpositionProfileForCategoryWithProfiles(category, profiles)
+	if profile.firstSpawnChanceBasisPoints <= 0 {
+		return 0
+	}
+
+	normalizedFirstRoll := firstRoll % 10_000
+	if normalizedFirstRoll < 0 {
+		normalizedFirstRoll += 10_000
+	}
+	if normalizedFirstRoll >= profile.firstSpawnChanceBasisPoints {
+		return 0
+	}
+
+	count := 1
+	if profile.secondSpawnChanceBasisPoints <= 0 {
+		return count
+	}
+
+	normalizedSecondRoll := secondRoll % 10_000
+	if normalizedSecondRoll < 0 {
+		normalizedSecondRoll += 10_000
+	}
+	if normalizedSecondRoll < profile.secondSpawnChanceBasisPoints {
+		count++
+	}
+	return count
+}
+
+func zoneSeedPointOfInterestExpositionProfileForCategory(
+	category models.PointOfInterestMarkerCategory,
+) zoneSeedPointOfInterestExpositionProfile {
+	return zoneSeedPointOfInterestExpositionProfileForCategoryWithProfiles(category, nil)
+}
+
+func zoneSeedPointOfInterestExpositionProfileForCategoryWithProfiles(
+	category models.PointOfInterestMarkerCategory,
+	profiles []models.PointOfInterestExpositionSeedProfile,
+) zoneSeedPointOfInterestExpositionProfile {
+	profile := models.PointOfInterestExpositionSeedProfileForCategory(profiles, category)
+	return zoneSeedPointOfInterestExpositionProfile{
+		firstSpawnChanceBasisPoints:  profile.FirstSpawnChanceBasisPoints,
+		secondSpawnChanceBasisPoints: profile.SecondSpawnChanceBasisPoints,
+	}
+}
+
 func buildZoneSeedExpositionDraft(
 	hash int,
 	zone models.Zone,
@@ -809,10 +1226,11 @@ func buildZoneSeedExpositionDraft(
 	poi *models.ZoneSeedPointOfInterestDraft,
 	characters []models.ZoneSeedCharacterDraft,
 ) models.ZoneSeedExpositionDraft {
-	themes := zoneSeedExpositionThemes()
+	themes := zoneSeedExpositionThemesForPointOfInterest(poi)
 	theme := themes[hash%len(themes)]
 	districtLabel := zoneSeedExpositionDistrictLabel(branding, zone)
 	placeLabel := zoneSeedExpositionPlaceLabel(poi)
+	locationName := zoneSeedExpositionLocationName(poi)
 	flavorDeadline := zoneSeedExpositionFlavorDeadline(zoneKind)
 	speakerOne, speakerTwo := zoneSeedExpositionSpeakerNames(hash, poi, characters)
 	latitude, longitude := zoneSeedExpositionCoordinates(zone, poi)
@@ -834,8 +1252,9 @@ func buildZoneSeedExpositionDraft(
 			Speaker:     "character",
 			SpeakerName: speakerOne,
 			Text: fmt.Sprintf(
-				"Then meet me %s before %s and bring only what you can hide under a cloak.",
+				"Then meet me %s at %s before %s and bring only what you can hide under a cloak.",
 				theme.meetingSpot,
+				locationName,
 				flavorDeadline,
 			),
 		},
@@ -853,12 +1272,7 @@ func buildZoneSeedExpositionDraft(
 		DraftID: uuid.New(),
 		Title:   zoneSeedExpositionTitle(hash, theme),
 		Description: truncate(
-			fmt.Sprintf(
-				"Near %s, a hushed exchange hints that %s in %s.",
-				placeLabel,
-				theme.subject,
-				districtLabel,
-			),
+			zoneSeedExpositionDescription(locationName, placeLabel, theme, districtLabel),
 			220,
 		),
 		Dialogue: dialogue,
@@ -871,6 +1285,141 @@ func buildZoneSeedExpositionDraft(
 		draft.Longitude = float64Ptr(longitude)
 	}
 	return draft
+}
+
+func zoneSeedExpositionThemesForPointOfInterest(
+	poi *models.ZoneSeedPointOfInterestDraft,
+) []zoneSeedExpositionTheme {
+	switch zoneSeedPointOfInterestDraftMarkerCategoryValue(poi) {
+	case models.PointOfInterestMarkerCategoryCoffeehouse, models.PointOfInterestMarkerCategoryTavern, models.PointOfInterestMarkerCategoryEatery, models.PointOfInterestMarkerCategoryTheater:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "Reserved Table",
+				subject:     "someone has been leaving coded notes where only regulars would notice",
+				twist:       "the last message named the wrong courier on purpose",
+				meetingSpot: "beneath the quietest light",
+			},
+			{
+				titleObject: "Back-Room Favor",
+				subject:     "a favor traded in private has started attracting the wrong listeners",
+				twist:       "the witness works here and has not picked a side yet",
+				meetingSpot: "by the service entrance",
+			},
+			{
+				titleObject: "Closing Bell",
+				subject:     "someone timed the handoff to the evening rush a little too perfectly",
+				twist:       "the decoy order was placed hours before the real exchange",
+				meetingSpot: "where the floorboards stop creaking",
+			},
+		}
+	case models.PointOfInterestMarkerCategoryMarket:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "False Ledger",
+				subject:     "a stall account was balanced with numbers that should not exist",
+				twist:       "the missing total was hidden inside a routine delivery",
+				meetingSpot: "under the canvas awning",
+			},
+			{
+				titleObject: "Last Crate",
+				subject:     "the final crate in a routine shipment arrived sealed from the inside",
+				twist:       "the manifest was changed by someone already standing in the queue",
+				meetingSpot: "behind the stacked pallets",
+			},
+			{
+				titleObject: "Quiet Auction",
+				subject:     "a private bid is about to turn a public sale into a feud",
+				twist:       "the highest bidder does not plan to collect in person",
+				meetingSpot: "beside the shuttered stall",
+			},
+		}
+	case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "Misfiled Folio",
+				subject:     "a harmless filing error now points to a room no one admits exists",
+				twist:       "the correction slip was written in a dead catalog code",
+				meetingSpot: "between the oldest shelves",
+			},
+			{
+				titleObject: "Borrowed Artifact",
+				subject:     "an item on display is not the one the registry claims",
+				twist:       "the authentic piece never left the building at all",
+				meetingSpot: "beside the locked case",
+			},
+			{
+				titleObject: "Reading Lamp",
+				subject:     "someone has been reopening the same file after closing for three nights",
+				twist:       "the margin notes are newer than the parchment itself",
+				meetingSpot: "under the green lamp",
+			},
+		}
+	case models.PointOfInterestMarkerCategoryPark, models.PointOfInterestMarkerCategoryWaterfront:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "Hidden Marker",
+				subject:     "a route marker keeps shifting just far enough to mislead the next runner",
+				twist:       "the original path still shows itself at low light",
+				meetingSpot: "off the worn path",
+			},
+			{
+				titleObject: "Tide Note",
+				subject:     "someone timed a rendezvous to the waterline and left early anyway",
+				twist:       "the real message was tucked into the safety check, not the crate",
+				meetingSpot: "near the oldest railing",
+			},
+			{
+				titleObject: "Gardener's Key",
+				subject:     "a caretaker's spare key is opening more than tool sheds this week",
+				twist:       "the lock it fits was moved after the map was drawn",
+				meetingSpot: "where the path bends out of view",
+			},
+		}
+	case models.PointOfInterestMarkerCategoryLandmark, models.PointOfInterestMarkerCategoryCivic:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "Public Notice",
+				subject:     "an official notice was posted for the wrong audience on purpose",
+				twist:       "the real instruction was hidden in what got crossed out",
+				meetingSpot: "beneath the side arch",
+			},
+			{
+				titleObject: "Guide's Oath",
+				subject:     "the person telling the public story keeps omitting the same detail",
+				twist:       "the omitted name is still carved where everyone can see it",
+				meetingSpot: "beside the worn plaque",
+			},
+			{
+				titleObject: "Stamped Copy",
+				subject:     "an approved document is circulating with a seal that should have been retired",
+				twist:       "the clerk who noticed has already vanished for the evening",
+				meetingSpot: "at the side door",
+			},
+		}
+	case models.PointOfInterestMarkerCategoryArena:
+		return []zoneSeedExpositionTheme{
+			{
+				titleObject: "Training Wager",
+				subject:     "a routine sparring bet has turned into leverage over tomorrow's lineup",
+				twist:       "the underdog was never supposed to step onto the floor",
+				meetingSpot: "beside the equipment rack",
+			},
+			{
+				titleObject: "Locker Token",
+				subject:     "someone left a winning token in the wrong locker on purpose",
+				twist:       "the person who found it owes money to both sides",
+				meetingSpot: "behind the practice gate",
+			},
+			{
+				titleObject: "Final Bell",
+				subject:     "a match result was settled in whispers before the judges saw the score",
+				twist:       "the official sheet was altered after the crowd dispersed",
+				meetingSpot: "under the shadowed seats",
+			},
+		}
+	default:
+		return zoneSeedExpositionThemes()
+	}
 }
 
 func zoneSeedExpositionThemes() []zoneSeedExpositionTheme {
@@ -938,6 +1487,35 @@ func zoneSeedExpositionThemes() []zoneSeedExpositionTheme {
 	}
 }
 
+func zoneSeedExpositionDescription(
+	locationName string,
+	placeLabel string,
+	theme zoneSeedExpositionTheme,
+	districtLabel string,
+) string {
+	locationName = strings.TrimSpace(locationName)
+	placeLabel = strings.TrimSpace(placeLabel)
+	districtLabel = strings.TrimSpace(districtLabel)
+	if districtLabel == "" {
+		districtLabel = "the district"
+	}
+	if locationName != "" {
+		return fmt.Sprintf(
+			"At %s, near %s, a hushed exchange hints that %s in %s.",
+			locationName,
+			placeLabel,
+			theme.subject,
+			districtLabel,
+		)
+	}
+	return fmt.Sprintf(
+		"Near %s, a hushed exchange hints that %s in %s.",
+		placeLabel,
+		theme.subject,
+		districtLabel,
+	)
+}
+
 func zoneSeedExpositionTitle(hash int, theme zoneSeedExpositionTheme) string {
 	prefixes := []string{
 		"Whispers of the",
@@ -964,27 +1542,61 @@ func zoneSeedExpositionDistrictLabel(branding *zoneBrandingResponse, zone models
 	return "the district"
 }
 
+func zoneSeedExpositionLocationName(poi *models.ZoneSeedPointOfInterestDraft) string {
+	if poi == nil {
+		return "the edge of the district"
+	}
+	if name := strings.TrimSpace(poi.Name); name != "" {
+		return name
+	}
+	return zoneSeedExpositionPlaceLabel(poi)
+}
+
 func zoneSeedExpositionPlaceLabel(poi *models.ZoneSeedPointOfInterestDraft) string {
 	if poi == nil {
 		return "the edge of the district"
 	}
-	types := strings.Join(poi.Types, ",")
-	switch {
-	case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"):
+	switch zoneSeedPointOfInterestDraftMarkerCategoryValue(poi) {
+	case models.PointOfInterestMarkerCategoryCoffeehouse:
 		return "the coffeehouse tables"
-	case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+	case models.PointOfInterestMarkerCategoryTavern:
 		return "the tavern corner"
-	case strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+	case models.PointOfInterestMarkerCategoryEatery:
 		return "the dining room hush"
-	case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
-		return "the park path"
-	case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
-		return "the quiet stacks"
-	case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+	case models.PointOfInterestMarkerCategoryMarket:
 		return "the market row"
-	case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+	case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum:
+		return "the quiet stacks"
+	case models.PointOfInterestMarkerCategoryPark:
+		return "the park path"
+	case models.PointOfInterestMarkerCategoryWaterfront:
 		return "the waterfront rail"
+	case models.PointOfInterestMarkerCategoryTheater:
+		return "the backstage hush"
+	case models.PointOfInterestMarkerCategoryLandmark:
+		return "the shadow of the landmark"
+	case models.PointOfInterestMarkerCategoryCivic:
+		return "the public steps"
+	case models.PointOfInterestMarkerCategoryArena:
+		return "the practice ring"
 	default:
+		types := strings.Join(poi.Types, ",")
+		switch {
+		case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"):
+			return "the coffeehouse tables"
+		case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+			return "the tavern corner"
+		case strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+			return "the dining room hush"
+		case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
+			return "the park path"
+		case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
+			return "the quiet stacks"
+		case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+			return "the market row"
+		case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+			return "the waterfront rail"
+		}
 		return "the local landmark"
 	}
 }
@@ -1059,23 +1671,53 @@ func zoneSeedExpositionRoleChoices(poi *models.ZoneSeedPointOfInterestDraft) []s
 	if poi == nil {
 		return []string{"Local", "Courier", "Night Watcher", "Vendor"}
 	}
-	types := strings.Join(poi.Types, ",")
-	switch {
-	case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"), strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+	switch zoneSeedPointOfInterestDraftMarkerCategoryValue(poi) {
+	case models.PointOfInterestMarkerCategoryCoffeehouse, models.PointOfInterestMarkerCategoryEatery:
 		return []string{"Server", "Cook", "Regular", "Courier"}
-	case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+	case models.PointOfInterestMarkerCategoryTavern:
 		return []string{"Barkeep", "Singer", "Patron", "Door Warden"}
-	case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
+	case models.PointOfInterestMarkerCategoryPark:
 		return []string{"Groundskeeper", "Runner", "Gardener", "Scout"}
-	case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
+	case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum:
 		return []string{"Archivist", "Researcher", "Caretaker", "Copyist"}
-	case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+	case models.PointOfInterestMarkerCategoryMarket:
 		return []string{"Vendor", "Factor", "Messenger", "Cashier"}
-	case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+	case models.PointOfInterestMarkerCategoryWaterfront:
 		return []string{"Dockhand", "Fisher", "Ferryman", "Lookout"}
+	case models.PointOfInterestMarkerCategoryTheater:
+		return []string{"Stagehand", "Performer", "Usher", "Promoter"}
+	case models.PointOfInterestMarkerCategoryLandmark, models.PointOfInterestMarkerCategoryCivic:
+		return []string{"Guide", "Clerk", "Watcher", "Courier"}
+	case models.PointOfInterestMarkerCategoryArena:
+		return []string{"Trainer", "Spectator", "Booker", "Competitor"}
 	default:
-		return []string{"Local", "Courier", "Watcher", "Traveler"}
+		types := strings.Join(poi.Types, ",")
+		switch {
+		case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"), strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+			return []string{"Server", "Cook", "Regular", "Courier"}
+		case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+			return []string{"Barkeep", "Singer", "Patron", "Door Warden"}
+		case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
+			return []string{"Groundskeeper", "Runner", "Gardener", "Scout"}
+		case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
+			return []string{"Archivist", "Researcher", "Caretaker", "Copyist"}
+		case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+			return []string{"Vendor", "Factor", "Messenger", "Cashier"}
+		case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+			return []string{"Dockhand", "Fisher", "Ferryman", "Lookout"}
+		default:
+			return []string{"Local", "Courier", "Watcher", "Traveler"}
+		}
 	}
+}
+
+func zoneSeedPointOfInterestDraftMarkerCategoryValue(
+	poi *models.ZoneSeedPointOfInterestDraft,
+) models.PointOfInterestMarkerCategory {
+	if poi == nil {
+		return models.PointOfInterestMarkerCategoryGeneric
+	}
+	return zoneSeedPointOfInterestDraftMarkerCategory(*poi)
 }
 
 func zoneSeedExpositionCoordinates(

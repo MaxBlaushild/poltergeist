@@ -20,6 +20,88 @@ const (
 	PointOfInterestMarkerCategoryArena       PointOfInterestMarkerCategory = "arena"
 )
 
+func AllPointOfInterestMarkerCategories() []PointOfInterestMarkerCategory {
+	return []PointOfInterestMarkerCategory{
+		PointOfInterestMarkerCategoryGeneric,
+		PointOfInterestMarkerCategoryCoffeehouse,
+		PointOfInterestMarkerCategoryTavern,
+		PointOfInterestMarkerCategoryEatery,
+		PointOfInterestMarkerCategoryMarket,
+		PointOfInterestMarkerCategoryArchive,
+		PointOfInterestMarkerCategoryPark,
+		PointOfInterestMarkerCategoryWaterfront,
+		PointOfInterestMarkerCategoryMuseum,
+		PointOfInterestMarkerCategoryTheater,
+		PointOfInterestMarkerCategoryLandmark,
+		PointOfInterestMarkerCategoryCivic,
+		PointOfInterestMarkerCategoryArena,
+	}
+}
+
+func ParsePointOfInterestMarkerCategory(raw string) (PointOfInterestMarkerCategory, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(PointOfInterestMarkerCategoryGeneric):
+		return PointOfInterestMarkerCategoryGeneric, true
+	case string(PointOfInterestMarkerCategoryCoffeehouse):
+		return PointOfInterestMarkerCategoryCoffeehouse, true
+	case string(PointOfInterestMarkerCategoryTavern):
+		return PointOfInterestMarkerCategoryTavern, true
+	case string(PointOfInterestMarkerCategoryEatery):
+		return PointOfInterestMarkerCategoryEatery, true
+	case string(PointOfInterestMarkerCategoryMarket):
+		return PointOfInterestMarkerCategoryMarket, true
+	case string(PointOfInterestMarkerCategoryArchive):
+		return PointOfInterestMarkerCategoryArchive, true
+	case string(PointOfInterestMarkerCategoryPark):
+		return PointOfInterestMarkerCategoryPark, true
+	case string(PointOfInterestMarkerCategoryWaterfront):
+		return PointOfInterestMarkerCategoryWaterfront, true
+	case string(PointOfInterestMarkerCategoryMuseum):
+		return PointOfInterestMarkerCategoryMuseum, true
+	case string(PointOfInterestMarkerCategoryTheater):
+		return PointOfInterestMarkerCategoryTheater, true
+	case string(PointOfInterestMarkerCategoryLandmark):
+		return PointOfInterestMarkerCategoryLandmark, true
+	case string(PointOfInterestMarkerCategoryCivic):
+		return PointOfInterestMarkerCategoryCivic, true
+	case string(PointOfInterestMarkerCategoryArena):
+		return PointOfInterestMarkerCategoryArena, true
+	default:
+		return "", false
+	}
+}
+
+func PointOfInterestMarkerCategoryLabel(category PointOfInterestMarkerCategory) string {
+	switch category {
+	case PointOfInterestMarkerCategoryCoffeehouse:
+		return "Coffeehouse"
+	case PointOfInterestMarkerCategoryTavern:
+		return "Tavern"
+	case PointOfInterestMarkerCategoryEatery:
+		return "Eatery"
+	case PointOfInterestMarkerCategoryMarket:
+		return "Market"
+	case PointOfInterestMarkerCategoryArchive:
+		return "Archive"
+	case PointOfInterestMarkerCategoryPark:
+		return "Park"
+	case PointOfInterestMarkerCategoryWaterfront:
+		return "Waterfront"
+	case PointOfInterestMarkerCategoryMuseum:
+		return "Museum"
+	case PointOfInterestMarkerCategoryTheater:
+		return "Theater"
+	case PointOfInterestMarkerCategoryLandmark:
+		return "Landmark"
+	case PointOfInterestMarkerCategoryCivic:
+		return "Civic"
+	case PointOfInterestMarkerCategoryArena:
+		return "Arena"
+	default:
+		return "Generic"
+	}
+}
+
 func NormalizePointOfInterestMarkerCategory(raw string) PointOfInterestMarkerCategory {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case string(PointOfInterestMarkerCategoryCoffeehouse):

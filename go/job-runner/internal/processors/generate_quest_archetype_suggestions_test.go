@@ -237,6 +237,9 @@ func TestSanitizeQuestArchetypeSuggestionStepBuildsExpositionFromSparseFields(t 
 	if !strings.Contains(step.ExpositionDescription, "At the cozy book nook,") {
 		t.Fatalf("expected generated exposition description to anchor the location, got %q", step.ExpositionDescription)
 	}
+	if suggestionScenarioSentenceCount(step.ExpositionDescription) < 3 {
+		t.Fatalf("expected generated exposition description to expand into multiple context-setting sentences, got %q", step.ExpositionDescription)
+	}
 	if len(step.ExpositionDialogue) < 2 {
 		t.Fatalf("expected exposition dialogue fallback lines, got %+v", step.ExpositionDialogue)
 	}
@@ -248,6 +251,42 @@ func TestSanitizeQuestArchetypeSuggestionStepBuildsExpositionFromSparseFields(t 
 	}
 	if len(warnings) == 0 {
 		t.Fatalf("expected warnings for sparse exposition fields")
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionStepBuildsOverheardConversationWhenSceneSupportsIt(t *testing.T) {
+	locationID := uuid.New()
+	step, _ := sanitizeQuestArchetypeSuggestionStep(
+		questArchetypeSuggestionStepPayload{
+			Source:                "location",
+			Content:               "exposition",
+			LocationConcept:       "floodlit market gate",
+			LocationArchetypeName: "Floodlit Market Gate",
+			LocationMetadataTags:  []string{"market", "checkpoint", "crowded"},
+			TemplateConcept:       "piece together the warning from a panicked exchange",
+			PotentialContent: []string{
+				"rival couriers were arguing in the rain",
+				"someone tried to warn the gate crew before the route collapsed",
+			},
+		},
+		map[string]locationArchetypeIndexEntry{
+			"floodlit market gate": {ID: locationID, Name: "Floodlit Market Gate"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+	)
+
+	if len(step.ExpositionDialogue) < 3 {
+		t.Fatalf("expected richer fallback exposition dialogue, got %+v", step.ExpositionDialogue)
+	}
+	if !strings.Contains(step.ExpositionDialogue[0], ": ") {
+		t.Fatalf("expected overheard conversation format in first line, got %+v", step.ExpositionDialogue)
+	}
+	if !strings.Contains(step.ExpositionDialogue[1], ": ") {
+		t.Fatalf("expected overheard conversation format in second line, got %+v", step.ExpositionDialogue)
+	}
+	if !strings.Contains(step.ExpositionDescription, "moments ago") &&
+		!strings.Contains(step.ExpositionDescription, "earlier") {
+		t.Fatalf("expected exposition description to carry some when-context, got %q", step.ExpositionDescription)
 	}
 }
 

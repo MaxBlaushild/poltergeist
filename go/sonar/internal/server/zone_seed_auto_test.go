@@ -261,6 +261,14 @@ func TestResolveZoneSeedDraftRequestSkipsRecommendationCapWhenPlaceCountOverridd
 	}
 }
 
+func TestZoneSeedEffectiveKindFallsBackToZoneKind(t *testing.T) {
+	zone := &models.Zone{Kind: " Forest "}
+
+	if got := zoneSeedEffectiveKind(zone, ""); got != "forest" {
+		t.Fatalf("expected normalized zone kind fallback, got %q", got)
+	}
+}
+
 func TestZoneSeedShopkeeperItemTagsForKindMergesZoneKindDefaults(t *testing.T) {
 	zoneKind := &models.ZoneKind{
 		DefaultShopkeeperItemTags: models.StringArray{" Potions ", "herbs", "POTIONS"},

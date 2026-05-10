@@ -1258,7 +1258,31 @@ func (s *server) createQuestArchetypeSuggestionExpositionTemplate(
 	if err := s.dbClient.ExpositionTemplate().Create(ctx, template); err != nil {
 		return nil, fmt.Errorf("failed to create exposition template: %w", err)
 	}
+	s.enqueueQuestArchetypeSuggestionExpositionSpeakerPortraits(ctx, template)
 	return template, nil
+}
+
+func (s *server) enqueueQuestArchetypeSuggestionExpositionSpeakerPortraits(
+	ctx context.Context,
+	template *models.ExpositionTemplate,
+) {
+	if s == nil || s.asyncClient == nil || template == nil || template.ID == uuid.Nil {
+		return
+	}
+	if len(template.Dialogue) == 0 {
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateExpositionTemplateSpeakerPortraitsTaskPayload{
+		ExpositionTemplateID: template.ID,
+	})
+	if err != nil {
+		log.Printf("Failed to marshal exposition speaker portrait task for template %s: %v", template.ID.String(), err)
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateExpositionTemplateSpeakerPortraitsTaskType, payloadBytes)); err != nil {
+		log.Printf("Failed to enqueue exposition speaker portrait task for template %s: %v", template.ID.String(), err)
+	}
 }
 
 func (s *server) createQuestArchetypeSuggestionScenarioTemplate(

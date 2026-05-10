@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
+import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 import {
   defaultZoneFlushContentTypes,
   formatZoneContentFlushSummary,
@@ -217,6 +218,22 @@ const getZoneReadinessSummary = (zone: ZoneAdminSummary) => {
   }
 
   return 'This zone has geometry, but it still needs tags, POIs, and quest content to feel fully authored.';
+};
+
+type ZoneFlavorGenerationJob = {
+  id: string;
+  zoneId: string;
+  status: string;
+  generatedDescription?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type BulkQueueZoneFlavorJobsResponse = {
+  queuedCount: number;
+  requestedZoneCount: number;
+  jobs: ZoneFlavorGenerationJob[];
 };
 
 type BoundaryEditorMapProps = {
@@ -790,6 +807,7 @@ export const Zones = () => {
   const [searchParams] = useSearchParams();
   const { zones, refreshZones } = useZoneContext();
   const { apiClient } = useAPI();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [internalTagsInput, setInternalTagsInput] = useState('');
@@ -812,6 +830,7 @@ export const Zones = () => {
   const [deletingZoneId, setDeletingZoneId] = useState<string | null>(null);
   const [flushingZoneId, setFlushingZoneId] = useState<string | null>(null);
   const [bulkFlushingZones, setBulkFlushingZones] = useState(false);
+  const [bulkQueueingZoneFlavor, setBulkQueueingZoneFlavor] = useState(false);
   const [showFlushZonesModal, setShowFlushZonesModal] = useState(false);
   const [pendingFlushZoneIds, setPendingFlushZoneIds] = useState<string[]>([]);
   const [pendingFlushMode, setPendingFlushMode] = useState<'single' | 'bulk'>(
@@ -840,10 +859,16 @@ export const Zones = () => {
   const deepLinkedZoneId = searchParams.get('id')?.trim() ?? '';
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const popupRef = useRef<mapboxgl.Popup | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const handlersAttachedRef = useRef(false);
   const fitBoundsRef = useRef(false);
+  const [selectedMapZoneId, setSelectedMapZoneId] = useState<string | null>(
+    null
+  );
+  const [mapZoneKindSearchQuery, setMapZoneKindSearchQuery] = useState('');
+  const [selectedMapZoneKindSlug, setSelectedMapZoneKindSlug] = useState('');
+  const [queueingMapZoneFlavor, setQueueingMapZoneFlavor] = useState(false);
+  const [assigningMapZoneKind, setAssigningMapZoneKind] = useState(false);
 
   useEffect(() => {
     if (!deepLinkedZoneId) {
@@ -882,6 +907,49 @@ export const Zones = () => {
     () => new Map(zoneSummaries.map((zone) => [zone.id, zone])),
     [zoneSummaries]
   );
+
+  const selectedMapZoneSummary = useMemo(
+    () =>
+      selectedMapZoneId ? zoneSummaryByID.get(selectedMapZoneId) ?? null : null,
+    [selectedMapZoneId, zoneSummaryByID]
+  );
+
+  const selectedMapZone = useMemo(
+    () =>
+      selectedMapZoneId
+        ? zones.find((zone) => zone.id === selectedMapZoneId) ?? null
+        : null,
+    [selectedMapZoneId, zones]
+  );
+
+  const selectedMapZoneBoundaryCount = useMemo(() => {
+    if (selectedMapZoneSummary) {
+      return selectedMapZoneSummary.boundaryPointCount;
+    }
+    if (!selectedMapZone) {
+      return 0;
+    }
+    return Math.max(getZoneRing(selectedMapZone).length - 1, 0);
+  }, [selectedMapZone, selectedMapZoneSummary]);
+
+  const currentSelectedMapZoneKindSlug =
+    selectedMapZoneSummary?.kind?.trim() || selectedMapZone?.kind?.trim() || '';
+
+  const filteredMapZoneKinds = useMemo(() => {
+    const query = mapZoneKindSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return zoneKinds;
+    }
+    return zoneKinds.filter((zoneKind) =>
+      [zoneKind.name, zoneKind.slug, zoneKind.description]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [mapZoneKindSearchQuery, zoneKinds]);
+
+  const selectedMapZoneKind =
+    zoneKindBySlug.get(selectedMapZoneKindSlug.trim()) ?? null;
 
   const zoneOverview = useMemo(
     () =>
@@ -1197,6 +1265,17 @@ export const Zones = () => {
     });
   }, [zoneSummaryByID]);
 
+  useEffect(() => {
+    if (selectedMapZoneId && !selectedMapZone && !selectedMapZoneSummary) {
+      setSelectedMapZoneId(null);
+    }
+  }, [selectedMapZone, selectedMapZoneId, selectedMapZoneSummary]);
+
+  useEffect(() => {
+    setSelectedMapZoneKindSlug(currentSelectedMapZoneKindSlug);
+    setMapZoneKindSearchQuery('');
+  }, [currentSelectedMapZoneKindSlug, selectedMapZoneId]);
+
   const handleDeleteZone = async (zoneID: string) => {
     const confirmed = window.confirm(
       'Delete this zone and its zone-level content? This cannot be undone.'
@@ -1325,6 +1404,158 @@ export const Zones = () => {
     openFlushZonesModal(Array.from(selectedZoneIds), 'bulk');
   };
 
+  const handleQueueZoneFlavorForSelectedZones = async () => {
+    const zoneIDs = Array.from(selectedZoneIds);
+    if (zoneIDs.length === 0 || bulkQueueingZoneFlavor) {
+      return;
+    }
+
+    setBulkQueueingZoneFlavor(true);
+    setZoneActionMessage(null);
+    setZoneSummariesError(null);
+
+    try {
+      const response = await apiClient.post<BulkQueueZoneFlavorJobsResponse>(
+        '/sonar/admin/zone-flavor-generation-jobs/bulk-queue',
+        {
+          zoneIds: zoneIDs,
+        }
+      );
+
+      if (response.queuedCount === response.requestedZoneCount) {
+        setZoneActionMessage(
+          `Queued ${response.queuedCount} zone flavor job${response.queuedCount === 1 ? '' : 's'}.`
+        );
+      } else {
+        setZoneActionMessage(
+          `Queued ${response.queuedCount} zone flavor jobs from ${response.requestedZoneCount} requested zones.`
+        );
+      }
+    } catch (error) {
+      console.error('Failed to bulk queue zone flavor jobs', error);
+      setZoneSummariesError('Failed to queue zone flavor jobs.');
+    } finally {
+      setBulkQueueingZoneFlavor(false);
+    }
+  };
+
+  const handleQueueZoneFlavorForZone = useCallback(
+    async (zoneID: string, zoneName?: string) => {
+      const queuedJob = await apiClient.post<ZoneFlavorGenerationJob>(
+        '/sonar/admin/zone-flavor-generation-jobs',
+        { zoneId: zoneID }
+      );
+
+      setZoneSummariesError(null);
+      setZoneActionMessage(
+        zoneName?.trim()
+          ? `Queued zone flavor for ${zoneName}.`
+          : 'Queued zone flavor job.'
+      );
+
+      return queuedJob;
+    },
+    [apiClient]
+  );
+
+  const handleAssignZoneKindForZone = useCallback(
+    async (zoneID: string, kind: string, zoneName?: string) => {
+      await apiClient.post('/sonar/zoneKinds/assign-zones', {
+        zoneIds: [zoneID],
+        kind,
+      });
+      await Promise.all([refreshZones(), fetchZoneSummaries()]);
+
+      setZoneSummariesError(null);
+      if (!kind.trim()) {
+        setZoneActionMessage(
+          zoneName?.trim()
+            ? `Cleared zone kind for ${zoneName}.`
+            : 'Cleared zone kind.'
+        );
+        return;
+      }
+
+      const assignedLabel = zoneKindBySlug.get(kind)?.name?.trim() || kind;
+      setZoneActionMessage(
+        zoneName?.trim()
+          ? `Assigned ${assignedLabel} to ${zoneName}.`
+          : `Assigned ${assignedLabel}.`
+      );
+    },
+    [apiClient, fetchZoneSummaries, refreshZones, zoneKindBySlug]
+  );
+
+  const closeMapZoneModal = useCallback(() => {
+    setSelectedMapZoneId(null);
+    setMapZoneKindSearchQuery('');
+  }, []);
+
+  const handleQueueSelectedMapZoneFlavor = useCallback(async () => {
+    if (!selectedMapZoneId || queueingMapZoneFlavor) {
+      return;
+    }
+
+    setQueueingMapZoneFlavor(true);
+    setZoneActionMessage(null);
+    setZoneSummariesError(null);
+
+    try {
+      await handleQueueZoneFlavorForZone(
+        selectedMapZoneId,
+        selectedMapZoneSummary?.name ?? selectedMapZone?.name
+      );
+      closeMapZoneModal();
+    } catch (error) {
+      console.error('Failed to queue zone flavor job from modal', error);
+      setZoneSummariesError('Failed to queue zone flavor job.');
+    } finally {
+      setQueueingMapZoneFlavor(false);
+    }
+  }, [
+    closeMapZoneModal,
+    handleQueueZoneFlavorForZone,
+    queueingMapZoneFlavor,
+    selectedMapZone,
+    selectedMapZoneId,
+    selectedMapZoneSummary,
+  ]);
+
+  const handleAssignSelectedMapZoneKind = useCallback(async () => {
+    if (
+      !selectedMapZoneId ||
+      assigningMapZoneKind ||
+      selectedMapZoneKindSlug === currentSelectedMapZoneKindSlug
+    ) {
+      return;
+    }
+
+    setAssigningMapZoneKind(true);
+    setZoneActionMessage(null);
+    setZoneSummariesError(null);
+
+    try {
+      await handleAssignZoneKindForZone(
+        selectedMapZoneId,
+        selectedMapZoneKindSlug,
+        selectedMapZoneSummary?.name ?? selectedMapZone?.name
+      );
+    } catch (error) {
+      console.error('Failed to assign zone kind from modal', error);
+      setZoneSummariesError('Failed to update zone kind.');
+    } finally {
+      setAssigningMapZoneKind(false);
+    }
+  }, [
+    assigningMapZoneKind,
+    currentSelectedMapZoneKindSlug,
+    handleAssignZoneKindForZone,
+    selectedMapZone,
+    selectedMapZoneId,
+    selectedMapZoneKindSlug,
+    selectedMapZoneSummary,
+  ]);
+
   useEffect(() => {
     if (mapContainer.current && !mapRef.current) {
       mapRef.current = new mapboxgl.Map({
@@ -1343,8 +1574,6 @@ export const Zones = () => {
     }
 
     return () => {
-      popupRef.current?.remove();
-      popupRef.current = null;
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -1378,7 +1607,6 @@ export const Zones = () => {
           properties: {
             id: zone.id,
             name: zone.name,
-            description: zone.description || '',
             boundaryCount: Math.max(rawCoords.length - 1, 0),
             pointOfInterestCount: summary?.pointOfInterestCount ?? 0,
             questCount: summary?.questCount ?? 0,
@@ -1458,87 +1686,35 @@ export const Zones = () => {
         }
 
         const zoneId = feature.properties.id as string;
-        const zoneName = feature.properties.name as string;
-        const zoneDescription = feature.properties.description as string;
-        const boundaryCount = Number(feature.properties.boundaryCount ?? 0);
-        const pointOfInterestCount = Number(
-          feature.properties.pointOfInterestCount ?? 0
-        );
-        const questCount = Number(feature.properties.questCount ?? 0);
-        const zoneQuestArchetypeCount = Number(
-          feature.properties.zoneQuestArchetypeCount ?? 0
-        );
-        const challengeCount = Number(feature.properties.challengeCount ?? 0);
-        const scenarioCount = Number(feature.properties.scenarioCount ?? 0);
-        const standardEncounterCount = Number(
-          feature.properties.standardEncounterCount ?? 0
-        );
-        const bossEncounterCount = Number(
-          feature.properties.bossEncounterCount ?? 0
-        );
-        const raidEncounterCount = Number(
-          feature.properties.raidEncounterCount ?? 0
-        );
-        const importMetroName = feature.properties.importMetroName as string;
-
-        popupRef.current?.remove();
-
-        const popupContent = document.createElement('div');
-        popupContent.className = 'text-sm text-slate-700';
-
-        const title = document.createElement('div');
-        title.className = 'text-base font-semibold text-slate-800';
-        title.textContent = zoneName;
-        popupContent.appendChild(title);
-
-        const description = document.createElement('div');
-        description.className = 'mt-1 text-xs text-slate-600';
-        description.textContent = zoneDescription || 'No description.';
-        popupContent.appendChild(description);
-
-        if (importMetroName) {
-          const importMeta = document.createElement('div');
-          importMeta.className = 'mt-2 text-xs font-medium text-indigo-600';
-          importMeta.textContent = `Imported from ${importMetroName}`;
-          popupContent.appendChild(importMeta);
-        }
-
-        const meta = document.createElement('div');
-        meta.className = 'mt-2 text-xs text-slate-500';
-        meta.textContent = `Boundary points: ${boundaryCount}`;
-        popupContent.appendChild(meta);
-
-        const counts = document.createElement('div');
-        counts.className = 'mt-2 text-xs text-slate-500';
-        counts.textContent = `POIs: ${pointOfInterestCount} · Quests: ${questCount} · Archetypes: ${zoneQuestArchetypeCount}`;
-        popupContent.appendChild(counts);
-
-        const objectiveCounts = document.createElement('div');
-        objectiveCounts.className = 'mt-1 text-xs text-slate-500';
-        objectiveCounts.textContent =
-          `Challenges: ${challengeCount} · Scenarios: ${scenarioCount} · ` +
-          `Standard: ${standardEncounterCount} · Bosses: ${bossEncounterCount} · Raids: ${raidEncounterCount}`;
-        popupContent.appendChild(objectiveCounts);
-
-        const button = document.createElement('button');
-        button.className =
-          'mt-3 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700';
-        button.textContent = 'Open Zone';
-        button.addEventListener('click', () => {
-          popupRef.current?.remove();
-          navigate(`/zones/${zoneId}`);
-        });
-        popupContent.appendChild(button);
-
-        popupRef.current = new mapboxgl.Popup({ closeOnClick: true })
-          .setLngLat(event.lngLat)
-          .setDOMContent(popupContent)
-          .addTo(map);
+        setSelectedMapZoneId(zoneId);
       });
 
       handlersAttachedRef.current = true;
     }
-  }, [zones, navigate, mapLoaded, zoneSummaryByID]);
+  }, [
+    zones,
+    mapLoaded,
+    zoneSummaryByID,
+  ]);
+
+  const selectedMapZoneName =
+    selectedMapZoneSummary?.name?.trim() || selectedMapZone?.name?.trim() || '';
+  const selectedMapZoneImportMetroName =
+    selectedMapZoneSummary?.importMetroName?.trim() || '';
+  const selectedMapZonePointOfInterestCount =
+    selectedMapZoneSummary?.pointOfInterestCount ?? 0;
+  const selectedMapZoneQuestCount = selectedMapZoneSummary?.questCount ?? 0;
+  const selectedMapZoneQuestArchetypeCount =
+    selectedMapZoneSummary?.zoneQuestArchetypeCount ?? 0;
+  const selectedMapZoneChallengeCount =
+    selectedMapZoneSummary?.challengeCount ?? 0;
+  const selectedMapZoneScenarioCount = selectedMapZoneSummary?.scenarioCount ?? 0;
+  const selectedMapZoneStandardEncounterCount =
+    selectedMapZoneSummary?.standardEncounterCount ?? 0;
+  const selectedMapZoneBossEncounterCount =
+    selectedMapZoneSummary?.bossEncounterCount ?? 0;
+  const selectedMapZoneRaidEncounterCount =
+    selectedMapZoneSummary?.raidEncounterCount ?? 0;
 
   const allZoneBoundaries = zones
     .map((zone) => getZoneRing(zone))
@@ -1694,6 +1870,174 @@ export const Zones = () => {
           <div ref={mapContainer} className="h-full w-full" />
         </div>
       </div>
+      {selectedMapZoneId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          onClick={closeMapZoneModal}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  {selectedMapZoneName || 'Zone'}
+                </h2>
+                {selectedMapZoneImportMetroName ? (
+                  <div className="mt-2 text-sm font-medium text-indigo-600">
+                    Imported from {selectedMapZoneImportMetroName}
+                  </div>
+                ) : null}
+                <div className="mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Zone kind:{' '}
+                  {zoneKindLabel(
+                    currentSelectedMapZoneKindSlug,
+                    zoneKindBySlug
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeMapZoneModal}
+                className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Boundary Points
+                </div>
+                <div className="mt-2 text-xl font-semibold text-slate-900">
+                  {selectedMapZoneBoundaryCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Points Of Interest
+                </div>
+                <div className="mt-2 text-xl font-semibold text-slate-900">
+                  {selectedMapZonePointOfInterestCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Quests
+                </div>
+                <div className="mt-2 text-xl font-semibold text-slate-900">
+                  {selectedMapZoneQuestCount}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Archetypes: {selectedMapZoneQuestArchetypeCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Objective Content
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-700">
+                  Challenges: {selectedMapZoneChallengeCount} · Scenarios:{' '}
+                  {selectedMapZoneScenarioCount}
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-700">
+                  Standard: {selectedMapZoneStandardEncounterCount} · Bosses:{' '}
+                  {selectedMapZoneBossEncounterCount} · Raids:{' '}
+                  {selectedMapZoneRaidEncounterCount}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Assign Zone Kind
+              </div>
+              <input
+                type="text"
+                value={mapZoneKindSearchQuery}
+                onChange={(event) =>
+                  setMapZoneKindSearchQuery(event.target.value)
+                }
+                disabled={assigningMapZoneKind}
+                placeholder="Search zone kinds by name, slug, or description"
+                className="mt-3 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+              <select
+                value={selectedMapZoneKindSlug}
+                onChange={(event) =>
+                  setSelectedMapZoneKindSlug(event.target.value)
+                }
+                disabled={assigningMapZoneKind}
+                className="mt-3 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Unassigned</option>
+                {filteredMapZoneKinds.map((zoneKind) => (
+                  <option key={zoneKind.id} value={zoneKind.slug}>
+                    {zoneKind.name}
+                  </option>
+                ))}
+                {selectedMapZoneKindSlug &&
+                !filteredMapZoneKinds.some(
+                  (zoneKind) => zoneKind.slug === selectedMapZoneKindSlug
+                ) ? (
+                  <option value={selectedMapZoneKindSlug}>
+                    {selectedMapZoneKind?.name?.trim() ||
+                      selectedMapZoneKindSlug}
+                  </option>
+                ) : null}
+              </select>
+              <div className="mt-3 text-sm text-slate-500">
+                {!selectedMapZoneKindSlug
+                  ? 'Leave this zone unassigned.'
+                  : selectedMapZoneKind?.description?.trim() ||
+                    `Slug: ${selectedMapZoneKindSlug}`}
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleAssignSelectedMapZoneKind()}
+                disabled={
+                  assigningMapZoneKind ||
+                  selectedMapZoneKindSlug === currentSelectedMapZoneKindSlug
+                }
+                className="mt-4 rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:bg-slate-300"
+              >
+                {assigningMapZoneKind
+                  ? 'Assigning...'
+                  : selectedMapZoneKindSlug === currentSelectedMapZoneKindSlug
+                    ? 'Current Zone Kind'
+                    : selectedMapZoneKindSlug
+                      ? 'Assign Zone Kind'
+                      : 'Clear Zone Kind'}
+              </button>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => void handleQueueSelectedMapZoneFlavor()}
+                disabled={queueingMapZoneFlavor}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300"
+              >
+                {queueingMapZoneFlavor ? 'Queueing Flavor...' : 'Queue Flavor'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closeMapZoneModal();
+                  if (selectedMapZoneId) {
+                    navigate(`/zones/${selectedMapZoneId}`);
+                  }
+                }}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Open Zone
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -1812,11 +2156,12 @@ export const Zones = () => {
         <div className="mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="text-sm font-semibold text-slate-800">
-              Bulk Cleanup
+              Bulk Actions
             </div>
             <div className="mt-1 text-sm text-slate-500">
               {selectedZoneIds.size} selected overall,{' '}
-              {selectedFilteredZoneCount} in the current filter.
+              {selectedFilteredZoneCount} in the current filter. Queue flavor
+              jobs or flush content across the current selection.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1833,6 +2178,15 @@ export const Zones = () => {
               className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:opacity-60"
             >
               Clear Selection
+            </button>
+            <button
+              onClick={() => void handleQueueZoneFlavorForSelectedZones()}
+              disabled={selectedZoneIds.size === 0 || bulkQueueingZoneFlavor}
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300"
+            >
+              {bulkQueueingZoneFlavor
+                ? 'Queueing Flavor...'
+                : 'Queue Flavor Jobs'}
             </button>
             <button
               onClick={() => void handleFlushSelectedZones()}

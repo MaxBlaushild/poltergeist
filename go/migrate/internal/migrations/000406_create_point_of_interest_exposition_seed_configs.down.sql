@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS point_of_interest_exposition_seed_configs;
