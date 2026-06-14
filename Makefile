@@ -16,7 +16,7 @@ deps:
 
 PHONY: trivai/build
 trivai/build:
-	docker build -f ./deploy/services/trivai/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/trivai:latest .
+	docker build -f ./deploy/services/trivai/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/trivai:latest .
 
 PHONY: trivai/ecr-push
 trivai/ecr-push:
@@ -30,7 +30,7 @@ PHONY: texter/ecr-push
 texter/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/texter/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/texter:latest .
+	docker build -f ./deploy/services/texter/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/texter:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/texter:latest
 
@@ -38,7 +38,7 @@ PHONY: scorekeeper/ecr-push
 scorekeeper/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/scorekeeper/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/scorekeeper:latest .
+	docker build -f ./deploy/services/scorekeeper/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/scorekeeper:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/scorekeeper:latest
 
@@ -46,13 +46,13 @@ PHONY: fount-of-erebos/ecr-push
 fount-of-erebos/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/fount-of-erebos/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/fount-of-erebos:latest .
+	docker build -f ./deploy/services/fount-of-erebos/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/fount-of-erebos:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/fount-of-erebos:latest
 
 PHONY: crystal-crisis-api/build
 crystal-crisis-api/build:
-	docker build -f ./deploy/services/crystal-crisis-api/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis:latest .
+	docker build -f ./deploy/services/crystal-crisis-api/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis:latest .
 
 PHONY: crystal-crisis-api/ecr-push
 crystal-crisis-api/ecr-push:
@@ -66,7 +66,7 @@ PHONY: core/ecr-push
 core/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/core/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/core:latest .
+	docker build -f ./deploy/services/core/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/core:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/core:latest
 
@@ -74,13 +74,13 @@ PHONY: authenticator/ecr-push
 authenticator/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/authenticator/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest .
+	docker build -f ./deploy/services/authenticator/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest
 
 PHONY: admin/build
 admin/build:
-	docker build -f ./deploy/services/admin/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest .
+	docker build -f ./deploy/services/admin/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest .
 
 PHONY: admin/ecr-push
 admin/ecr-push:
@@ -92,7 +92,7 @@ admin/ecr-push:
 
 PHONY: billing/build
 billing/build:
-	docker build -f ./deploy/services/billing/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/billing:latest .
+	docker build -f ./deploy/services/billing/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/billing:latest .
 
 PHONY: billing/ecr-push
 billing/ecr-push:
@@ -104,7 +104,7 @@ billing/ecr-push:
 
 PHONY: sonar/build
 sonar/build:
-	docker build -f ./deploy/services/sonar/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest .
+	docker build -f ./deploy/services/sonar/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest .
 
 PHONY: sonar/ecr-push
 sonar/ecr-push:
@@ -120,7 +120,7 @@ sonar/ecs-update:
 
 PHONY: job-runner/build
 job-runner/build:
-	docker build -f ./deploy/services/job-runner/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest .
+	docker build -f ./deploy/services/job-runner/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest .
 
 PHONY: job-runner/ecr-push
 job-runner/ecr-push:
@@ -132,7 +132,7 @@ job-runner/ecr-push:
 
 PHONY: travel-angels/build
 travel-angels/build:
-	docker build -f ./deploy/services/travel-angels/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/travel-angels:latest .
+	docker build -f ./deploy/services/travel-angels/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/travel-angels:latest .
 
 PHONY: travel-angels/ecr-push
 travel-angels/ecr-push:
@@ -144,7 +144,7 @@ travel-angels/ecr-push:
 
 PHONY: final-fete/build
 final-fete/build:
-	docker build -f ./deploy/services/final-fete/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/final-fete:latest .
+	docker build -f ./deploy/services/final-fete/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/final-fete:latest .
 
 PHONY: final-fete/ecr-push
 final-fete/ecr-push:
@@ -156,7 +156,7 @@ final-fete/ecr-push:
 
 PHONY: ethereum-transactor/build
 ethereum-transactor/build:
-	docker build -f ./deploy/services/ethereum-transactor/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/ethereum-transactor:latest .
+	docker build -f ./deploy/services/ethereum-transactor/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/ethereum-transactor:latest .
 
 PHONY: ethereum-transactor/ecr-push
 ethereum-transactor/ecr-push:
