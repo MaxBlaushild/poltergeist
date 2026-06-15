@@ -14,7 +14,10 @@ export const QuizSection = ({
   const [subs, setSubs] = useState<GMQuizSubmission[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const loadSubs = () => gmListQuizSubmissions().then((d) => setSubs(d.submissions)).catch(() => {});
+  const loadSubs = () =>
+    gmListQuizSubmissions()
+      .then((d) => setSubs(d.submissions || []))
+      .catch(() => {});
   useEffect(() => {
     loadSubs();
     const id = setInterval(loadSubs, 6000);

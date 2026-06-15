@@ -18,7 +18,8 @@ export const QuizTakeover = ({ onDone }: { onDone: () => void }) => {
   useEffect(() => {
     getQuiz(token)
       .then((d) => {
-        setQuestions(d.questions);
+        const qs = d.questions || [];
+        setQuestions(qs);
         // Restore any unsent draft so a reload/blip mid-quiz keeps typed answers.
         let saved: Record<string, string> = {};
         try {
@@ -27,7 +28,7 @@ export const QuizTakeover = ({ onDone }: { onDone: () => void }) => {
           /* ignore */
         }
         const init: Record<string, string> = {};
-        d.questions.forEach((q) => (init[q.id] = saved[q.id] ?? q.answer ?? ''));
+        qs.forEach((q) => (init[q.id] = saved[q.id] ?? q.answer ?? ''));
         setAnswers(init);
         if (d.submitted) setDone(true);
       })

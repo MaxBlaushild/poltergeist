@@ -13,7 +13,7 @@ export const SubmissionsSection = () => {
   const load = () => {
     setLoading(true);
     gmListSubmissions(filter)
-      .then((d) => setSubs(d.submissions))
+      .then((d) => setSubs(d.submissions || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   };

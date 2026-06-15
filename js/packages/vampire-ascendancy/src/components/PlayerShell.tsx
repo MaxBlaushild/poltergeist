@@ -135,13 +135,14 @@ const TopNav = ({
   active: Tab;
   onSelect: (t: Tab) => void;
 }) => (
-  <nav className="sticky top-0 z-10 -mx-4 px-4 py-2 mb-4 bg-blood-ink/90 backdrop-blur-sm border-b border-blood/30">
-    <div className="flex gap-1 justify-center">
+  <nav className="sticky top-0 z-10 -mx-4 px-2 py-2 mb-4 bg-blood-ink/90 backdrop-blur-sm border-b border-blood/30">
+    {/* Tabs share the width equally and shrink to fit, so the bar never clips. */}
+    <div className="flex gap-1">
       {tabs.map((t) => (
         <button
           key={t}
           onClick={() => onSelect(t)}
-          className={`px-3 py-2 rounded-md text-xs sm:text-sm uppercase tracking-[0.15em] transition-colors ${
+          className={`flex-1 min-w-0 px-1 py-2 rounded-md text-center uppercase tracking-[0.08em] text-[11px] sm:text-sm transition-colors ${
             active === t ? 'bg-blood text-bone' : 'text-bone/80 hover:text-bone'
           }`}
         >
