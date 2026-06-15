@@ -2,4 +2,4 @@ dev:
 	npm run dev
 
 deploy:
-	yarn build && aws s3 sync dist s3://vampire-ascendancy.blaubertech.com
+	yarn build && aws s3 sync dist s3://vampire-ascendancy

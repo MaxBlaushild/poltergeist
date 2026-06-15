@@ -65,9 +65,8 @@ npm run dev --prefix js/packages/vampire-ascendancy
    core service. The vampire routes ship inside core.
 5. **Frontend**: add the house sigils (below), then `npm run build` in
    `js/packages/vampire-ascendancy` and deploy `dist/` to its static host.
-   > Hosting (S3 bucket + CloudFront/DNS) for the frontend still needs to be set
-   > up — the module `Makefile` `deploy` target points at
-   > `s3://vampire-ascendancy.blaubertech.com` as a placeholder.
+   > The module `Makefile` `deploy` target syncs `dist/` to
+   > `s3://vampire-ascendancy`.
 
 ## House sigils
 
