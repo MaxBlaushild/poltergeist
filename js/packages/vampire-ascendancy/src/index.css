@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --blood: #8a0303;
+    --blood-bright: #ef5350;
+    --blood-dim: #5c0000;
+    --blood-ink: #0a0306;
+    --bone: #f2ebdc;
+    --gold: #e8c87a;
+
+    font-family: 'EB Garamond', Georgia, serif;
+    line-height: 1.6;
+    font-weight: 400;
+    font-size: 17px;
+    color: var(--bone);
+    background-color: var(--blood-ink);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(138, 3, 3, 0.35), transparent 45%),
+      radial-gradient(circle at 80% 90%, rgba(92, 0, 0, 0.4), transparent 50%),
+      var(--blood-ink);
+  }
+}

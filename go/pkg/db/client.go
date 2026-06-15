@@ -183,6 +183,7 @@ type client struct {
 	socialAccountHandle                       *socialAccountHandler
 	insiderTradeHandle                        *insiderTradeHandle
 	feedbackItemHandle                        *feedbackItemHandle
+	vampireHandle                             *vampireHandler
 }
 
 type ClientConfig struct {
@@ -449,6 +450,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		socialAccountHandle:                       &socialAccountHandler{db: db},
 		insiderTradeHandle:                        &insiderTradeHandle{db: db},
 		feedbackItemHandle:                        &feedbackItemHandle{db: db},
+		vampireHandle:                             &vampireHandler{db: db},
 	}, nil
 }
 
@@ -1118,4 +1120,8 @@ func (c *client) InsiderTrade() InsiderTradeHandle {
 
 func (c *client) FeedbackItem() FeedbackItemHandle {
 	return c.feedbackItemHandle
+}
+
+func (c *client) Vampire() VampireHandle {
+	return c.vampireHandle
 }

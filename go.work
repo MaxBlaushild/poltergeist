@@ -36,4 +36,5 @@ use (
 	./go/texter
 	./go/travel-angels
 	./go/trivai
+	./go/vampire-ascendancy
 )

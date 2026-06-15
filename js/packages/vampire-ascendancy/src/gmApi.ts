@@ -1,0 +1,144 @@
+import { ApiError } from './api';
+import type { GameState, HouseStanding, House } from './types';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'https://api.unclaimedstreets.com';
+
+const PASS_KEY = 'vampireGMPass';
+const NAME_KEY = 'vampireGMName';
+
+export function getGMAuth() {
+  return {
+    pass: sessionStorage.getItem(PASS_KEY) || '',
+    name: sessionStorage.getItem(NAME_KEY) || '',
+  };
+}
+export function setGMAuth(pass: string, name: string) {
+  sessionStorage.setItem(PASS_KEY, pass);
+  sessionStorage.setItem(NAME_KEY, name);
+}
+export function clearGMAuth() {
+  sessionStorage.removeItem(PASS_KEY);
+  sessionStorage.removeItem(NAME_KEY);
+}
+
+async function gm<T>(path: string, init?: RequestInit): Promise<T> {
+  const { pass, name } = getGMAuth();
+  const res = await fetch(`${API_BASE}/vampire-ascendancy/gm${path}`, {
+    ...init,
+    headers: {
+      'X-GM-Passcode': pass,
+      'X-GM-Name': name,
+      'Content-Type': 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(message, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ---- Types ----
+export interface GMSubmission {
+  id: string;
+  status: string;
+  playerAnswer: string;
+  awardedBt: number;
+  guestLabel: string;
+  characterName: string;
+  houseName: string;
+  missionTier: string;
+  missionPrompt: string;
+  missionAnswerFormat: string;
+  rewardBt: number;
+}
+
+export interface GMPlayer {
+  id: string;
+  token: string;
+  guestLabel: string;
+  active: boolean;
+  btTotal: number;
+  character: { id: string; name: string; roleType: string; house?: string; sigil?: string } | null;
+}
+
+export interface GMCharacter {
+  id: string;
+  name: string;
+  title: string;
+  roleType: string;
+  isOptional: boolean;
+  house?: string;
+}
+
+// ---- Calls ----
+export const gmGetState = () => gm<GameState>('/state');
+export const gmSetUnlock = (unlocked: boolean) =>
+  gm<GameState>('/unlock', { method: 'POST', body: JSON.stringify({ unlocked }) });
+export const gmSetAct = (act: string) =>
+  gm<GameState>('/act', { method: 'POST', body: JSON.stringify({ act }) });
+export const gmResetGame = () =>
+  gm<{ ok: boolean }>('/reset', { method: 'POST', body: JSON.stringify({ confirm: 'RESET' }) });
+
+export const gmListHouses = () => gm<{ houses: House[] }>('/houses');
+export const gmAwardHF = (houseId: string, delta: number, reason: string) =>
+  gm<{ standings: HouseStanding[] }>('/hf', {
+    method: 'POST',
+    body: JSON.stringify({ houseId, delta, reason }),
+  });
+export const gmAwardBT = (playerId: string, delta: number, reason: string) =>
+  gm<{ ok: boolean }>('/bt', { method: 'POST', body: JSON.stringify({ playerId, delta, reason }) });
+
+export const gmListSubmissions = (status: string) =>
+  gm<{ submissions: GMSubmission[] }>(`/submissions?status=${encodeURIComponent(status)}`);
+export const gmVerify = (id: string, awardedBt?: number) =>
+  gm(`/submissions/${id}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(awardedBt != null ? { awardedBt } : {}),
+  });
+export const gmReject = (id: string) => gm(`/submissions/${id}/reject`, { method: 'POST' });
+
+export const gmPushNotification = (
+  title: string,
+  body: string,
+  scope: 'all' | 'house' | 'player',
+  targetId?: string
+) =>
+  gm<{ id: string }>('/notifications', {
+    method: 'POST',
+    body: JSON.stringify({ title, body, scope, targetId: targetId || '' }),
+  });
+export const gmClearNotifications = () =>
+  gm<{ ok: boolean }>('/notifications/clear', { method: 'POST' });
+
+export interface GMQuizSubmission {
+  id: string;
+  answer: string;
+  isCorrect: boolean | null;
+  locked: boolean;
+  guestLabel: string;
+  characterName: string;
+  houseName: string;
+  ordinal: number;
+  prompt: string;
+  questionType: string;
+}
+
+export const gmSetQuizOpen = (open: boolean) =>
+  gm<GameState>('/quiz/open', { method: 'POST', body: JSON.stringify({ open }) });
+export const gmListQuizSubmissions = () =>
+  gm<{ submissions: GMQuizSubmission[] }>('/quiz/submissions');
+
+export const gmListPlayers = () => gm<{ players: GMPlayer[] }>('/players');
+export const gmUpdatePlayer = (
+  id: string,
+  body: { characterId: string | null; guestLabel: string; active: boolean }
+) => gm(`/players/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+export const gmListCharacters = () => gm<{ characters: GMCharacter[] }>('/characters');

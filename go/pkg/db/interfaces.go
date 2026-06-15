@@ -176,7 +176,78 @@ type DbClient interface {
 	SocialAccount() SocialAccountHandle
 	InsiderTrade() InsiderTradeHandle
 	FeedbackItem() FeedbackItemHandle
+	Vampire() VampireHandle
 	Exec(ctx context.Context, q string) error
+}
+
+// VampireHandle is the consolidated data access for the Vampire Ascendancy
+// (The Crimson Toast) event app. All vampire_* table access goes through here.
+type VampireHandle interface {
+	// Houses
+	ListHouses(ctx context.Context) ([]models.VampireHouse, error)
+	GetHouseByID(ctx context.Context, id uuid.UUID) (*models.VampireHouse, error)
+	ListCharactersByHouse(ctx context.Context, houseID uuid.UUID) ([]models.VampireCharacter, error)
+	ListHouseFavorLog(ctx context.Context, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error)
+	UpsertHouse(ctx context.Context, name string, sortOrder int) (*models.VampireHouse, error)
+
+	// Characters / secrets / missions
+	UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error)
+	GetCharacterByName(ctx context.Context, name string) (*models.VampireCharacter, error)
+	GetCharacterByID(ctx context.Context, id uuid.UUID) (*models.VampireCharacter, error)
+	ListCharacters(ctx context.Context) ([]models.VampireCharacter, error)
+	SetCharacterPassword(ctx context.Context, characterID uuid.UUID, password string) error
+	GetActivePlayerByCharacterID(ctx context.Context, characterID uuid.UUID) (*models.VampirePlayer, error)
+	ReplaceSecrets(ctx context.Context, characterID uuid.UUID, secrets []models.VampireSecret) error
+	ReplaceMissions(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error
+	GetMissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMission, error)
+
+	// Players
+	CreatePlayer(ctx context.Context, p *models.VampirePlayer) error
+	GetPlayerByToken(ctx context.Context, token string) (*models.VampirePlayer, error)
+	GetPlayerByID(ctx context.Context, id uuid.UUID) (*models.VampirePlayer, error)
+	ListPlayers(ctx context.Context) ([]models.VampirePlayer, error)
+	UpdatePlayerAssignment(ctx context.Context, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
+
+	// Mission submissions
+	UpsertMissionSubmission(ctx context.Context, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error)
+	ListSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireMissionSubmission, error)
+	ListSubmissions(ctx context.Context, statusFilter string) ([]models.VampireMissionSubmission, error)
+	ListSubmissionsDetailed(ctx context.Context, statusFilter string) ([]SubmissionDetail, error)
+	GetSubmissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMissionSubmission, error)
+	UpdateSubmissionStatus(ctx context.Context, id uuid.UUID, status string, awardedBT int, verifiedBy string) error
+
+	// House Favor
+	AddHouseFavor(ctx context.Context, entry *models.VampireHouseFavorLedger) error
+	Leaderboard(ctx context.Context) ([]HouseFavorStanding, error)
+
+	// Blood Tokens
+	AddBloodTokens(ctx context.Context, entry *models.VampireBloodTokenLog) error
+	BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodTokenTotal, error)
+
+	// Game state
+	GetGameState(ctx context.Context) (*models.VampireGameState, error)
+	UpdateGameState(ctx context.Context, updates map[string]interface{}) (*models.VampireGameState, error)
+
+	// Notifications
+	CreateNotification(ctx context.Context, n *models.VampireNotification) error
+	DeactivateAllNotifications(ctx context.Context) error
+	ListActiveNotifications(ctx context.Context) ([]models.VampireNotification, error)
+	GetActiveNotificationForPlayer(ctx context.Context, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error)
+
+	// Quiz
+	ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	ReplaceQuizQuestions(ctx context.Context, questions []models.VampireQuizQuestion) error
+	GetQuizQuestionByID(ctx context.Context, id uuid.UUID) (*models.VampireQuizQuestion, error)
+	ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error)
+	UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
+	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
+	ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error)
+
+	// GM audit log
+	LogGMAction(ctx context.Context, gmName, action string, payload []byte) error
+
+	// Playtest reset
+	ResetGameProgress(ctx context.Context) error
 }
 
 type ScoreHandle interface {

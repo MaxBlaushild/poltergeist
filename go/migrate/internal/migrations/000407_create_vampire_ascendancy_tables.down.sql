@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS vampire_gm_action_log;
+DROP TABLE IF EXISTS vampire_quiz_submissions;
+DROP TABLE IF EXISTS vampire_quiz_questions;
+DROP TABLE IF EXISTS vampire_notifications;
+DROP TABLE IF EXISTS vampire_game_state;
+DROP TABLE IF EXISTS vampire_blood_token_log;
+DROP TABLE IF EXISTS vampire_house_favor_ledger;
+DROP TABLE IF EXISTS vampire_mission_submissions;
+DROP TABLE IF EXISTS vampire_players;
+DROP TABLE IF EXISTS vampire_missions;
+DROP TABLE IF EXISTS vampire_secrets;
+DROP TABLE IF EXISTS vampire_characters;
+DROP TABLE IF EXISTS vampire_houses;
