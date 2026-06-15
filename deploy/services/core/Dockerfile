@@ -13,6 +13,7 @@ COPY ./go/core/go.mod ./go/core/go.sum ./core/
 COPY ./go/pkg ./pkg
 COPY ./go/sonar/go.mod ./go/sonar/go.sum ./sonar/
 COPY ./go/travel-angels/go.mod ./go/travel-angels/go.sum ./travel-angels/
+COPY ./go/vampire-ascendancy/go.mod ./go/vampire-ascendancy/go.sum ./vampire-ascendancy/
 COPY ./go/verifiable-sn/go.mod ./go/verifiable-sn/go.sum ./verifiable-sn/
 
 WORKDIR /usr/home/app/core
@@ -27,6 +28,7 @@ COPY ./go/core ./core
 # COPY ./go/final-fete ./final-fete
 COPY ./go/sonar ./sonar
 COPY ./go/travel-angels ./travel-angels
+COPY ./go/vampire-ascendancy ./vampire-ascendancy
 COPY ./go/verifiable-sn ./verifiable-sn
 
 # RUN cd ./trivai

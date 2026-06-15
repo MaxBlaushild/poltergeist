@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
 	travelangels "github.com/MaxBlaushild/poltergeist/travel-angels/pkg"
+	vampireascendancy "github.com/MaxBlaushild/poltergeist/vampire-ascendancy/pkg"
 	verifiablesn "github.com/MaxBlaushild/poltergeist/verifiable-sn/pkg"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -17,20 +18,22 @@ import (
 type server struct {
 	router *gin.Engine
 	// finalFeteServer    finalfete.Server
-	sonarServer        sonar.Server
-	travelAngelsServer travelangels.Server
-	verifiableSnServer verifiablesn.Server
-	texterClient       texter.Client
+	sonarServer             sonar.Server
+	travelAngelsServer      travelangels.Server
+	verifiableSnServer      verifiablesn.Server
+	vampireAscendancyServer vampireascendancy.Server
+	texterClient            texter.Client
 }
 
 // NewServer creates a new server instance
-func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, texterClient texter.Client) *server {
+func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, vampireAscendancyServer vampireascendancy.Server, texterClient texter.Client) *server {
 	return &server{
 		// finalFeteServer:    finalFeteServer,
-		sonarServer:        sonarServer,
-		travelAngelsServer: travelAngelsServer,
-		verifiableSnServer: verifiableSnServer,
-		texterClient:       texterClient,
+		sonarServer:             sonarServer,
+		travelAngelsServer:      travelAngelsServer,
+		verifiableSnServer:      verifiableSnServer,
+		vampireAscendancyServer: vampireAscendancyServer,
+		texterClient:            texterClient,
 	}
 }
 
@@ -84,6 +87,7 @@ func (s *server) ListenAndServe(port string) {
 	s.sonarServer.SetupRoutes(router)
 	s.travelAngelsServer.SetupRoutes(router)
 	s.verifiableSnServer.SetupRoutes(router)
+	s.vampireAscendancyServer.SetupRoutes(router)
 
 	// Champagne endpoint - sends celebratory text
 	router.POST("/champagne", func(c *gin.Context) {

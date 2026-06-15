@@ -1,0 +1,26 @@
+[
+  {
+    "ordinal": 1,
+    "prompt": "Who poisoned the wine meant for the Marquess's heir?",
+    "questionType": "multiple_choice",
+    "options": ["Orla Thass", "Marquess Gruber", "Valen Drear", "Doctor Thorne Virell"],
+    "correctAnswer": "Marquess Gruber",
+    "hfEffect": { "Marquess's Court": 2 }
+  },
+  {
+    "ordinal": 2,
+    "prompt": "Which house secretly engineered the necromantic revival at the heart of tonight's events?",
+    "questionType": "multiple_choice",
+    "options": ["Spires", "Chains", "Cinders", "Ashglass"],
+    "correctAnswer": "Ashglass",
+    "hfEffect": { "Ashglass": 2, "Spires": -1 }
+  },
+  {
+    "ordinal": 3,
+    "prompt": "In your own words: who do you believe is truly behind the conspiracy, and why?",
+    "questionType": "open",
+    "options": [],
+    "correctAnswer": "",
+    "hfEffect": {}
+  }
+]

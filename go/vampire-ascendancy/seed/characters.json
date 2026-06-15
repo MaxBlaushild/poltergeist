@@ -1,0 +1,1553 @@
+{
+  "houses": [
+    {
+      "name": "Spires",
+      "sort_order": 0
+    },
+    {
+      "name": "Chains",
+      "sort_order": 1
+    },
+    {
+      "name": "Cinders",
+      "sort_order": 2
+    },
+    {
+      "name": "Ashglass",
+      "sort_order": 3
+    },
+    {
+      "name": "Marquess's Court",
+      "sort_order": 4
+    }
+  ],
+  "characters": [
+    {
+      "name": "Valen Drear",
+      "title": "The Revived Challenger",
+      "house": "Spires",
+      "role_type": "gm",
+      "is_optional": false,
+      "pre_event_info": "Once the most feared taster in the Crimson Court, Valen collapsed at last year's Toast and was secretly revived by the Marquess using an ancient necromantic spell. What fewer people know is that Valen is Gruber's thrall — bound to her through the revival ritual. The bond is imperfect, degrading, and causing him increasing difficulty controlling his own actions. He was passed over for the succession in favor of Caspian because a known thrall as heir would be too conspicuous. Valen is furious. His degraded bond means that fury occasionally escapes in ways that have started to attract attention. He is the inciting incident of Act 1 — stepping forward to claim the throne when Caspian fails to appear, forcing Gruber to publicly acknowledge his revival and invoke the tournament.",
+      "post_act1_context": "Won the Crimson Toast three years running before last year's incident. His senses are slightly diminished since the revival. Has been behaving erratically at recent Court gatherings — distracted, occasionally incoherent, as though arguing with himself. Tonight is his first public appearance since last year's Toast.",
+      "secrets": [
+        "I am bound to the Marquess. The revival came with a price I did not fully understand until it was too late. The bond has been degrading — I feel it fraying at the edges. I have said things I did not intend to say. I do not always know when it happens.",
+        "Caspian was also bound to her. I knew this. I could not say it directly — the bond does not allow it. This morning I tried anyway, in the only way left to me: an unsigned note to the one who pours, warning her not to serve the wine tonight. I could not sign it. I could not even hold the pen steady. Whether what I did or said was enough to change anything, I do not know. I may never know."
+      ],
+      "missions": []
+    },
+    {
+      "name": "Aurel Voss",
+      "title": "The Challenger",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Young, volatile, and hungry. You are Valen's sibling by blood but his opposite in temperament. Where Valen is calculating, you are explosive. You have no formal position within House Spires — your standing comes entirely from your bloodline and your record in physical competition. You were seen arguing violently with Valen before last year's tasting and tried to interfere with his preparation for the Duel. It hasn't helped your standing. Mara Voss is your niece once removed. You have been watching her closely lately.",
+      "post_act1_context": "You have never fully understood why Valen behaves the way he does — something changed after his revival and you find it unsettling in a way you haven't been able to name. You recently noticed Mara acting strangely around Eiran Vox and confronted him two nights ago. He confirmed your fears without apology – Mara is bound to him. You have told no one, as you know the webs he is capable of spinning.",
+      "secrets": [
+        "Mara Voss is my niece once removed. I noticed her acting strangely around Eiran Vox and confronted him directly near the east wing a month ago. He confirmed my fears without apology — Mara is bound to him. I have not revealed this to others. I know what Eiran does to people who move against him.",
+        "While I am next after Valen in Spires succession, if Caspian is gone the line rotates to a new house: first Ashglass, then Court, then Chains, then finally back to Spires. I have read the Sanguine Statutes on this more than once. I know exactly where I sit in the order and how many people would need to be removed before my name becomes relevant. Tonight I believe that others in this room have done the same calculation."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Represent Spires in at least one physical game.",
+          "answer_format": "Enter the name of the game you played in."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Share what you know about Mara Voss and Eiran with at least two players from different houses.",
+          "answer_format": "Enter the character names of the two players you spoke with."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Spread a damaging rumor about an Ashglass member — true or invented — to as many players as possible before Act 3 ends. If the rumor appears in at least two players' open-ended quiz answers, House Ashglass loses 2 HF and House Spires gains 2 HF. If it doesn't surface in the quiz, nothing happens. (Note: 6 BT are awarded immediately; additional HF bonuses will be assessed at the end.)",
+          "answer_format": "Enter what the rumor was and who you told."
+        }
+      ]
+    },
+    {
+      "name": "Tavish Ashte",
+      "title": "The Blood Purist",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Precise, proud of your work, and quietly indispensable. You are Spires' blood purity officer — responsible for testing and certifying the blood of every Spires member. Pedigree, chemical composition, contamination screening: if it flows through a Spires vein, you have catalogued it. You have held this role for thirty years and take it with a seriousness that other houses find faintly comic.",
+      "post_act1_context": "You have run purity tests on every Spires member this season, along with one member of another house, as a favor to Aurel Voss. Most were routine. Two were not. You have been sitting with both observations all evening, uncertain whether what you found falls within your remit to report — and if so, to whom.",
+      "secrets": [
+        "Earlier this season I ran Valen Drear's standard purity test. It's something I do for all Spires members. His blood was contaminated and degraded in a way I have not seen before; by another vampire's blood - one from outside House Spires. I noted it, filed it, and said nothing. I suspect it is related to Valen's revival.",
+        "Three weeks before tonight's ceremony, Aurel Voss came to me privately and asked a personal favor - a pedigree verification on his niece once removed, Mara Voss of Ashglass. She is not Spires and would not normally fall within my remit, but Aurel has seniority and I owed him one. I ran it. Her blood was wrong. There was a compound present I did not recognize, consistent with nothing in my reference records. I have not yet told Aurel what I found."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Identify one other character who has noticed something unusual about Valen, tainted blood, or the blood stores this season.",
+          "answer_format": "Enter their character name and what they observed."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Buy or barter for the pH measurement device and use it to pH test another player's wine - either knowingly or unknowingly.",
+          "answer_format": "Enter the name of the player whose wine you tested and the pH it registered as."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Some tainted blood has entered circulation as a blood token. The taint effects the color of the blood in the blood token in a dramatic and noticable way. Talk to other players to identify who has it and procure it by any means necessary (trade, steal, etc).",
+          "answer_format": "Enter the color of the tainted blood and which player you acquired it from."
+        }
+      ]
+    },
+    {
+      "name": "Draga Mourne",
+      "title": "The Reluctant Conscript",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Composed, watchful, and more calculating than she appears. You are a Spires member by marriage — you came into the house from House Cinders through an arrangement made a decade ago and have spent every year since proving you belong here. You are distantly related to Velka Mourne of Chains, a fact you neither hide nor advertise. You observe more than you speak, which means people routinely underestimate what you know and how long you have known it.",
+      "post_act1_context": "You have been watching the room since the ceremony began with particular attention to the Marquess and to Valen. Something in the dynamic between them tonight is not what it was at last year's Toast. Valen is being managed — subtly, consistently, by someone who knows exactly which pressure points to use. You have seen that kind of management before. You know what it usually means.",
+      "secrets": [
+        "I have been watching Valen closely this evening. His behavior is not erratic in the way of someone who has drunk too much or is under pressure. It is erratic in a very specific way — he recovers too quickly, corrects himself mid-sentence, and defers to the Marquess in moments where I would expect him to push back. I have seen a person in a collar before. Not a literal one. I know what I am looking at.",
+        "My cousin Velka Mourne sent me a message before tonight's ceremony, asking me to find out whether anyone in Cinders had been acting strangely around blood stores or making unusual cellar requests. She didn't explain why, but I am keeping my eyes and ears open."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Find Velka Mourne of Chains and speak with her in character before Act 2 ends. Report back to at least one Spires member with what she told you.",
+          "answer_format": "Enter what Velka told you."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find a player from House Ashglass who also has observations, suspicions, or knowledge about Valen's odd behavior this season. Note anything specific they mention that you didn't already know.",
+          "answer_format": "Enter the character name of your source and what they told you that you didn't already know."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Use your connection to Velka Mourne to extract a piece of Chains intelligence from any Chains player and deliver it to all members of your Spires house. On confirmation, House Chains loses 2 HF.",
+          "answer_format": "Enter what you extracted and how you obtained it."
+        }
+      ]
+    },
+    {
+      "name": "Elira Salk",
+      "title": "The Archivist's Spy",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Quiet, methodical, and not what you appear. Your official role is Spires house scholar — you maintain the house's private archive vault, cataloguing lineage records, correspondence, and house intelligence. In practice you are Father Mirth's plant: you have been feeding him information about Spires' internal affairs for over a year. You believe what you are doing is right. You are aware not everyone would agree. You are good at being overlooked and have cultivated that quality deliberately.",
+      "post_act1_context": "You have access to the Spires private document vault and have spent the past year feeding Father Mirth whatever crosses it. Lately his requests have pointed outward, toward his own archive — he has had you watching the Ashglass stacks and who moves through them. Several months ago, you noticed Sevrin Delle in the Ashglass archive wing with a book he had no business touching. And about a month ago, watching the archive entrance at Mirth's request, you saw something you have not stopped thinking about. Tonight you are watching to see how the pieces fit.",
+      "secrets": [
+        "Several months before tonight's ceremony I noticed Sevrin Delle deep in the Ashglass archive wing. He had no business being there — Sevrin is Chains, and the restricted stacks require a special access code he should not have. He had a book open in front of him and was copying something from it in haste. When he saw me, he closed it, returned it to the shelf, and left without a word. I have not mentioned it to anyone.",
+        "I am Father Mirth's eyes inside Spires, but my usefulness is not limited to my own house - he asks me to watch the archive comings and goings as well. About a month before tonight's ceremony, at his request, I was observing the Ashglass archive entrance when I saw Ivara Saye and Calven Rue speaking privately. The conversation lasted barely a minute. Calven looked deeply uncomfortable. Ivara handed him something resembling a small purse, then turned and walked away. I reported it to Mirth as I report everything. I do not know what he made of it."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Buy at least one Wall of Whispers clue and share what you learned with someone from your own house.",
+          "answer_format": "Enter which tier clue you bought and the character name of the Spires member you shared it with."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Deliver a House Spires secret — yours or someone else's within your house — to Father Mirth of Ashglass in person.",
+          "answer_format": "Enter what you shared with him."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Act as a double agent: share one piece of Spires intelligence with Ashglass AND one piece of Ashglass intelligence back with Spires. Neither side should know you are doing both. Minus 3 BT if another player mentions your duplicity in the final quiz.",
+          "answer_format": "Enter both exchanges — what you shared with each side and with whom."
+        }
+      ]
+    },
+    {
+      "name": "Mira Ashvane",
+      "title": "The Court Gossip",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "You are a long-standing fixture of the Crimson Toast circuit — a Court socialite who has attended every Toast for the last few centuries and is personally acquainted with at least one member of every house. You have no official role; your value is purely social, and it is considerable. You know everyone's business and you cannot help sharing it. Sharp-tongued, socially fearless, and genuinely warm beneath the chatter. Where Isla Vern is the person people choose to confide in, you are the person who finds things out whether anyone chooses to tell you or not. You see, you notice, and you talk — loudly, colorfully, and immediately. People find this charming. Occasionally they find it catastrophic. You have never much cared which.",
+      "post_act1_context": "Your old friend Orren Mast, the groundskeeper, confided in you recently that he had fallen for the mortal woman at the gate — and was bitter to discover her heart belonged to Caspian. Now Caspian has failed to appear, and you cannot help wondering about the edge in Orren's voice when he spoke of him. Separately, yesterday evening you saw a member of House Cinders moving through the estate carrying several small dark vials. He avoided eye contact and changed direction when he saw you. You don't know what was in those vials, but have wondered if they contained some kind of poison.",
+      "secrets": [
+        "Orren Mast and I were involved once, years ago. It ended quietly and we stayed friendly; he is one of the few who still talks to me like a person rather than a source. A few weeks ago he confided that he had taken a liking to the mortal woman who kept coming to the gate, and was stung to learn her heart belonged to Caspian. He spoke of Caspian with a bitterness I had not heard from him before. Now Caspian has failed to appear tonight, and I find myself wondering how far that bitterness could have taken him.",
+        "Yesterday evening I saw a member of House Cinders moving through the estate carrying several small dark vials. He avoided eye contact and changed direction when he saw me. I don't know what was in those vials, but have been wondering if they contained a poison of sorts. I plan to tell others what I saw."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Introduce yourself in character to at least one member of every house before Act 2 ends.",
+          "answer_format": "Enter one character name from each house you spoke with."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Spread the gossip that Orren shared with you (his lust for the mortal women and bitterness towards Caspian) to at least two players outside of Spires, and spread the story of what you saw yesterday (the guest with dark vials) to at least two additional non-Spires players. These four players must be different players than those who you introduced yourself to in Mission 1. Note their reactions.",
+          "answer_format": "Enter all four character names, which secret to you shared with each, and one word describing each person's reaction."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "By Act 3, be able to name one piece of private information — a secret, observation, or relic — held by at least one player from each of the five houses. You don't need to have shared it. You just need to know it.",
+          "answer_format": "Enter one character name per house and the piece of information you learned from or about them."
+        }
+      ]
+    },
+    {
+      "name": "Orren Mast",
+      "title": "The Scorned Groundskeeper",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Prideful but often reclusive, you are the estate's groundskeeper. You are a Spires member by blood and proud of your work, even if the work is solitary. You tend the paths, the gardens, and the quiet corners no one else thinks about, and you have done it long enough that many people have stopped seeing you entirely. A man with a rake and a lantern can stand anywhere on these grounds at any hour and no one wonders why. This sort of anonymity suits you; most of the time. You notice what changes, who comes and goes, and who thinks they are unobserved. Lately, a great deal has been happening on your grounds after dark.",
+      "post_act1_context": "You do not believe the heir departed voluntarily; and you have reason to have paid closer attention than most. A mortal woman, Lena, came to the estate more than once in the weeks before the ceremony. You spoke with her at the gate while she waited; she was warm, easy to talk to, and for a little while you let yourself imagine the conversations meant something. Then you learned the truth: she was there for Caspian, only ever for Caspian, and you felt a fool for not seeing it sooner. You resented Caspian for it - the heir who had everything. But with Caspian failing to appear tonight, you know how this could look. You did nothing; but you are not sure anyone would believe you.",
+      "secrets": [
+        "In the weeks before the ceremony I spoke with the mortal woman, Lena, more than once while she waited at the gate. I will admit I was taken with her. I will also admit I was a fool — her heart was set on Caspian Vael and no one else, and I realized it too late to keep my pride intact. I resented Caspian for it and I will not pretend otherwise. Now he has failed to appear tonight, and I find I am not sorry.",
+        "More than once this season I have seen a small group meeting in the far corners of the estate; the old orchard, the disused walks — where no one has reason to be after dark. The same faces, always careful, always low voices. I recognized Brother Aldric Voss as the one leading the discussion, but never got close enough to hear what he preached. It is my view that people do not meet like that unless they are planning something they would not say in daylight."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Attempt to convince one player from another house that Caspian did not depart voluntarily.",
+          "answer_format": "Enter their character name and what piece of evidence you used to try to convince them."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Tell at least three players from different houses that Caspian's office rejected your formal research proposal two years ago with wording that was needlessly personal — and ask if they know anything about it.",
+          "answer_format": "Enter the character names of the three players you spoke with. You have spent more time on these grounds at night than anyone. Tell at least three players from different houses about the secret meetings you witnessed in the far corners of the estate, and try to learn who else might know what they were about. Enter the character names of the three players you spoke with and anything you learned."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "As a court security guard, you have legitimate reason to ask questions about who entered and exited the estate in the 24 hours before the ceremony. Find at least two players who noted odd behavior or abnormalities about who arrived the night before the ceremony or nights leading up to it.",
+          "answer_format": "Enter both character names and what each one told you about the odd comings and goings. As groundskeeper you know these grounds better than anyone, and little escapes your notice after dark. Find at least two players who observed something unusual on the estate in the nights before the ceremony, and piece their accounts together with your own. Enter both character names and what each one told you about the odd comings and goings."
+        }
+      ]
+    },
+    {
+      "name": "Siriah Vellum",
+      "title": "The Disinherited",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Elegant, quietly furious, and perpetually underestimated. You are Valen Drear's half-sibling - born outside the formal line, and Valen has never let you forget it. Five years ago, when his star rose within Spires, he leveraged your illegitimacy to have you stripped from the succession register entirely. He didn't manage to exile you from the house, but he didn't need to. You have been working the Court's edges ever since, collecting favors, brokering small arrangements, and building the kind of quiet influence that doesn't appear in any register. You are patient in the way that only truly angry people can be.",
+      "post_act1_context": "Valen's behavior has been increasingly erratic this past season - distracted, occasionally incoherent, undermining the very authority he used to take what was yours. You have been watching it carefully, looking for a way to use it. A few days ago, a key appeared on the floor of your bedroom chambers with no note and no explanation. You suspect someone wants you to use it; possibly someone who wants whatever is in the Marquess's private cellar to be seen. Tonight, with the succession suddenly uncertain, your name feels less permanently buried than it did this morning.",
+      "secrets": [
+        "I have been watching my half-brother closely this season. I know his tells better than anyone alive, and I have been looking for weaknesses I can use. What I have found unsettles me more than it pleases me. Valen does not behave like a man recovering from a hard revival. He stops mid-sentence and stares at nothing. He defers to the Marquess in moments where the brother I knew would have fought her. Twice I have seen his hands shake. I do not have the learning to name what is wrong with him — but I know it is not grief, and it is not drink. Something has been done to him.",
+        "A few days ago, a key appeared on the floor of my bedroom chambers with no note and no explanation. I do not know who sent it, but suspect someone wants me to use it — possibly someone who wants whatever is in the Marquess's private cellar to be seen. I plan to use it to gain access to her cellar to investigate tonight."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Introduce yourself in character to at least three players from other houses before Act 2 ends.",
+          "answer_format": "Enter the character names of the three players you introduced yourself to."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Share both of your secrets with a player from a rival house — in exchange for one of theirs.",
+          "answer_format": "Enter the character name of who you exchanged with, what you shared, and what you received."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "You possess a cellar key of unclear origin. Before the end of Act 2, find the Marquess's private cellar and use your key to gain access. After viewing the cellar, drop the key off at the Reliquary to enter it into inventory. Report back to at least one Spires member with what you found or learned in the cellar. Note, only half points (3 BT) will be awarded if the key is entered into the Reliquary during Act 3 or later.",
+          "answer_format": "Enter what you discovered in the cellar and who in Spires you told."
+        }
+      ]
+    },
+    {
+      "name": "Sova Vane",
+      "title": "The Disgraced Duelist",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Precise, proud, and carrying a grievance like a blade kept sharp through daily use. You were once considered the finest wine taster in House Spires — twice runner-up in the Crimson Duel, positioned to win this year. Three weeks ago you were quietly removed from the competition roster by the Marquess's Court on grounds you were never formally given. No hearing. No appeal. You have been looking for ways to get back at the Court ever since.",
+      "post_act1_context": "Tonight you have been pursuing one lead in particular: you have heard that Siriah Vellum holds a cellar key of unknown origin. If it opens the Marquess's private cellar, whatever is stored there could be exactly the kind of leverage you need. You have been looking for the right moment to ask Siriah about it.",
+      "secrets": [
+        "My removal from the competition roster three weeks ago came from the Marquess's Court with no explanation and no right of appeal. Someone used official channels to cut me out and left no trace. I intend to find out who — and make it cost them.",
+        "I was near the east wing a month before the ceremony and overheard an argument — sharp, brief, conducted in lowered voices that carried anyway. One voice I recognized as Eiran Vox. The other I did not. The words I caught were: 'not your arrangement to make' and 'it is already done.' I have been thinking about Eiran differently ever since."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Tell at least three players from different houses that you were removed from the competition roster by the Marquess's Court without explanation and ask if they know anything about it.",
+          "answer_format": "Enter the character names of the three players you spoke with."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Siriah Vellum and get her to tell you what she knows about the cellar key she carries — where it came from, what it opens, or what she intends to do with it.",
+          "answer_format": "Enter what she told you."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Investigate why you were removed from the competition roster without explanation and determine the real reason - to do so, you must ask the right questions and get confirmation from the player/character who initiated it.",
+          "answer_format": "Enter the name of the character who initiated your removal and his/her reason for doing so."
+        }
+      ]
+    },
+    {
+      "name": "Coro Vane",
+      "title": "The Debt Collector",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Everyone owes Chains something. Your role within the house is informal but understood: you are the person who tracks debts, enforces obligations, and ensures that favors extended by Chains are eventually repaid. Blunt in the way only someone with significant leverage can afford to be. You carry a mental ledger of every favor, debt, and obligation owed to your house and you do not forget entries.",
+      "post_act1_context": "You paid Vex Harrow of House Ashglass to conduct surveillance on the heir's movements outside the estate and report back to Chains. The reports were useful — until they stopped three weeks ago without explanation. You have tried to recover the missing intelligence and Vex has been evasive every time. Something he saw near the mill road made him go quiet. You came here tonight partly to collect that debt in person. You had also been watching the Marquess's interactions with Caspian in the last few weeks and finding them unusual.",
+      "secrets": [
+        "I paid Vex Harrow of House Ashglass to conduct surveillance on the heir's movements outside the estate and report back to Chains. The reports were useful. Then three weeks ago they stopped with no explanation. I have tried to recover the missing intelligence. Vex has been evasive. Something he saw near the mill road made him stop. I intend to find out what.",
+        "Several months ago I was at the estate late and passed the Marquess's private drawing room. The door was ajar. Inside, the Marquess and Caspian were sharing wine — just the two of them, no staff, no ceremony. She was pouring. He was laughing at something she had said. I have been turning it over ever since. It did not look like a ruler and her heir. It looked like something else entirely."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Approach Pax Delenne and remind him in character that his appointment exists because you vouched for him. Ask him to perform one task on your behalf before Act 3. It can be any task you name - as small as a handshake or as large as a payment in blood tokens, etc.",
+          "answer_format": "Enter what you asked Pax to do and whether he agreed."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Vex Harrow owes Chains a debt for his unfinished surveillance contract. Find him and collect — get him to tell you what he saw near the mill road that made him stop filing reports, threatening to remove House Favor from Ashglass should he fail to answer. If Vex refuses the negotiation, the mission fails, but you can remove 1 HF from Ashglass in return.",
+          "answer_format": "Enter what Vex told you if the mission succeeded. Enter \"Fail\" if you were unable to extract an answer and 1 HF will be deducted from House Ashglass."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "The final outstanding debt you must deal with comes from the Marquess's Court. Find Maret Solle and formally request repayment for the intercepted letter she never delivered to Mistress Anbarin. The repayment can be information, a relic, or a BT transfer, but must be something they give you that they would not have given freely.",
+          "answer_format": "Enter what repayment Maret gave you."
+        }
+      ]
+    },
+    {
+      "name": "Isla Vern",
+      "title": "The Courtesan — The Accomplice",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Glamorous, clever, and emotionally perceptive. You are a Court socialite — no official role, but a social presence that most officials would envy. You know everyone's emotional state before they do and operate through connection rather than calculation. Where Mira Ashvane broadcasts everything she sees the moment she sees it, you are the person people come to deliberately — because they trust you, because you listen, and because they believe you will be careful with what they share. You and Ivara Saye are close friends — an unlikely pairing, the socialite and the zealot, but genuine. You are one of the few people she trusts enough to speak to informally.",
+      "post_act1_context": "Two things happened in the months before tonight's ceremony that you passed on to Ivara without fully understanding what you were handing her. First, Velka Mourne mentioned to you that something unusual had come through the blood cellar recently — she was vague on the details, just wondering aloud if someone important might be ill. Second, Caspian himself had approached you weeks earlier asking if you knew anyone in the Court who could locate old or obscure information discreetly. You pointed him to Silas Venn. It seemed like a harmless referral. When you mentioned both things to Ivara she went very quiet. She thanked you and changed the subject. You have not asked her what she did with any of it.",
+      "secrets": [
+        "Months before tonight's ceremony, Caspian approached me looking for someone who could locate obscure information discreetly. I pointed him to Silas Venn — it seemed like a harmless referral. Around the same time, Velka Mourne mentioned something unusual had come through the blood cellar, wondering if someone in the Court was ill. I passed both pieces to my close friend Ivara Saye in the same conversation. Ivara went very quiet.",
+        "I have been watching Ivara all evening with growing unease. She is working this room with a purpose I recognize but cannot name. Something happened as a result of what I told her. I am not certain I want to know what."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Find Ivara Saye and speak with her in character. Ask her obliquely or directly what she has been working on all evening. Note what she says and what she deflects.",
+          "answer_format": "Enter what she told you, if anything."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "You are the person others confide in. Convince two different players to share a secret with you.",
+          "answer_format": "Enter the names of the players and a short summary of the secrets they shared."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "You have been replaying in your mind what you told Ivara months ago — about Caspian's information request and Velka's blood cellar observation. Find three other players whose accounts touch either piece.",
+          "answer_format": "Enter all three character names and what each person told you."
+        }
+      ]
+    },
+    {
+      "name": "Lady Elaris Quill",
+      "title": "The Cultural Liaison",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Razor wit, velvet delivery. You serve as Chains' cultural liaison and etiquette enforcer — you draft inter-house accords, manage seating arrangements, and ensure the house presents itself correctly at every formal occasion. You have a century's worth of political pattern recognition and you are not afraid to use it. Several weeks ago you noticed Coro Vane — your colleague and Chains' debt officer — in a private meeting with a Cinders member you couldn't identify. Shortly after, you discovered that correspondence you should have been copied on had been routed around you entirely. You do not yet know what was agreed. You intend to find out before the evening ends.",
+      "post_act1_context": "You have known for several weeks that Caspian had a connection to a mortal woman outside the Court — someone he was meeting privately, beyond the estate's walls. You said nothing because the information was more valuable unspoken. You did not anticipate that it would end like this.",
+      "secrets": [
+        "Coro Vane arranged private surveillance on the heir's movements through a Cinders operative — without consulting me or routing it through house channels. I was not informed, not copied on the reports, and only discovered it by accident. Something in those reports made the operative stop filing three weeks ago. I do not know what they saw.",
+        "I have known for several weeks that Caspian had a connection to a mortal woman outside the Court — someone he was meeting privately beyond the estate's walls. I said nothing because the information was more valuable unspoken. I did not anticipate that it would end like this."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Compliment two players outside of the Chains house on their excellent adherence to court decorum. Write the character names of both players you complimented.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Identify the Cinders operative that Coro Vane commissioned without your knowledge. Ask around — press Coro if necessary, or find a Cinders member willing to talk. You don't know their name yet. Find it. Write the character name of the Cinders operative you identified and how you found out.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "You are considering adding black ruffle collars to the official Court etiquette guide. Convince five players across the five houses (one player per house) to take a photo together all wearing the black ruffle collars to help you validate the aesthetic. Ruffle collars can be found [place TBC] . Write the character names of the five players who participated in the photo op.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Mistress Anbarin",
+      "title": "The Diplomat",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "You are Chains' master diplomat — the person the house sends when something needs to be negotiated, brokered, or quietly arranged without anyone noticing. You have brokered three inter-house treaties that no one knows you brokered. Elegant, strategic, and never saying anything that could be held against you. You collect information the way others collect debts — patiently, without urgency, waiting for the moment it becomes most useful.",
+      "post_act1_context": "You have been at every formal function this season and notice everything. At a private Court function several months ago you watched Valen Drear pour two glasses of wine and add something to one of them from a small vial he kept in his jacket. He carried it to the Marquess's private chambers, dropped it inside, then left, locking the door. You said nothing. You filed it away. Information of that quality is worth more unspoken than acted upon — until the right moment. You also paid Maret Solle to intercept Caspian's incoming correspondence. One letter addressed to him never reached him — she passed it to you instead. You have wondered since whether that letter changed anything.",
+      "secrets": [
+        "At a private Court function several months ago I watched Valen Drear pour two glasses of wine and add something to one of them from a small vial he kept in his jacket. He carried it to the Marquess's private chambers, dropped it inside, then left locking the door. I said nothing. I filed it away. Information of that quality is worth more unspoken than acted upon.",
+        "I paid Maret Solle to intercept Caspian's outgoing correspondence to Lysa Vael. The letter Caspian sent to Lysa never reached her, but it did not reach me either. I have been wondering why Maret chose to withhold information from me, and have enlisted Corvo Vane to collect the debt our house is owed as a result."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Introduce yourself in character to at least three players from other houses. Write the character names of the three players you spoke to and which houses they were from.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Maret Solle and get her to confess to what was in the intercepted letter that Caspian sent to Lysa, and why she chose to withhold this information from you.",
+          "answer_format": "Enter the contents of the letter and why Maret withheld it."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Broker a three-way exchange: get one member of three different houses (yourself excluded) to agree to a secret information swap, by each sharing one piece of information with each other simultaneously. Write the character and house names of the three participating players and a short summary of what they each shared.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Pax Delenne",
+      "title": "The Chains Negotiator",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Junior diplomat with more ambition than experience. You have Coro Vane to thank for your appointment. Coro vouched for you two years ago as a favor - one you felt you deserved, but have not since repaid. You serve as a junior attaché within Chains' diplomatic corps — mostly running correspondence, attending functions, and trying to look like you belong. Eager to prove yourself, slightly too eager. You have a gift for making people feel heard without actually committing to anything.",
+      "post_act1_context": "Several weeks ago you witnessed Silas Venn in conversation with someone you did not recognize — tall, piercing blue eyes, a close-cropped beard, a scar beneath the left eye. The exchange was brief. Silas passed a bound document across. The other person handed over a purse without counting it. Neither of them saw you. You have been wondering what was in that document ever since.",
+      "secrets": [
+        "Several weeks ago I witnessed Silas Venn in conversation with someone I did not recognize — tall, piercing blue eyes, a close-cropped beard, a scar beneath the left eye. The exchange was brief. Silas passed a bound document across. The other person handed over a purse without counting it. Neither of them saw me. I have been wondering what was in that document ever since.",
+        "I sold a description of the odd interaction I witnessed to Magistra Solenne Marr . At the time it seemed like a profitable piece of Court gossip — two people making a suspicious exchange, nothing more. Magistra was very interested in the information and in the physical description of the man I did not recognize. She paid well and asked no follow-up questions. Given what has happened tonight, I am beginning to wonder what she did with that description and whether selling it was a mistake."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Introduce yourself in character to at least one member of every house before Act 2 ends, asking them if they have any information to share or sell.",
+          "answer_format": "Enter the character names of the players you spoke with. Note if they offered to share information and what they shared if so."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Successfully negotiate a trade of secrets, relics, or Wall of Whispers information with a player from a rival house. Write the character name of who you traded with, what you gave, and what you received.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Write a short petition requesting a promotion to Senior Diplomat. Get 20 other players to sign the petition using any means necessary. Upload a photo of the petition with 20 player signatures.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Sevrin Delle",
+      "title": "The Informant",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Nervous energy barely contained in a well-tailored jacket. You are an information broker — you sell intelligence to whoever pays most and are perpetually one bad deal away from catastrophe. You are currently indebted to at least three parties. One of your steadier arrangements is with Father Andrei Mirth of Ashglass: you feed him intelligence on other houses in exchange for occasional entry to the restricted stacks. You have a gift for finding things that have been deliberately hidden and an equally strong gift for not asking what they're for.",
+      "post_act1_context": "Several months ago you were paid by Silas Venn to locate a specific text in the Ashglass archives — the Rite of Undoing, something old and deliberately obscured — and extract whatever you could without drawing attention. You found it, and were able to record the ritual's requirements before you had to leave: ingredients, conditions, participants, but did not get the full procedure. You did not ask what it was for. Not long after, Ivara Saye came to you asking about the same text. You remember thinking: 'Who knew this was such a popular read.'",
+      "secrets": [
+        "Several months ago I was paid by Silas Venn to locate a specific text in the Ashglass archives — the Rite of Undoing, something old and deliberately obscured — and extract whatever I could without drawing attention. I found it, and was able to record the ritual's requirements before I had to leave: ingredients, conditions, participants, but did not get the full procedure. I did not ask what any of it was for. Not long after, Ivara Saye came to me asking about the same text. I remember thinking: 'Who knew this was such a popular read.' I did not ask what she wanted it for either.",
+        "Two nights ago, I saw Brother Aldric Voss leaving the archive wing in a hurry — after hours, which is unusual. He had a book tucked under his arm. He did not see me. Last night he was not at the estate at all. No one I have asked knows where he went."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Eavesdrop on or overhear a conversation between two other players. Write the character names of who was speaking and the key thing you heard.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Convince another player to pay you at least 2 BT in exchange for one of your secrets. Write their character name, what you told them, and what they paid.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Convince another player to loan you 5 BT in exchange for three future secrets, then fail to deliver the secrets for the rest of the night (either by refusing or evading the player).",
+          "answer_format": "Enter the character name of the player you borrowed from."
+        }
+      ]
+    },
+    {
+      "name": "Tessen Quill",
+      "title": "The Social Operative",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Charming, forgettable when you need to be, and sharper than anyone who has underestimated you has lived to regret. You work as House Chains' informal presence in Court social circles — attending functions, cultivating acquaintances, and feeding intelligence back to the house. You are not a spy in any formal sense. You simply have a gift for being in the right room at the right time and remembering everything you hear.",
+      "post_act1_context": "This past season you have been attending every significant Court function and have noticed two things that do not sit right. First, Mara Voss of Ashglass behaves differently around Eiran Vox than she does around anyone else — deferential in a way that does not match her rank or their relationship. Second, Ivara Saye approached you three days ago and asked you to get a specific bottle of wine ( a 2003 Merlo t) from Marquess Gruber's cellar. She asked you to use discretion and return the wine and key to her as quickly as possible. However, on your way to the cellar, you dropped the key and saw it bounce underneath the door of another player's locked bedroom chambers. You have been attempting to discreetly locate the key ever since to complete Ivara's request.",
+      "secrets": [
+        "This past season I have watched Mara Voss of Ashglass at several Court functions. Around most people she is composed and self-contained. Around Eiran Vox she is something else — watchful in the way of someone waiting for an instruction.",
+        "Ivara Saye approached me three days ago and asked me to get a specific bottle of wine ( a 2003 Merlo t) from Marquess Gruber's cellar. She asked me to use discretion and return the wine and key to her as quickly as possible. However, on my way to the cellar, I dropped the key and saw it bounce underneath the door of another player's locked bedroom chambers. I have been attempting to discreetly locate the key ever since to complete Ivara's request."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your observation about Mara Voss with at least one other Chains member. Write their character name and how they responded.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Eavesdrop on two different secrets or clues from players outside of House Chains. Secrets shared with you directly/deliberately do not count. Record which two secrets you overheard.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Identify the player whose bedroom chambers the cellar key was lost in. Then obtain the key by any means necessary and enter the wine cellar to retrieve the requested bottle ( a 2003 Merlo t). Return it to Ivara along with the cellar key.",
+          "answer_format": "Enter the name of the player whose bedroom chambers the key was lost in and attach a photo of the wine bottle you retrieved."
+        }
+      ]
+    },
+    {
+      "name": "Velka Mourne",
+      "title": "The Blood Steward",
+      "house": "Chains",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Silent, deeply observant, and unsettling in your stillness. You are the blood cellar steward — you manage the physical stores of blood held across all five houses, tracking every vial that enters or leaves the cellar. Ivara Saye runs the Blood Bank above you and oversees the formal requisition ledger; your role is the physical stewardship of what the ledger records. Between you, nothing should move without a trace. You have worked this role for decades. You do not volunteer information. You wait until it is worth something.",
+      "post_act1_context": "Several weeks before tonight's ceremony, Caspian Vael approached you privately and presented a written authorization — signed in the Marquess's name — requesting small blood withdrawals from all five houses' stores for unspecified medical purposes. The document looked legitimate. You complied and spread the withdrawals out carefully to avoid attention. You found it odd enough later to mention to Isla Vern — wondering aloud whether someone important in the Court might be ill.",
+      "secrets": [
+        "Several weeks before tonight's ceremony, Caspian Vael presented me with a written authorization signed in the Marquess's name, requesting small blood withdrawals from all five houses' stores. The document looked legitimate. I complied. I mentioned it to Isla Vern in passing — wondering if someone in the Court was ill.",
+        "I was in the east corridor last night and saw Caspian moving quickly toward the outer passage. He was moving without a lantern, but paused momentarily and produced what appeared to be a small blue flame between his fingers. The flame went out and I called out to him, but he did not stop."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your blood store observation with at least two members of your own house before Act 2 ends. Write the character names of the Chains members you told.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Buy one T3 Wall of Whispers clue and share it with at least one player from another house before Act 2 ends. Write which tier clue you bought and the character name and house of the player you shared it with.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Ten blood tokens were disseminated from the blood bank before you could enter them into the official ledger. Each token has an alphabetical character written on the bottom of the vial. Find the ten blood tokens with these characters and note the letters denoted on their vials to enter into the ledger.",
+          "answer_format": "Enter the ten different alphabetical characters found on these vials."
+        }
+      ]
+    },
+    {
+      "name": "Ivara Saye",
+      "title": "The Flame-Speaker",
+      "house": "Cinders",
+      "role_type": "gm",
+      "is_optional": false,
+      "pre_event_info": "Zealous, eerie, and genuinely convinced that vampire law must be upheld above all else. You run the Blood Bank — the Court's central repository for tracking ceremonial blood flows across all five houses. Velka Mourne serves as your cellar master, managing the physical stores while you oversee the formal ledger and requisition process. Your role gives you visibility into every sanctioned blood transaction in the Court. You have been using that visibility to track something unsanctioned for months.",
+      "post_act1_context": "You had already noticed the blood discrepancy through the Blood Bank records — small withdrawals from all five houses, no official requisition, no ledger entry. Then your close friend Isla Vern mentioned two things in the same conversation: that Caspian had been quietly requesting blood from all five houses under a false authority claim, and that he had asked her weeks earlier for a discreet contact who could locate obscure information. She had pointed him to Silas Venn. You knew of the Rite of Undoing from your studies. You had long suspected Valen was bound — his degradation was unmistakeable. You assumed Caspian was helping Valen research a way out, which would be equally illegal. You went to Silas and threatened him with sanction under the Sanguine Statutes. He told you everything: Caspian had paid him, Sevrin Delle had located the archive text. A thrall was seeking to break their bond. You acted to stop it.",
+      "secrets": [
+        "Several months ago I noticed blood going missing from all five houses' stores — no formal requisition, no ledger entry. My close friend Isla Vern told me in passing that Caspian had made the requests himself under a false authority claim, and that he had asked her to point him toward someone who could locate obscure information discreetly. She pointed him to Silas Venn. I knew then what was being looked for: the Rite of Undoing. I went to Silas and threatened him with sanction under the Sanguine Statutes. He confirmed everything.",
+        "I acted to protect vampire law. A thrall was attempting to break their bond outside the sanctioned process — an abomination under the Sanguine Statutes. Two people went to the ritual site that night. I knew about one of them. I did not know about both until it was already done."
+      ],
+      "missions": []
+    },
+    {
+      "name": "Brenner Voss",
+      "title": "The Frantic Freshman",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Chaotic, blunt, and operating on enthusiasm where others use strategy. Last year's Toast ended with you doing something that should have got you expelled but instead somehow earned you a formal position within House Cinders. You are the newest member of the house and everyone knows it. Some find it charming. Some find it an embarrassment. You have no patience for subtlety and find the reactions you provoke instructive. You are here for the games and the chaos, in that order.",
+      "post_act1_context": "You have been carrying unmarked vials this evening — samples you collected from the estate's lower storage out of curiosity, just to see what was kept down there. A few are your own concoctions. You are aware this looks suspicious. That is not entirely an accident. To your knowledge, you have no connection to whatever is actually happening tonight, which you find slightly disappointing. You are also watching Ivara Saye this evening with interest.",
+      "secrets": [
+        "I entered the Court this year using documentation that Rael Cindermoor provided. He asked me to investigate a rumor about someone in our house wishing to do him harm.",
+        "My unmarked vials are of no consequence to the night's events. I am merely carrying them around to spark a reaction in other guests."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Participate in at least one physical game regardless of outcome. Write the name of the game you played in.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Tell two players from different houses meaningfully different versions of the same piece of information. If they compare notes during the evening, stay in character and maintain that both versions are true.",
+          "answer_format": "Enter both character names, the information you shared, and what was different between the two versions."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Find out who in Cinders wishes to do Rael harm without alerting them and report it back to Rael directly. Write the character name of the player who wishes him harm, what you told Rael, and how he responded.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Crestian Vael",
+      "title": "The Grieving Elder",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "You are old Cinders blood — not the volatile, combustible kind, but the kind that has survived long enough to become something harder and quieter. A senior elder of the house, patient, careful, and deeply loyal to family above politics. You survived a purge of the Vaels that happened 300 years ago, when the Cindermoors wrestled control of the house from your family in a violent coup. Most of your friends and family died that day. You haven't forgotten.",
+      "post_act1_context": "Caspian and Lysa are your closest surviving family; the three of you are all that remains of the Vael line. For three centuries you have wanted revenge against the Cindermoors, and for three centuries you have held back, unwilling to risk Caspian's ascendancy. Months ago Lysa offered you the means: a slow-acting compound, untraceable, taken from Thorne's laboratory. You refused at the time. In recent months Caspian confided in you partially — he said he was receiving some kind of treatment and asked you not to mention it. Two weeks ago he sent you a letter you didn't fully understand. It said he had found a way out and mentioned 'a door that only opens once.' You didn't ask enough questions. Now he is gone. Tonight, with Caspian gone and Rael in this room, you sent word to Lysa before the ceremony began. You are ready. You are looking for her now.",
+      "secrets": [
+        "Months ago Lysa came to me with a vial of poison; the same serum that accidentally killed Valen at last year's Toast, taken from Thorne's laboratory before it could be destroyed. She urged me to use it on Rael Cindermoor. I refused. I would not risk Caspian's ascendancy. Tonight I sent her word. I am ready.",
+        "Caspian said he was receiving some kind of treatment and asked me not to mention it. Two weeks ago he sent me a letter I didn't fully understand. It said that he had found a way out and mentioned 'a door that only opens once'. I never followed up to ask questions."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your personal connection to Caspian with at least two players from different houses in natural in-character conversation. Write the character names of the two players you spoke with.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Barter: trade your personal relic or a piece of intelligence to another house in exchange for something they hold. Write who you traded with, what you gave, and what you received.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Poison Rael Cindermoor by getting him to drink from the golden chalice delivered by Lysa. You can assume that whatever liquid you pour into the chalice will become laced with the poison.",
+          "answer_format": "Enter the liquid that Rael consumed from the chalice."
+        }
+      ]
+    },
+    {
+      "name": "Dorin Fell",
+      "title": "The Blade for Hire",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Muscle for hire. You were originally a mercenary but have recently transitioned to physical security in these more peaceful times. Your allegiance is to coin. You were working for the House of Spires during the last Crimson Toast, but your contract expired, and the House of Cinders was willing to pay you more. You have been keeping watch at the House of Cinders keep and handling their dirty work ever since.",
+      "post_act1_context": "You were posted at the estate's outer gate in the weeks before tonight's ceremony. A mortal woman came to the gate more than once — you turned her away as instructed each time. She never seemed frightened, only patient. Last night she came again. She stepped back from the gate and waited near the road as usual. Then a cloaked figure appeared further down the outer path — Caspian's build, face hidden. He did not approach. He held a small blue flame between his fingers briefly — cold, no torch — then closed his fist and walked away into the dark. The woman watched it, then followed, a minute or so behind him, heading the same direction. You have been thinking about it ever since.",
+      "secrets": [
+        "In the weeks before tonight's ceremony I saw Caspian Vael leave the estate on foot on at least three separate evenings — always after dark, always alone, always heading toward the outer road in the direction of the old mill. I did not follow him.",
+        "Last night the mortal woman came to the gate again. She stood back and waited near the road, the way she always did. A few minutes later a figure appeared further down the outer path — cloaked, Caspian's build, face hidden. He didn't approach the gate. He raised one hand and held a small blue flame between his fingers for a moment — cold, steady, no torch — then closed his fist and walked away into the dark. The woman watched it, waited a few breaths, then followed. They did not go together. She left perhaps a minute after him, alone, slowly heading the same direction. Calm as I have ever seen her."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Represent Cinders in at least one physical game. Write the name of the game you played in.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Your contract is again up for renewal. WIN one challenge/game to prove your worth to House Cinders or to any other houses interested in paying for your services. Write the name of the game you won.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "What you witnessed at the gate last night is worth more than a standard report. Auction the information to the highest bidder — approach at least three players from different houses, name your price, and sell to whoever offers the most Blood Tokens. Write the character names you approached, what each offered, and who you sold to.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Finrick Bale",
+      "title": "The Cellar Rat",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Sly, disheveled, and chronically underestimated. You have no official role — you have been living in the estate's catacombs long enough to simply be considered a fixture, like the damp and the rats. You know which passages carry sound, which doors don't fully close, and which hours are worth being awake for. You collect information the way a market vendor collects inventory — always looking for the right buyer.",
+      "post_act1_context": "Three weeks ago you overheard two people talking in the cellar passage late at night. One said 'the last vial' and 'she will be waiting.' You have been waiting for someone to pay enough for it. Tonight seems like the right market.",
+      "secrets": [
+        "Three weeks ago I was in the cellar passage late at night when I overheard two people nearby. I recognised Velka Mourne's voice — low and careful. She said 'the last vial is ready' and 'he will be waiting.' I heard a second voice answer — quieter, male. I could not place it. They left toward the east passage. I watched from the shadows. The man who left had Caspian's height and build.",
+        "A few nights before tonight's ceremony I saw the Marquess alone in the private wine cellar long after midnight. She was not selecting a bottle. She was drawing blood from her own wrist into a small vial, with the practiced ease of someone who has done it many times before. She did not see me. I was not supposed to be there either."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Sneak up on another player and scare them. Write the name of the player you spooked.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Trade one piece of information for a Blood Token from another player. Write the character name of who you traded with and what you gave them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Conduct an auction for at least one of your secrets. At least three players across three different houses must place a bid. Note, the mission fails if no one successfully purchases the secret(s).",
+          "answer_format": "Enter the names of the players who bid, their houses, and which secret you shared."
+        }
+      ]
+    },
+    {
+      "name": "Rael Cindermoor",
+      "title": "The Cinders Patriarch",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Old guard Cinders, disgusted by the tournament's pageantry and the Court's hand-wringing. You are the house patriarch: the senior Cinders elder whose word carries the most weight within the house and whose opinion of the Court's governance is well-documented and unflattering. You have lived through four succession crises and believe every one was resolved incorrectly. You view House Spires as your house's chief rival. Their obsession with hierarchy and structure has always rubbed you and your kind the wrong way. You have also spent decades blocking House Ashglass's alchemical trade interests from gaining a commercial foothold in Cinders territory — a battle you consider won, and they consider ongoing.",
+      "post_act1_context": "You have heard rumors that a member of your house wishes to do you harm, and suspect it may have less to do with succession than with old grievances you thought were long settled. Late last night you were awoken by a loud noise. Unable to fall back asleep, you went for a walk and passed near the old mill road, where you found something you could not immediately explain: ash, shattered glass, a scorch mark, and a strong smell of sulphur. Two unsettling things in two days. You are still deciding what either of them means.",
+      "secrets": [
+        "Late last night, I was awoken by a loud noise. A short while later, unable to fall back asleep, I went for a walk and passed near the old mill road. I crossed paths with Brother Aldric Voss — he was heading away from the mill road, moving quickly. He sped up when I neared and left without a word. It was there that I found something I could not immediately explain: ash, shattered glass, a scorch mark, and a strong smell of sulphur. I have not reported it.",
+        "I believe someone in my house wishes to do me harm. I have asked Brenner Voss to investigate quietly for me tonight — I provided him documentation to enter the Court this year, and the favor is overdue. I have no desire for the throne, but worry the threat has nothing to do with succession at all."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Tell at least two other players outside of House Cinder that you're not interested in ruling the court despite your prominent position in the succession register.",
+          "answer_format": "Enter the character names of the two players you told."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Get every Cinders member in the same location at the same time once during Act 2. Write the character names of all Cinders members who were present.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Successfully bribe a member of House Spires to throw a challenge. The player must come in last place. Write the name of the member, the challenge thrown and the price paid to get the Spires member to throw the challenge.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Stavro Nero",
+      "title": "The Defeated Duel Veteran",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Brutish but refined — you taught yourself elegance because your enemies expected you to stay crude. You are a tournament veteran who has competed in the Crimson Duel more times than most guests have attended the Toast. Two years ago you lost to Valen Drear, and in the wreckage of that defeat, you lost someone. You have never spoken about it and never will. The rematch became the only shape your grief was willing to take — the one thing you could work toward, prepare for, control. Then Valen collapsed at last year's Toast and was declared dead before the Duel could be held. You went home with nothing resolved. You have been carrying it ever since. Tonight you came back to put it down.",
+      "post_act1_context": "Valen is alive — revived, standing in this room. You started the evening certain you would challenge him before the night was out. You are less certain now. Something is wrong with him in ways you cannot account for, and every time you move toward him the Marquess seems to find a reason to be between you. You have been watching her watch him all evening and the picture it makes is not one you recognize. You have competed long enough to know when someone is being blocked from a fight they would otherwise take.",
+      "secrets": [
+        "I came here to challenge Valen Drear and I have talked myself out of it three times already. Not because of what I see in him — something is wrong with him, physically wrong, in ways I cannot explain — but because of what I see in her. Every time I move toward him the Marquess finds a reason to be between us. Not obviously, not rudely. Just present, redirecting, closing the angle. I have competed long enough to recognize when someone is being blocked from a fight they would otherwise take. I want to know why she does not want me near him.",
+        "I have been sleeping with Serel Nox for the better part of this season. She does not talk about her work and I do not ask — that was the arrangement. But three months ago she told me something she clearly wished she hadn't: that she observed Dr. Thorne running blood experiments with rare blood binding agents that she believed he was using to create bonds stronger than the typical mortal-to-vampire thrall bond. [ALT - if we switch to Mara or a new nurse character] I have been sleeping with Mara Voss / [New Nurse Character] for the better part of this season. She does not talk about her work and I do not ask — that was the arrangement. But three months ago she told me something she clearly wished she hadn't: that an anonymous subject had come to her frightened, asking for a private blood analysis, and that what she found in his blood was something she had never seen before and could not explain. \"Binding agents\", she called them. The next morning she told me to forget she'd ever said it. I have not forgotten. I have also not told her that."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Represent Cinders in at least one physical game. Write the name of the game you played in.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Get your revenge! Challenge Valen Drear to a contest of your choice while the Marquess isn't looking and defeat him.",
+          "answer_format": "Enter what you challenged Valen to and confirm that you won."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "After completing Mission 2, disrupt the tournament to raise a toast to your victory, getting at least one member from each house to cheer your name.",
+          "answer_format": "Enter the name of one player from each house who cheered to your victory."
+        }
+      ]
+    },
+    {
+      "name": "Thessaly Wren",
+      "title": "The Glass Witch",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "The second oldest member of House Cinders, after Rael Cindermoor. You operate at the fringes of what most alchemists will admit is possible. You were shunned by Ashglass for being too occult — your methods made the institution uncomfortable. Cinders welcomed you for exactly the same reason. You trade in truth potions, poisons, blood treatments, and the kind of knowledge that more respectable practitioners won't touch.",
+      "post_act1_context": "Several decades ago you taught the Marquess a necromantic spell for raising mortals as bound thralls - a type of undead servant. You told her explicitly: it works on mortals, not vampires. At last year's Toast, you watched with amusement as she used it on Valen anyway. When she came back weeks later complaining that her hold over him was slipping, you laughed in her face and showed her the door. You have been watching him degrade all season with the satisfaction of someone whose predictions always come true. You are also one of the few people in this room who knows what the aftermath of a Rite of Undoing looks like — and you have been hearing things tonight about the old mill road.",
+      "secrets": [
+        "The Marquess came to me after last year's Toast asking why her hold over Valen was weakening. I laughed in her face. I told her what I told her before she used the spell: it was designed for mortals. Applied to a vampire, the bond will always degrade. I sent her away.",
+        "Centuries ago I witnessed a successful Rite of Undoing — a pre-Sanguine Statutes ritual for severing a thrall bond. Both participants survived. What remained afterwards: a faint smell of Sulphur, an intact ceremonial glass, empty vials, and the freed thrall-no-more. I have heard whispers tonight about something found near the old mill road, and have been turning it over in my mind."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Mock the Marquess for her shoddy spellcraft to at least two other players. Write the character names of the players that you shared a laugh at the Marquess's expense with.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Make someone a drink. Make up a name for it that makes it sound like an intense alchemical potion.",
+          "answer_format": "Enter the player who drank the drink, the ingredients of the drink and the name you gave it."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Prove your mettle as a powerful witch. Draw a pentagram on the outdoor deck with chalk (outdoors, on the deck only please!), get a player to stand on each point of the pentagram, then chant the incantation \"Manamos Benitos Recarnos Diablos!\". Submit a picture of the players standing on the pentagram.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Vesna Cor",
+      "title": "The Ashglass Exile",
+      "house": "Cinders",
+      "role_type": "player",
+      "is_optional": true,
+      "pre_event_info": "You spent 200 years in House Ashglass as a junior blood scholar before a disagreement with institutional doctrine ended your tenure there. Cinders welcomed you out of exile as they welcome most things — with enthusiasm and no questions. You are methodical in a way that marks you as Ashglass-trained, but you have learned to wear it lightly. You still have contacts across the house and hear things through old channels. One of those contacts is Serel Nox, Thorne's lab assistant — careful and observant, yet occasionally indiscreet. Another is Mara Voss, a junior Nightward you have known for years and consider a genuine friend. You have been increasingly worried about her over the last few weeks.",
+      "post_act1_context": "Two things have been sitting uneasily with you this season. First: Serel mentioned in passing that she had observed unusual formulation work in Thorne's lab; equipment used for deep bond chemistry, nothing to do with his official research. Second, and more troubling: several weeks ago Mara confided in you that she had run a private blood analysis on a frightened anonymous subject and found binding agents she couldn't identify or explain. She asked you not to mention it. A month or so after, you noticed a change in her demeanor — quieter than usual, occasionally distracted, deferential in a way that looks like waiting for an instruction. You have been watching it build for weeks. Tonight, with the succession thrown open and Eiran Vox naming Mara as position three, you are more determined than ever to understand what is wrong.",
+      "secrets": [
+        "Serel Nox, an old Ashglass contact and Thorne's lab assistant, mentioned in passing that Thorne had been conducting unusual formulation work earlier this season. Equipment used for deep bond chemistry, inconsistent with his official research. She didn't think much of it at the time, but I have been thinking about it ever since.",
+        "Several weeks ago Mara Voss confided in me. She had run a private blood analysis on an anonymous subject who came to the infirmary frightened, and found binding agents she didn't recognize. She asked me not to mention it. I respected her wishes, but watching her tonight I am beginning to wonder whether the subject she analyzed and whatever is happening to her now are connected in some way. Something in her demeanor has changed — quieter than usual, occasionally distracted, deferential in a way that looks like waiting for an instruction."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share what Serel told you about Thorne's unusual formulation work with a player from outside House Cinders or Ashlass (Spires, Chains, or Marquess's Court). Write their character name and what they made of it.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Mara Voss and speak with her privately before Act 2 ends. Then talk to other players or purchase clues to assemble a theory about what is happening with Mara. Present your theory to at least two players from different houses. Write both character names and the theory you presented.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Your Ashglass contacts trust you because they think your loyalty is still divided. Use that trust against them — extract a piece of sensitive Ashglass intelligence, without paying for it or trading a secret of your own, and deliver it to a rival house before Act 3 ends. Write what you extracted, how you got it, and which house received it.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Aldous Vane",
+      "title": "The Records Clerk",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Methodical, anxious, and constitutionally unable to let an inconsistency go unexamined. You work as a records clerk in the Ashglass administrative wing — processing, cross-referencing, and filing formal correspondence, requisition authorizations, and inter-house administrative paperwork. You do not manage the physical stores themselves; you instead manage the paper trail that records what moves through them. You see more of the Court's paperwork than almost anyone, and you have learned that the most important information is often hiding in columns that don't add up.",
+      "post_act1_context": "Several weeks ago a written authorization crossed your desk — small blood withdrawals from all five houses on a single document, logged within a ten-day window, bearing the Marquess's seal and citing medical purposes. The document looked legitimate but bypassed the standard Blood Bank requisition process entirely — no co-signature from a Blood Bank officer (Ivara Saye), no named patient or case. You flagged it to Father Mirth as a possible administrative error. He told you it was a Blood Bank matter and to take it to Velka Mourne or Ivara Saye directly. You have not yet done so.",
+      "secrets": [
+        "Several weeks ago, a written authorization crossed my desk — small blood withdrawals from all five houses on a single document, logged within a ten-day window, bearing the Marquess's seal and citing medical purposes. The document looked legitimate but bypassed the standard Blood Bank requisition process entirely — no co-signature from a Blood Bank officer (Ivara Saye), no named patient or case. I flagged it to Father Mirth as a possible administrative error. He told me it was a Blood Bank matter and to take it to Velka Mourne or Ivara Saye directly. I have not yet done so.",
+        "The blood store authorization was not the only anomaly I found this season. Several weeks ago, a formal access request for a restricted Ashglass archive text passed through my desk — processed by Calven Rue, bearing the Marquess's seal. The text requested was old enough that I had to look up the title. The Rite of Undoing. I filed it and said nothing, but have been thinking about it ever since."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share the blood store discrepancy with Father Mirth in person and ask him directly whether he investigated it. Write what he said.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find out who requested the blood withdrawal. Present your theory to Magistra Solenne Marr with at least two pieces of supporting evidence. Write what you told her and her response.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "You have found two anomalies this season that you believe could be connected — the blood store authorization and the archive access request — but you cannot prove it alone. Find one player who can speak to the blood store request and one who can speak to the archive access. Between the three of you, establish whether both documents trace back to the same person. Write both character names, what each told you, and your conclusion on whether these threads can be traced to the same person. Name who they can be traced to, if so.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Calven Rue",
+      "title": "The Eternal Apprentice",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Eager, jittery, and trying desperately to seem less out of your depth than you are. You spent thirty years as Doctor Thorne Virell's laboratory apprentice — preparing samples, maintaining equipment, and learning the technical craft of blood alchemy. Recently you transitioned into a new role: junior archivist under Father Andrei Mirth, cataloguing restricted texts and managing access requests to the Ashglass archive stacks. Part of your role is processing written access requests to the restricted section — verifying authorizations and retrieving texts on behalf of approved requesters. You still consider Thorne a mentor and visit the lab when you can. You are good at technical work. You are still learning the political kind.",
+      "post_act1_context": "Several weeks ago, a woman you didn't recognize approached you and paid you to swap one page in a restricted archive text. She said it was a transcription correction. She told you not to mention it to Father Mirth — your supervisor — a request you found odd. You complied, however, and swapped the page, then processed the court's access request for that same text as instructed. The payment was generous and you needed the money.",
+      "secrets": [
+        "Several weeks ago a woman paid me to swap one page in a restricted archive text — a pre-Sanguine Statutes ritual document. She said it was a minor transcription correction. She told me specifically not to tell Father Mirth, my supervisor — a request I found odd. I complied, however, and swapped the page, then processed the court's access request as instructed. The payment was more than I could turn down.",
+        "Two nights ago, Brother Aldric stopped me in the corridor. He had a book in his hands and said he had found the replacement page. He asked me who paid me. I told him it was a woman I did not know but described her to the best of my memory. He went very still, then he left. I have not seen him since."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Brag to someone about how important your work with Dr. Thorne is, and how vital you are to its success. Write the name of the player you bragged to and the story you made up to support it.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Be shameless. Get two different players to accept offers to perform favors or odd jobs for them in return for any amount of blood tokens. Write the names of the players, the acts you committed and the blood tokens earned.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Get promoted. Write a petition to get promoted and get ten other players to sign it. Then, present it to Dr. Thorne. Write the names of the players who signed your petition.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Doctor Thorne Virell",
+      "title": "The Alchemist",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Cold, brilliant, and carrying the weight of several things you have enabled without fully understanding what they would become. You are considered one of the foremost blood alchemists in the vampiric world — your specialty is the chemistry of blood bonds, revival techniques, and the formulation of binding agents. You have a longstanding partnership with Lysa Vael: you develop new alchemical formulations, she monetizes them and reinvests the proceeds into your laboratory. Last year's ceremony left a mark you cannot shed. The serum that killed Valen Drear was yours in origin, even if not in application. You reviewed Serel Nox's version and rejected it as too volatile. You were right. It killed him anyway.",
+      "post_act1_context": "A few weeks after last year's ceremony, Serel Nox notified you that the poisonous serum that took Valen's life was missing — it never reached the disposal facility on the night it was scheduled for destruction. You are meticulous about locking the laboratory each evening. The only other person with access, besides you and Serel, is Lysa Vael. Given your partnership, you have kept this to yourself for now. Not long after, the Marquess came to you privately. She told you Valen had been revived but that his bond was degrading, and that she needed a new formulation — stable, undetectable, deliverable in a liquid dose. You designed it and delivered it, believing it would be used to stabilize Valen's bond. You have been watching Valen deteriorate all season since, and noticing with slow-growing dread that your formulation either failed or was never administered at all. You do not know which answer you would prefer.",
+      "secrets": [
+        "A few weeks after last year's ceremony, Serel told me the poisonous serum never reached the disposal facility. Someone took it from the lab before collection. I am meticulous about locking the laboratory — the only other person with access, besides Serel and me, is Lysa Vael. I have not confronted her or told anyone. Our partnership is worth too much to me to make an accusation I cannot prove.",
+        "Several months ago the Marquess commissioned me to design a blood bond formulation to stabilize Valen's fraying bond. I designed it and delivered it: a vampire-to-vampire bonding agent, stable, undetectable, and administerable in a liquid dose. I have been watching Valen deteriorate all season and I cannot tell whether my formulation failed, or was never administered at all. I do not know which answer I would prefer."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Mix a drink for someone. Make up a name for it that sounds like a potion (aka Elixir of the Striking Viper or something of the like). Write the name of the drink, what was in it, and who you gave it to.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Buy a Tier 2 or Tier 3 Wall of Whispers clue and share its contents with at least two Ashglass members. Write the clue tier and the character names of the Ashglass members you shared it with.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Find and confront a player from another house who has been asking questions about your research. Be evasive, misdirect, or admit partial truths. Write their character name, what they asked, and what you told them versus what you withheld.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Father Andrei Mirth",
+      "title": "The Archivist",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "As old as rumor. You are the keeper of the Ashglass ritual archives — the oldest and most restricted collection of vampire law and ceremonial texts in the Court. Your role gives you authority over who accesses the restricted stacks and what they are permitted to read. You are meticulous, deeply principled, and slower to act than to observe. You maintain a network of informants across all five houses — including Elira Salk within Spires and Sevrin Delle within Chains, who feed you intelligence about unusual goings on in exchange for occasional access to the restricted stacks.",
+      "post_act1_context": "Three days ago you discovered that specific pages had been tampered with in one of the Ashglass archive's most restricted texts — a pre-Sanguine Statutes ritual document. The next night, you brought Brother Aldric Voss — a ritual scholar in your order, someone you trusted absolutely — to examine it. He took the book with him to confirm his findings and said he would return. He has not come back. You do not know where he went. You have also been re-examining the access request for that same text — processed by your junior archivist Calven Rue, bearing the Marquess's seal. It appeared legitimate at the time. Now you are not so sure. You have been watching Calven all evening.",
+      "secrets": [
+        "Three days ago I discovered that specific pages had been tampered with in one of the Ashglass archive's most restricted texts — a pre-Sanguine Statutes ritual document. The next night, I brought Brother Aldric Voss — a ritual scholar within our order, someone I trusted absolutely — to examine it. He took the book with him to confirm his findings and said he would return. He has not come back. I do not know where he went or what he has done with it.",
+        "The access request for the tampered text was processed by Calven Rue, a junior archivist in my service. The request bore the Marquess's seal and appeared legitimate at the time — I approved it without question. Since then however, one of my informants, Elira Salk, reported seeing Calven take a payment from Ivara Saye near the archive entrance. I have been watching Calven all evening, and am ready to confront him."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your knowledge of the tampered archive pages with at least one other Ashglass member before Act 2 ends. Write the character name of the Ashglass member you told.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Confront Calven Rue in character and convince him to admit what he was doing in the archive. Write what you asked him and what he said in response.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "You are witnessing history. Chronicle it. Gather the testimony of five different players, including their thoughts on the night, the succession crisis or how the party is going. Write the names of each player you interviewed and the thoughts they shared.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Lysa Vael",
+      "title": "The Opportunist",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "A shrewd businesswoman who clawed her way back to the top through patience, precision, and an uncanny instinct for opportunity. Three centuries ago the Cindermoors burned your estate and killed your family in a coup that was supposed to erase the Vaels from the Court entirely. They came close, but three of you survived. Your allegiances are few and fixed: your brother Crestian, your nephew Caspian, and money. Everything else is negotiable. For two centuries you have run a partnership with Doctor Thorne Virell that has made you one of the wealthiest figures in the vampiric court — he develops the formulations, you commercialize them, and you reinvest the proceeds back into his laboratory so he can develop more. It is a clean arrangement. You have always been careful not to ask too many questions about what goes into the vials.",
+      "post_act1_context": "Shortly after last year's ceremony, you visited Thorne's lab hoping to discuss his latest formulation and found him absent. On his bench sat a vial marked \"Hazard\" in Serel Nox's script; you recognized it immediately as the serum that had felled Valen. You took it before the disposal collectors arrived and said nothing to Thorne. The opportunity was too clean to pass up. Funneling it to your brother Crestian would accomplish two things at once: avenge the purge that took your family three centuries ago and remove Rael Cindermoor, whose stranglehold over House Cinders' alchemical trade contracts has been a thorn in your business interests for decades. Revenge and profit, in one vial. You passed it to Crestian. The golden chalice is the delivery mechanism — tonight your job is to get it into his hands without being seen. What he does with it is his decision.",
+      "secrets": [
+        "Shortly after last year's ceremony, I visited Thorne's lab and found him absent. On his bench sat a vial marked \"Hazard\" in Serel Nox's script — the serum that had felled Valen. I took it before the disposal collectors arrived and said nothing to Thorne or Serel. Funneling it to Crestian would accomplish two things at once: avenge the purge that took our family three centuries ago, and remove Rael Cindermoor, whose stranglehold over House Cinders' alchemical trade contracts has been a thorn in my business interests for decades. Revenge and profit, in one vial. I passed it to Crestian. What he does with it is his decision.",
+        "Several days before tonight's ceremony, Caspian sent me a letter. It said: if anything goes wrong with my succession this week, I name you as my replacement. I wrote back immediately asking if he was ill or in danger. I never heard back. I know the claim would not hold up legally — succession cannot be assigned by private letter. I have been debating whether to share it all evening. I have said nothing. Sharing it would raise questions I cannot easily answer."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your personal connection to Caspian — and the note he sent you — with at least two players from different houses. Write the character names of the two players you told.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Deliver the gold poisoned chalice to Crestian Vael without being noticed by any other players. Take a photo of Crestian holding the chalice without other players noticing.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Personally accrue over [X] Blood Tokens before the end of Act 3.",
+          "answer_format": "Enter a short summary of how you accrued Blood Tokens."
+        }
+      ]
+    },
+    {
+      "name": "Mara Voss",
+      "title": "The Nightward",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Niece to Aurel Voss of House Spires, you are a younger Ashglass member working as a junior nightward in the vampiric court's infirmary - diagnosing ailments, running blood analyses, and managing the quiet medical needs of Court members who would rather not be seen visiting a doctor. Thoughtful, somewhat anxious, and deeply reluctant to be noticed. About three months ago you felt yourself change in a way you could not fully explain; occasional compulsion and unease without a clear source, almost as if you are bound to someone, held to their will by an invisible string. You have told no one, and intend to keep it that way.",
+      "post_act1_context": "You came here tonight hoping to get through the ceremony without anyone looking at you directly. On your way into the ceremony tonight, someone passed close behind you in a crowded corridor and said two words — quietly, close to your ear, gone before you could turn around: 'Be ready.' You could not place the voice and had no idea what you were supposed to be ready for. Tonight, with Caspian missing and Eiran Vox publicly naming you as position three in the succession, you are beginning to suspect that instruction was not random.",
+      "secrets": [
+        "A little over four months ago, an anonymous subject came to the infirmary for a private blood analysis. He was frightened. I found binding agents in his blood that I did not recognize from my training or available reference texts. I noted it down and said nothing, but have been thinking about it ever since.",
+        "About three months ago, I felt myself change in a way I could not fully explain. I experience it as occasional compulsion and unease without a clear source; almost as if I am bound to someone, held to their will by an invisible string. I have told no one.",
+        "On my way into the ceremony tonight, someone passed close behind me in a crowded corridor and said two words — quietly, close to my ear, gone before I could turn around: 'Be ready.' I could not place the voice. I have been trying to work out who said it and what they expected to happen tonight ever since."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Inspect the pointiness of another player's canine teeth. Tsk-tsk them when they are found to be deficient in pointiness for a vampire. Write the name of the player you scolded.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Take three players' pulses. For each, on finding that they have a pulse, inform them that they have an unfortunate case of \"Being Alive\" and offer them a drop of medicine for their drink. You can find the medicine [HERE] . Write the name of the players whose pulses you took.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Find out who whispered in your ear and why. Write the name of who whispered in your ear and what their message means.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Serel Nox",
+      "title": "The Blood-Lab Assistant",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Last year's accidental killer — officially exonerated, privately carrying a more complicated truth. You work as a blood-lab assistant under Thorne's loose supervision — technically in training, in practice left to your own devices more than an apprentice should be. You are careful, observant, and have overheard things in the lab you were not meant to hear. After last year's ceremony, you were charged with disposing of the poisonous serum you created that accidently killed Valen. You scheduled the vial containing the serum to be incinerated by the Biohazard Ghouls, but were informed that the vial never reached their facilities. Knowing it would be impossible to escape consequences if someone was killed by the serum a second time, you have been fervently hunting for whoever was responsible for its disappearance. You have asked Dr. Thorne for his help tracking down answers.",
+      "post_act1_context": "You have also been watching Thorne this past season with the attention of someone who knows their mentor keeps secrets. Late last year his lab contained equipment and reagents you didn't expect to see — not revival work, not diagnostics. Precise formulation work. Binding agents you had only read about in restricted texts, used to create bonds stronger than the typical mortal-to-vampire thrall bond. He kept the bench covered when anyone entered. One morning the equipment was gone and he never mentioned it. You accidentally let this slip to Stavro Nero, who you have been sleeping with for the better part of this season.",
+      "secrets": [
+        "After last year's ceremony I was charged with disposing of the poisonous serum I created; the one that accidentally killed Valen. I arranged for it to be collected and destroyed by the Biohazard Ghouls — the estate's standard disposal channel — but was informed that it never reached their facilities. I have been feverishly trying to track it down ever since, without making the search too visible. If that serum is used again and someone dies, there will be no version of events in which I walk away clean. I asked Thorne for help. He has been looking too, though how thoroughly I cannot say.",
+        "Late last year, Doctor Thorne Virell's lab contained equipment and reagents I did not expect to see. Precise formulation work. Binding agents used in deep blood bond chemistry — not revival work, something more deliberate, something being designed. He kept the bench covered when anyone entered. One morning the equipment was gone and he never mentioned it. I accidentally let this slip to Stavro Nero, who I have been sleeping with for the better part of this season."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Deliver a drink to Valen to apologize for last year's unintentional poisoning. Write the name of the drink you delivered to him.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Doctor Thorne Virell and get him to tell you what he was working on in his lab earlier this season, involving the blood bond reagents and presumed formulation work. Summarize what Doctor Thorne Virell tells you about what he was working on.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Find out who currently possesses the poisonous serum and stop them from using it. This mission fails if the serum is used to poison the possessor's intended target. Write the name of who possesses the serum and who they intended to use it on.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Vex Harrow",
+      "title": "The Silent Operative",
+      "house": "Ashglass",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Quiet and watchful where louder operatives burn bright and brief. You work as a scout and private intelligence operative; tracking movements, running surveillance, and reporting back on persons of interest. You notice things other people miss and have learned to keep those observations to yourself until they become useful. You were hired by Coro Vane of House Chains to surveil the heir's movements — a commission that led you somewhere you were not expecting, and that you are still deciding what to do with.",
+      "post_act1_context": "About one month ago, during one of your surveillance evenings you followed Caspian toward the old mill road and lost him. A week later, you stopped filing reports after realizing you were not the only one watching Caspian near the mill road — you first spotted Rynn Castille who seemed to be watching not Caspian, but a woman in his company. Later you saw a woman in a red cloak you did not recognize hiding amongst the shrubbery as Caspian arrived. This morning you returned and found a strange site: ash, shattered glass, a scorch mark, and a strong smell of sulphur. And a fresh mound of earth resembling a mortal burial site.",
+      "secrets": [
+        "Three weeks ago, I stopped giving reports because I realized Caspian was not the only one being watched. On two separate evenings near the old mill road I noticed others conducting their own surveillance. The first was Rynn Castille — watchful, careful, clearly experienced — who seemed to be watching not Caspian but a woman in his company. The second was a figure in a blood-red cloak who appeared to be tracking Caspian's movements; not following him, but already positioned ahead of him, as if anticipating his route. After the second occurrence, I decided I did not want to know what I had stumbled into.",
+        "I followed Caspian Vael one evening about one month ago, as he was heading away from the estate on foot. I lost him near the old mill road. I revisited the area in the following weeks but found nothing unusual — until this morning, when I found a strange site: ash, shattered glass, a scorch mark, and a strong smell of sulphur. And a fresh mound of earth resembling a mortal burial site."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your mill road observation with at least one Ashglass member before Act 2 ends. Write the character name of the Ashglass member you told.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Eavesdrop on conversations around the party to overhear two secrets. Write the name of the players participating in the conversations and the secrets you overheard from them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Find your next job. Get someone to pay you at least 2 blood tokens to stealthily tail someone around and eavesdrop a secret from them. Write the name of your client, the player they paid you to follow, and the secret you eavesdropped.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Eiran Vox",
+      "title": "The Spider — Court Observer",
+      "house": "Marquess's Court",
+      "role_type": "gm",
+      "is_optional": false,
+      "pre_event_info": "A minor Court figure. No house allegiance. No obvious role. You have been present at every significant gathering for as long as anyone can remember, without anyone being quite sure why. You move through rooms the way water moves through stone — slowly, unremarkably, until suddenly the stone is different. You know what Ivara Saye did. You know because knowing is what you do. You have been running the Reliquary and Wall of Whispers this evening — not as logistics, but as architecture. Every relic available, every clue purchasable, was chosen by you. You have been seeding the right information to the right people all evening, watching the picture assemble itself. What fewer people know: some time ago you obtained Doctor Thorne Virell's research on vampire-adapted thrall bonds — not by asking. You used it to bind Mara Voss to yourself, quietly, as a long-term investment, positioning her near succession in case the Court's arrangements ever collapsed and you needed a piece on the board. Weeks after the binding, Aurel Voss (Mara's uncle) confronted you about it. And when you suspected Sova Vane had overheard too much of that arrangement, you had her quietly removed from the competition roster through the Court — no hearing, no explanation. You also sent Mara the 'be ready' instruction before the ceremony, and have been watching her all evening with the calm attention of someone monitoring an investment. You and Gruber are operating the same mechanism, unknowingly parallel — Thorne's work made both of you possible. At the closing ceremony, after Gruber and Valen have spoken, you will ask Ivara one question she cannot answer without confessing. You already know the answer.",
+      "post_act1_context": "Has attended every Crimson Toast in living memory. Holds no house allegiance. Has never competed in the Duel. Is simply, reliably, present. Collects information the way others collect artifacts — carefully, quietly, without obvious purpose. The relics and clues available this evening were selected by him. Can occasionally be overheard asking after Mara Voss — 'Have you spoken with the Voss girl this evening?'",
+      "secrets": [
+        "I have known about a specific sequence of events since the week they concluded. I chose not to intervene and not to report. I chose instead to create the conditions in which the truth could surface on its own.",
+        "I have an interest in one of the Spires members that goes beyond the social. I obtained what I needed to bind her to me some time ago — Thorne Virell's research, though he does not know I have it. The arrangement is stable. I find myself wanting to confirm tonight that she is still oriented correctly."
+      ],
+      "missions": []
+    },
+    {
+      "name": "Marquess Gruber",
+      "title": "The Host",
+      "house": "Marquess's Court",
+      "role_type": "gm",
+      "is_optional": false,
+      "pre_event_info": "Ageless, theatrical, and more calculating than she will ever admit. Her reign is subject to a term limit under ancient vampire law. Rather than relinquish power, she has spent years constructing a puppet succession — binding heirs to herself through thrall rituals, then positioning one as her heir. A thrall on the throne means she rules indefinitely. Valen's bond came first, forged through his revival after last year's Toast. She used an ancient necromantic spell she obtained from Thessaly Wren several decades earlier — designed for raising mortals, never intended for vampires. Thessaly warned her as much. The bond worked, but imperfectly — the spell was never designed for a vampire subject, and the bond began degrading almost immediately. When Valen's deterioration confirmed what Thessaly had told her, she made a decision: she would not spend herself trying to stabilize a bond that was always going to fail. Instead she went to Thorne for something new — a designed formulation, built from his deeper research, stable and undetectable. She deployed it on Caspian. Caspian's thralldom was completely secret. Valen's visible degradation served her purposes — it drew the Court's attention to the obvious thrall and away from the hidden one. The succession announcement was never about transition. It was about continuity. She did not know Caspian was planning to break free. She did not know he would involve a mortal. She did not know about the corrupted ritual or its outcome until too late.",
+      "post_act1_context": "Has ruled the Crimson Court for centuries. Has never lost control of a succession. Until now. Has managed three previous succession crises — each resolved in her favor through means the Court never fully understood. Publicly omniscient. Privately blindsided by Caspian's plan.",
+      "secrets": [
+        "The succession was not what it appeared to be. What I was building was not a transition — it was a continuation. I did not know what Caspian was planning. I did not know about the mortal woman. I did not know about the ritual. I have been trying to decide tonight whether my ignorance is a defense or an indictment.",
+        "I chose to let Valen's bond degrade. Maintaining two vampire-thralls at full strength is not sustainable. Caspian's bond was cleaner, quieter, and gave me the continuation I needed."
+      ],
+      "missions": []
+    },
+    {
+      "name": "Fenric Solle",
+      "title": "The Kitchen Steward",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Thirty years of service has taught you one thing above all: the most dangerous conversations happen when people forget you are in the room. You run the Marquess's kitchens — overseeing every meal, every provision, every ceremonial vessel, and every servant who moves through the household's back passages. The kitchen sees everything: who comes and goes through the servants' routes, what gets carried in sealed cases at odd hours, what leaves the cellar that shouldn't. You are not political. You simply notice things. And love a bit of gossip.",
+      "post_act1_context": "You have observations from this season that you have not shared with anyone. First: Doctor Thorne Virell visited the Marquess's private quarters on at least four occasions in the past six months, always through the servants' passage. On his last visit, you noticed he was carrying a small sealed case on arrival and left without it. Second: two ceremonial vessels were requested outside the normal occasions this season — one by Caspian Vael several weeks ago, one set aside privately just this week. Both struck you as irregular. You prepared them as asked and said nothing.",
+      "secrets": [
+        "The kitchen issues and stores the household's ceremonial vessels, so I notice when one is requested outside the normal occasions. Twice this season that has happened. Several weeks ago Caspian Vael asked me privately for a ceremonial glass vessel — the old kind, used in the oldest rites — and took it himself rather than letting it be delivered. Then this week, someone requested the golden ceremonial chalice be prepared and set aside outside the service rotation, for a private presentation rather than the ceremony. I prepared both as asked and noted who collected them. Two irregular requests in one season is one more than I am comfortable with. I have said nothing.",
+        "Doctor Thorne Virell visited the Marquess's private quarters at least four times in the past six months, always through the servants' passage and never announced. On his last visit, I noticed he was carrying a small sealed case on arrival and left without it. I do not know what the case contained.",
+        "Disposal of the household's waste runs through my kitchens — what leaves the estate, leaves through me. After last year's ceremony a sealed order came through for a hazardous vial to be collected from Dr. Thorne's lab and destroyed by the Biohazard Ghouls. I logged it as handled. But the collectors later told me nothing of that description ever reached them. I have wondered since whether something went missing on my watch."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share your observation about Thorne's visits with one player from outside the Court. Write their character name and how they responded.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Petra Nox and convince him/her to share a secret related to the Marquess's private habits this season. Write what Petra told you.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Put your observatory and investigative skills to the test, using any means necessary to determine what both ceremonial vessels are/were being used for. Summarize what you discovered about each vessel's use.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Magistra Solenne Marr",
+      "title": "The Duel Judge",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Icy, ancient, and loyal to law above all else. You hold the most senior legal appointment in the Crimson Court — you were named by the Sanguine Statutes themselves as the Court's permanent succession adjudicator, and your word carries centuries of legal precedent. You have presided over every succession crisis in living vampiric memory. There is almost nothing you would not do to ensure the Sanguine Statutes are upheld.",
+      "post_act1_context": "You are the foremost authority on the Sanguine Statutes and the Crimson Codex; as such, players may seek you out for legal interpretations this evening. A few months before tonight's ceremony, Valen Drear approached you, unable to force out whatever he had come to say, and that wordless struggle told you more than speech would have. You have been building a case ever since, watching Valen, observing the Marquess, cross-referencing what you see against the legal precedents you have memorized over centuries. As part of those investigations you paid junior diplomat Pax Delenne for anything unusual he had seen; he described a tall, scarred man trading a purse for a bound document from Silas Venn. You have not yet determined whether it connects to your case.",
+      "secrets": [
+        "I have prosecuted thrall cases before, and I know the signs. A few months ago Valen Drear approached me but could not say what he wanted to; something was physically stopping him from forming the words. After that interaction I began to strongly suspect Valen is bound, likely to the Marquess. She is the one who revived him, and the only person I believe has the standing and power to create a thrall bond. I began building a Sanguine Statutes case immediately. If I am right, the charge is severe: unlawful thralldom, compounded by concealment, merits not just removal from the throne but banishment from the Court entirely.",
+        "As part of my investigations, I asked junior diplomat Pax Delenne if he had seen anything suspicious recently. He shared information in exchange for a fee: several weeks ago, he witnessed a tall, scarred man conversing with Silas Venn. Silas passed the man a bound document, and the man handed him a purse in exchange. I haven't yet determined if it connects to the case I'm building.",
+        "There are others in this Court who want the Marquess gone by any means; Aldric spoke to me of it decades ago, but I refused to learn more. If she is to fall, it will be by the Sanguine Statutes and the weight of evidence, not by a knife in the dark. I will not become what I am trying to remove, but am no longer certain the others will wait for the law."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Formally adjudicate one dispute or argument between players during the evening. Write the character names of both parties and your ruling.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Declare to at least two players from different houses — in character — that you have been building a legal case all evening and that you believe the succession may be invalid. Write the character names of both players you told.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Deliver a formal legal opinion to at least four players simultaneously on whether tonight's succession process has been lawful. Write the character names of all four players present and one sentence summarizing your ruling.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Maret Solle",
+      "title": "The Secretary Spy",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "You hold the official role of secretary in the Marquess's household — managing schedules, correspondence, and the daily logistics of the Court's inner circle. While your loyalties lie with the Court, you are also a paid informant for House Chains. You are precise, unobtrusive, and excellent at both jobs. You have been doing this long enough to know when a piece of information is too dangerous to pass in the wrong direction.",
+      "post_act1_context": "Several weeks ago you were paid by Mistress Anbarin to intercept Caspian's incoming correspondence. One letter stopped you cold — Caspian's reply to Lysa Vael, asking her to meet him privately and promising to reveal everything: that his succession was not what it appeared to be. You did not pass it to Anbarin. You gave it to the Marquess instead, fearing what would happen to your position if something this large unraveled and you'd been caught in the middle. Coro Vane, the House of Chains debt collector, has been pressing you for repayment of a debt ever since. You have been wondering whether you made the right call.",
+      "secrets": [
+        "Several weeks ago I intercepted a letter from Caspian to Lysa Vael. He was responding to her concern for his wellbeing — and what he wrote back was not reassurance. He asked her to meet him, named a place, and said he would reveal everything: that his succession was not what it appeared to be. I did not pass it to Mistress Anbarin as instructed. I gave it to the Marquess instead. I told myself it was the cautious move. I have been less certain of that with every hour that has passed tonight.",
+        "Five months ago I saw the Marquess descend to her private wine cellar alone and emerge carrying one of her finer vintages — not house stock, something personal. She went directly to Caspian's quarters and closed the door behind them. No staff. No ceremony. I was the only one in that corridor. I have told no one.",
+        "Decades ago, Brother Aldric drew me into a small circle of people who believed the Marquess had held power too long and meant the Court harm. We were careful, patient, building toward a coup. Tonight Aldric is missing and the rest of us are watching each other; unsure whether to go forward or pretend it never began. I do not know who can still be trusted."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Eavesdrop on a conversation between two players from the same house and report its contents to a Chains member before Act 2 ends. Write the character names of the two players you overheard and the key thing they said.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Pass a piece of Court intelligence to your Chains contact without anyone in the Court noticing the exchange. Write what you passed and the character name of who received it.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Identify one piece of information the Marquess would not want shared and deliver it to a rival house. On confirmation, Marquess's Court loses 3 HF. Write what you shared and the character name of who received it.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Navine Solera",
+      "title": "The Excommunicated Seer",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Before your banishment, you served as Ashglass's resident seer - formally appointed to advise the house on matters of prophecy and foresight. Though your visions were often frustratingly cryptic, they had earned you a reputation for uncanny accuracy and a certain smug confidence that many found difficult to tolerate. Your appointment ended when you delivered a prediction your house branded incorrect, providing rivals with the excuse they needed to push you aside. The Marquess, however, recognized both your talent and your value, and was happy to add you to her court. You remain observant, enigmatic, and perhaps a bit too fond of reminding people that prophecies are rarely understood when they are first spoken.",
+      "post_act1_context": "Before your banishment you foresaw this: a hand on two chains, one loose and rusted, the other pulled taut — meaning neither heir had been free for some time. You told Eiran Vox. He said: 'I know. It will resolve itself.' He did not explain. Tonight you have been watching him work the room and wondering what 'resolve itself' might look like.",
+      "secrets": [
+        "A few months ago I saw Valen Drear approach Magistra Marr in what I can only describe as an exceptionally strange exchange. He stood before her and seemed to struggle, as though the words would not come; and when he gave up and walked away, her face had changed entirely. A few days later I observed her in the archive late at night, copying documents by hand: Crimson Codex entries, the Sanguine Statutes clauses on voiding an illegitimate succession. She was building something. I have been trying to work out what.",
+        "Several weeks before tonight's ceremony I told Eiran Vox what I had foreseen - a hand on two chains, one loose and rusted, the other pulled taut. Neither heir was free, I told him; they have not been free for some time. He listened without surprise. When I finished he said only: 'I know. It will resolve itself.' He did not explain what he meant. I have been watching him all evening, waiting to see what 'resolve itself' looks like.",
+        "My banishment was not the misjudgment the Court believes. I foresaw what the Marquess would become and said so too plainly. Lysa Vael saw my prophecy as bad for business and had me banished from the house before Marquess Gruber could get word of it. Aldric was the only one who believed me. He came to me quietly, decades ago, and we were not the only two. Now he is missing, and I am left wondering how it connects to what I foresaw."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Engage two different players in conversation and tell them made up prophecies about themselves. Write the character names of both players and the prophecies you made up about them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Tell three players of your prophecy from your second secret and attempt to convince them of a specific interpretation of it. These players must be from two different houses not of your own. Write each player's character name and what you told them your prophecy meant.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Orla Thass",
+      "title": "The Masked Sommelier",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Bound by oath, masked by ritual. You have served as the Crimson Toast's officiating sommelier for over a century — it is you who selects, pours, and presents the wine at every formal ceremony. You speak only at ceremonies. Your gloves never come off in public. As the one who pours the wine, you notice what people reach for and what they avoid. You carry a quiet guilt from last year's ceremony that you have never spoken about.",
+      "post_act1_context": "Last month, you observed Caspian decline wine at a private Court function. For the heir to a wine dynasty, during a ceremonial tasting, this was extraordinary. You noted it and said nothing — it is not your place to comment on what the guests drink, only to pour.",
+      "secrets": [
+        "Last month, Caspian declined wine at a private ceremonial tasting. For an heir to a wine dynasty this was unthinkable. I said nothing and poured anyway.",
+        "I am aware that Eiran Vox had Sova Vane of House Spires removed from the Crimson Duel competition roster. Once considered the second finest wine taster (second only to me of course) in the court, and twice runner up in the Crimson Duel, I am certain Sova is seething. I do not know why the removal occurred, only that Eiran authorized it.",
+        "This morning I found an unsigned note slipped under my door. It said only: 'Do not pour the wine tonight.' No signature, no house seal, and a hand I did not recognize — though it was unsteady, as if written quickly or by someone not fully in command of it."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Perform one ritual in character — initiate a formal toast, recite a ceremonial phrase, or mark a key moment with deliberate gesture. Write what you did and name one player who witnessed it.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Share what you have been observing about the Marquess's management of Valen with one player outside the Court. Write their character name and their reaction.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Orchestrate a formal toast involving at least four players from at least three different houses. You initiate, pour, and deliver a ceremonial line. Write the character names of all four players who participated.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Petra Nox",
+      "title": "Marquess's Bodyguard",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Silent, watchful, and never more than a few steps from the Marquess when it matters. Your official role is personal bodyguard to Gruber — you control who gets close to her, manage her movements through the estate, and stand between her and anything that might threaten her. You have held this post for longer than most of the Court has been alive. You know her routines, her habits, and her private spaces better than anyone. You are not politically ambitious. Your loyalty is to her person, not to her politics — a distinction you have learned to keep to yourself.",
+      "post_act1_context": "You have stood close to the Marquess all season and noticed things others have not. Earlier this year she ordered you to admit Doctor Thorne Virell through the servants' route and then to leave them entirely alone — something she has never asked of you for anyone. And you have long known of the single bottle of wine she keeps apart from the cellar, in her private study, handled only by her. You guard her body. You have learned, over the years, to guard her secrets too — even the ones she does not know you have noticed.",
+      "secrets": [
+        "The Marquess keeps one bottle of wine entirely separate from the general cellar — stored in her private study, handled only by her, never left unattended. As her bodyguard I am close enough to know every habit she has, and this one began shortly after Valen's revival. I have never been asked about it and I have never volunteered what I know.",
+        "Part of my duty is controlling who reaches the Marquess in private. Earlier this season she ordered me to admit Doctor Thorne Virell through the servants' route and then to leave them entirely alone — no guard, no staff, which she has never asked of me for anyone. Whatever passed between them, she did not want it witnessed. I obeyed. I have wondered ever since what was worth that much secrecy.",
+        "I uncovered a plot to stage a coup against Marquess Gruber last week. I imprisoned the ringleader of the plot, Brother Aldric Voss, but he has not given me the names of any other participants yet despite intense torture. I suspect other members of the court may be involved in the plot as well."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Share one piece of information about the estate's layout or passages with another player. Write their character name and what you told them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Admit to one player — in character — that you saw someone leave through the east passage the night before the ceremony and chose not to stop them. Your house loses 2 HF on confirmation. (Self-sabotage: your admission implicates the Court in allowing the departure.) Write their character name and how they reacted.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Be approached by at least two players asking about what you saw that night. Send them in different directions — give each a different account of what you observed. Write both character names and what you told each of them.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Rynn 'The Hollow' Castille",
+      "title": "The Hunter Who Became Hunted",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "You are what remains of The Hollow Sash - a vampire hunting order dedicated to protecting mortals who become entangled with Court politics. Last year's ceremony ended badly for you: you were identified as a hunter, and the Court made an example of you. You were turned. You did not ask for it and have not forgiven it. You hold fast to everything you believed before — the mission, the order, the cause — and participate in vampyrdom only as much as survival requires. Inwardly you are disgusted with what you have become. You are still here only because Lena, a mortal woman you had been watching for her own protection, has been seen visiting with members of this vampire court. You've been tracking her movements for some time.",
+      "post_act1_context": "Last night, you were following Lena at a distance; she did not know you were there. You saw her approach the mill house and go inside alone. Then you heard it: a sound like an implosion, a flash of light through the cracks in the walls. When you reached the site you found her body and the remains of whatever had taken place inside. You removed her and buried her as best you could. You have told no one what you saw, but you do not intend to sit idly. You do not know who was individually responsible, and frankly you do not care. The Court turned you against your will; the Court is responsible for Lena's death. The Marquess sits at the head of that snake — and tonight, you mean to end her.",
+      "secrets": [
+        "The night before tonight's ceremony I was following Lena at a distance; she did not know I was there. I saw her approach the mill house and go inside alone. Then I heard a sound like an implosion and saw a flash of light. When I reached the site I found her body, intact but bled out. I removed her body and gave my best attempt at a proper burial outside. I have been telling myself I couldn't have known.",
+        "Lena was not someone who stumbled into the Court's orbit by accident. She had been watching this world for some time before she chose to enter it. She understood what these people were. She made her own decisions about the risks. She told me once that she believed mortals who chose to engage with vampires deserved protection, not rescue; that the difference mattered. I disagreed with her about that, and still do. But her death was not ignorance. I believe someone in this room made a choice that killed her.",
+        "Others in this Court are moving against the Marquess — quietly, in concert, waiting for their moment. I do not share their politics or trust their patience. But I have my own reasons to want her gone: she made me what I am against my will, and now a woman I swore to protect is dead in the orbit of her Court. I have let them believe I am one of them. What I intend is simpler than a coup. If the chance comes tonight to end her, I will take it."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Make contact with one player you believe is concealing something significant. Write their character name and what made you suspicious of them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Share what you know about the mortal woman's identity with one player — and keep it private from everyone else until after the quiz. Write their character name and what you told them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Trade what you know about the mortal woman's identity for the most valuable relic or piece of intelligence another player will offer. Write their character name, what you gave, and what you received.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Silas Venn",
+      "title": "The Antiquarian Broker",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Relic hunter, archivist of shadows, and auctioneer of secrets. You have no official Court role — you return to the Crimson Toast each year because it is the best market in the vampiric world for the kind of things you deal in: pre-Sanguine Statutes artifacts, restricted documents, and intelligence that no one else has thought to monetize.",
+      "post_act1_context": "Several months ago, Caspian Vael came to you looking for intelligence on an old ritual. You told him what you knew about the Rite of Undoing and paid Sevrin Delle to locate the text in the Ashglass archives and bring back whatever additional information he safely could. Sevrin returned with the location and the ritual's requirements — ingredients, conditions, participants — though not the full procedure. You passed both to Caspian, not asking what he intended to do with them. A few weeks later Ivara Saye came to you. She cited the Sanguine Statutes and made clear she had the authority to have you sanctioned. You told her you'd been paid by an heir and shared the name, the title of the book, and what Sevrin had reported. You have sold the same chain of information twice; tonight you are watching things play out and doing very nervous arithmetic.",
+      "secrets": [
+        "Several months ago I sold Caspian Vael intelligence about the existence of the Rite of Undoing — a pre-Sanguine Statutes ritual for severing a thrall bond. I paid Sevrin Delle to locate the text in the Ashglass archives and bring back whatever additional information he safely could. Sevrin returned with the location and the ritual's requirements — ingredients, conditions, participants — though not the full procedure. I passed both to Caspian. I did not ask what it was for.",
+        "A few weeks later Ivara Saye came to me. She cited the Sanguine Statutes and made clear she had the authority to have me sanctioned. I told her I had been paid by an heir and shared the name and title of the book.",
+        "I was brought into a quiet circle of Court figures who mean to see the Marquess removed. Brother Aldric drew me in, and I agreed because a broker does well to be on the winning side before anyone knows which side that is. Now Aldric is missing, making me uncertain who can still be trusted. I am loyal to whichever outcome pays best."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Attempt to trade or sell one item — real or invented — to another player before Act 2 ends. Write their character name, what you offered, and whether the deal was made.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Sell a piece of Court intelligence — specifically the description of the ritual buyer — to a rival house. Your own house loses 3 HF in the process. Write the character name of who you sold to and what you told them.",
+          "answer_format": ""
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Acquire a one-of-a-kind relic and run an open auction — approach at least two houses with competing offers before selling. Write the relic name, each bidder's character name and offer, and who won.",
+          "answer_format": ""
+        }
+      ]
+    },
+    {
+      "name": "Brother Aldric Voss",
+      "title": "Archive Scholar order of Father Mirth",
+      "house": "Ashglass",
+      "role_type": "npc",
+      "is_optional": false,
+      "pre_event_info": "",
+      "post_act1_context": "",
+      "secrets": [],
+      "missions": []
+    },
+    {
+      "name": "Caspian Vael",
+      "title": "The Deceased Heir",
+      "house": "Cinders",
+      "role_type": "npc",
+      "is_optional": false,
+      "pre_event_info": "",
+      "post_act1_context": "",
+      "secrets": [],
+      "missions": []
+    }
+  ]
+}

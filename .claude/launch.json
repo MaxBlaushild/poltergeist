@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vampire-ascendancy",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "js/packages/vampire-ascendancy", "--", "--port", "5180"],
+      "port": 5180
+    }
+  ]
+}

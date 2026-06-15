@@ -16,6 +16,8 @@ replace github.com/MaxBlaushild/poltergeist/travel-angels => ../travel-angels
 
 replace github.com/MaxBlaushild/poltergeist/verifiable-sn => ../verifiable-sn
 
+replace github.com/MaxBlaushild/poltergeist/vampire-ascendancy => ../vampire-ascendancy
+
 replace github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
 
 replace github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
@@ -64,6 +66,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0
 	github.com/MaxBlaushild/poltergeist/sonar v0.0.0
 	github.com/MaxBlaushild/poltergeist/travel-angels v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/vampire-ascendancy v0.0.0
 	github.com/MaxBlaushild/poltergeist/verifiable-sn v0.0.0
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-gonic/gin v1.11.0
