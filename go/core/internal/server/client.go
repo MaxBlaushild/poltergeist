@@ -42,7 +42,7 @@ func (s *server) ListenAndServe(port string) {
 	router.Use(cors.New(cors.Config{
 		AllowAllOrigins: true,
 		AllowMethods:    []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:    []string{"Origin", "Content-Type", "Accept", "Authorization", "X-User-Location", "x-player-token", "x-gm-passcode"},
+		AllowHeaders:    []string{"Origin", "Content-Type", "Accept", "Authorization", "X-User-Location", "x-player-token", "x-gm-passcode", "x-gm-name"},
 	}))
 
 	fountUrl, _ := url.Parse("http://localhost:8081")
