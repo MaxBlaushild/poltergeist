@@ -328,7 +328,7 @@ type SubmissionDetail struct {
 }
 
 func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, statusFilter string) ([]SubmissionDetail, error) {
-	var details []SubmissionDetail
+	details := []SubmissionDetail{}
 	q := h.db.WithContext(ctx).
 		Table("vampire_mission_submissions s").
 		Select(`s.id, s.player_id, s.mission_id, s.status, s.player_answer,
@@ -529,7 +529,7 @@ type QuizSubmissionDetail struct {
 }
 
 func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error) {
-	var out []QuizSubmissionDetail
+	out := []QuizSubmissionDetail{}
 	if err := h.db.WithContext(ctx).
 		Table("vampire_quiz_submissions s").
 		Select(`s.id, s.player_id, s.question_id, s.answer, s.is_correct, s.locked,
