@@ -23,9 +23,9 @@ func (s *server) getLeaderboard(ctx *gin.Context) {
 // leaderboard is the running sum.
 func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
 	var body struct {
-		HouseID string `json:"houseId"`
-		Delta   int    `json:"delta"`
-		Reason  string `json:"reason"`
+		HouseID string  `json:"houseId"`
+		Delta   float64 `json:"delta"`
+		Reason  string  `json:"reason"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

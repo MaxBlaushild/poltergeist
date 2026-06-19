@@ -16,7 +16,34 @@ func (s *server) gmListSubmissions(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"submissions": details})
+	photoMap, err := s.photoIDsBySubmission(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	out := make([]gin.H, 0, len(details))
+	for _, d := range details {
+		ids := photoMap[d.ID.String()]
+		if ids == nil {
+			ids = []string{}
+		}
+		out = append(out, gin.H{
+			"id":                  d.ID,
+			"status":              d.Status,
+			"playerAnswer":        d.PlayerAnswer,
+			"awardedBt":           d.AwardedBT,
+			"guestLabel":          d.GuestLabel,
+			"characterName":       d.CharacterName,
+			"houseName":           d.HouseName,
+			"missionTier":         d.MissionTier,
+			"missionPrompt":       d.MissionPrompt,
+			"missionAnswerFormat": d.MissionAnswerFormat,
+			"rewardBt":            d.RewardBT,
+			"photoIds":            ids,
+		})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"submissions": out})
 }
 
 // POST /gm/submissions/:id/verify — approve a submission. Records the Blood
@@ -76,6 +103,21 @@ func (s *server) gmVerifySubmission(ctx *gin.Context) {
 		}); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Sabotage missions also deduct House Favor from a target house, once,
+		// on the transition into verified.
+		if mission.SabotageHouseID != nil && mission.SabotageHF > 0 {
+			if err := s.dbClient.Vampire().AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
+				HouseID: *mission.SabotageHouseID,
+				Delta:   -float64(mission.SabotageHF),
+				Reason:  "Sabotage mission confirmed",
+				GMName:  gmName,
+				Source:  "mission",
+			}); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	}
 

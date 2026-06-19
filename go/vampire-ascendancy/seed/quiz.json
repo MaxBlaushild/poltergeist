@@ -1,26 +1,49 @@
-[
-  {
-    "ordinal": 1,
-    "prompt": "Who poisoned the wine meant for the Marquess's heir?",
-    "questionType": "multiple_choice",
-    "options": ["Orla Thass", "Marquess Gruber", "Valen Drear", "Doctor Thorne Virell"],
-    "correctAnswer": "Marquess Gruber",
-    "hfEffect": { "Marquess's Court": 2 }
+{
+  "part1": {
+    "prompt": "In your own words, what do you believe happened to Caspian Vael? Describe what you think occurred, who was involved, and why. Be as specific as you can.",
+    "rubric": "Canonical truth: Caspian Vael, the named heir, was secretly a thrall bound to Marquess Gruber. To remove a too-conspicuous heir, Gruber arranged for Caspian to be poisoned with the ceremonial wine. Valen Drear — also Gruber's thrall, his bond degrading — tried to warn the sommelier with an unsigned note not to serve the wine. Ashglass (via Doctor Thorne Virell's lab and the necromantic revival research) supplied the means. The cover story is that Caspian simply failed to appear. Key facts worth credit: (1) Caspian was a thrall/bound to Gruber; (2) he was poisoned, via the wine; (3) Gruber orchestrated it; (4) Valen tried to warn against the wine; (5) Ashglass/Thorne supplied the poison or method.",
+    "maxBt": 6
   },
-  {
-    "ordinal": 2,
-    "prompt": "Which house secretly engineered the necromantic revival at the heart of tonight's events?",
-    "questionType": "multiple_choice",
-    "options": ["Spires", "Chains", "Cinders", "Ashglass"],
-    "correctAnswer": "Ashglass",
-    "hfEffect": { "Ashglass": 2, "Spires": -1 }
-  },
-  {
-    "ordinal": 3,
-    "prompt": "In your own words: who do you believe is truly behind the conspiracy, and why?",
-    "questionType": "open",
-    "options": [],
-    "correctAnswer": "",
-    "hfEffect": {}
-  }
-]
+  "part2": [
+    {
+      "ordinal": 1,
+      "prompt": "Who orchestrated Caspian Vael's death?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": ["Marquess Gruber", "Valen Drear", "Eiran Vox", "Doctor Thorne Virell"],
+      "correctAnswer": "Marquess Gruber"
+    },
+    {
+      "ordinal": 2,
+      "prompt": "How was Caspian killed?",
+      "tier": "easy",
+      "hfValue": 2,
+      "options": ["Poisoned wine", "A duel", "A ritual", "He was never killed"],
+      "correctAnswer": "Poisoned wine"
+    },
+    {
+      "ordinal": 3,
+      "prompt": "Which house supplied the means of the poisoning?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": ["Ashglass", "Cinders", "Chains", "Spires"],
+      "correctAnswer": "Ashglass"
+    },
+    {
+      "ordinal": 4,
+      "prompt": "What was Caspian's hidden status?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": ["A thrall bound to the Marquess", "A spy for Chains", "Already dead", "An impostor"],
+      "correctAnswer": "A thrall bound to the Marquess"
+    },
+    {
+      "ordinal": 5,
+      "prompt": "Who tried to warn against serving the wine?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": ["Valen Drear", "Aurel Voss", "Orla Thass", "Mira Ashvane"],
+      "correctAnswer": "Valen Drear"
+    }
+  ]
+}

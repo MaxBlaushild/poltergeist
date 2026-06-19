@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getToken, submitMission } from '../api';
+import { getToken, submitMission, photoUrl } from '../api';
 import type { MeResponse, Mission, Secret } from '../types';
 import { TIER_LABEL, accentFor } from '../theme';
+import { fileToResizedDataURL } from '../photo';
 import { VampireMark } from './VampireMark';
 
 export type DossierSection = 'dossier' | 'secrets' | 'missions';
@@ -144,19 +145,48 @@ const MissionCard = ({
   const [answer, setAnswer] = useState(
     () => localStorage.getItem(draftKey) ?? sub?.playerAnswer ?? ''
   );
+  const [newPhotos, setNewPhotos] = useState<string[]>([]); // data URLs to upload
+  const [cleared, setCleared] = useState(false); // remove existing photos
+  const [adding, setAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     localStorage.setItem(draftKey, answer);
   }, [answer, draftKey]);
 
+  const existingPhotos = cleared ? [] : sub?.photoIds ?? [];
+  const canSubmit = answer.trim().length > 0 || newPhotos.length > 0 || cleared;
+
+  const addPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-picking the same file
+    if (files.length === 0) return;
+    setAdding(true);
+    const urls: string[] = [];
+    for (const f of files) {
+      try {
+        urls.push(await fileToResizedDataURL(f));
+      } catch {
+        /* skip unreadable files */
+      }
+    }
+    setNewPhotos((p) => [...p, ...urls].slice(0, 6));
+    setAdding(false);
+  };
+
   const submit = async () => {
-    if (!answer.trim() || submitting) return;
+    if (!canSubmit || submitting) return;
     setSubmitting(true);
     setErr(null);
     try {
-      await submitMission(token, mission.id, answer.trim());
+      await submitMission(token, mission.id, answer.trim(), {
+        photos: newPhotos.length ? newPhotos : undefined,
+        clearPhotos: cleared || undefined,
+      });
+      setNewPhotos([]);
+      setCleared(false);
       onSubmitted();
     } catch {
       setErr('The court did not hear you — your answer is saved. Try again.');
@@ -190,11 +220,69 @@ const MissionCard = ({
         rows={3}
         className="mt-3 w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone placeholder:text-bone/30 focus:outline-none focus:border-blood-bright disabled:opacity-60"
       />
+
+      {(existingPhotos.length > 0 || newPhotos.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {existingPhotos.map((id) => (
+            <img
+              key={id}
+              src={photoUrl(id)}
+              alt=""
+              className="w-16 h-16 object-cover rounded-md border border-blood/40"
+            />
+          ))}
+          {newPhotos.map((d, i) => (
+            <div key={i} className="relative">
+              <img
+                src={d}
+                alt=""
+                className="w-16 h-16 object-cover rounded-md border border-blood-bright/60"
+              />
+              {!verified && (
+                <button
+                  onClick={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blood text-bone text-xs leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!verified && (
+        <div className="mt-3 flex items-center gap-4">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="text-xs text-gold uppercase tracking-[0.15em]"
+          >
+            {adding ? 'Adding…' : '+ Add photo'}
+          </button>
+          {existingPhotos.length > 0 && (
+            <button
+              onClick={() => setCleared(true)}
+              className="text-xs text-bone/40 uppercase tracking-[0.15em]"
+            >
+              Remove photos
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={addPhotos}
+            className="hidden"
+          />
+        </div>
+      )}
+
       {err && <p className="mt-2 text-xs text-blood-bright">{err}</p>}
       {!verified && (
         <button
           onClick={submit}
-          disabled={submitting || !answer.trim()}
+          disabled={submitting || !canSubmit}
           className="mt-3 w-full py-2.5 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright transition-colors disabled:opacity-40"
         >
           {submitting ? 'Submitting…' : sub ? 'Resubmit' : 'Submit'}

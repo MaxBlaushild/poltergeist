@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getLeaderboard, getToken } from '../api';
 import type { HouseStanding } from '../types';
-import { accentFor, houseInfoFor } from '../theme';
+import { accentFor, houseInfoFor, formatHF } from '../theme';
 
 // Small house emblem; source art is black-on-white so we invert it. Hides if
 // the image hasn't been added yet.
@@ -75,7 +75,7 @@ export const Leaderboard = ({ myHouse }: { myHouse?: string }) => {
                     {mine && <span className="ml-2 text-xs text-bone/50 italic">your house</span>}
                   </p>
                 </div>
-                <span className="text-2xl font-bold text-bone">{h.favor}</span>
+                <span className="text-2xl font-bold text-bone">{formatHF(h.favor)}</span>
               </Link>
             );
           })}

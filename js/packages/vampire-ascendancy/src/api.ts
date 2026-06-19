@@ -100,14 +100,19 @@ export function getHouseOverview(token: string, houseId: string): Promise<HouseO
   return request<HouseOverview>(`/houses/${houseId}/overview`, token);
 }
 
+export function photoUrl(id: string): string {
+  return `${API_BASE}/vampire-ascendancy/photos/${id}`;
+}
+
 export function submitMission(
   token: string,
   missionId: string,
-  answer: string
+  answer: string,
+  opts?: { photos?: string[]; clearPhotos?: boolean }
 ): Promise<{ status: string; playerAnswer: string; awardedBt: number }> {
   return request(`/missions/${missionId}/submit`, token, {
     method: 'POST',
-    body: JSON.stringify({ answer }),
+    body: JSON.stringify({ answer, photos: opts?.photos, clearPhotos: opts?.clearPhotos }),
   });
 }
 
@@ -115,11 +120,18 @@ export function getQuiz(token: string): Promise<QuizResponse> {
   return request<QuizResponse>('/quiz', token);
 }
 
-export function submitQuiz(
+export function submitQuizPart1(token: string, answer: string): Promise<{ ok: boolean }> {
+  return request('/quiz/part1/submit', token, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function submitQuizPart2(
   token: string,
   answers: { questionId: string; answer: string }[]
 ): Promise<{ ok: boolean }> {
-  return request('/quiz/submit', token, {
+  return request('/quiz/part2/submit', token, {
     method: 'POST',
     body: JSON.stringify({ answers }),
   });

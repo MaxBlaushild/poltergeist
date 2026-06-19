@@ -31,7 +31,7 @@ export const PlayerShell = () => {
   // route) lands the player back on the tab they left, not always the dossier.
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem(TAB_KEY) as Tab) || 'dossier');
   const [dismissedNotif, setDismissedNotif] = useState(() => localStorage.getItem(DISMISSED_KEY));
-  const [quizDismissed, setQuizDismissed] = useState(false);
+  const [quizDismissedPart, setQuizDismissedPart] = useState<number | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -107,12 +107,18 @@ export const PlayerShell = () => {
     setDismissedNotif(me.notification.id);
   };
 
-  // The end quiz takes over the screen while it's open and not yet dismissed.
-  const showQuiz = me.gameState.quizOpen && !quizDismissed;
+  // The end quiz takes over the screen while a part is open and not yet dismissed.
+  const activeQuizPart = me.gameState.quizPart1Open ? 1 : me.gameState.quizPart2Open ? 2 : null;
+  const showQuiz = activeQuizPart !== null && quizDismissedPart !== activeQuizPart;
 
   return (
     <div className="min-h-screen max-w-2xl mx-auto px-4 pb-10">
-      {showQuiz && <QuizTakeover onDone={() => setQuizDismissed(true)} />}
+      {showQuiz && activeQuizPart && (
+        <QuizTakeover
+          part={activeQuizPart as 1 | 2}
+          onDone={() => setQuizDismissedPart(activeQuizPart)}
+        />
+      )}
       {!showQuiz && showTakeover && me.notification && (
         <NotificationTakeover notification={me.notification} onDismiss={dismissTakeover} />
       )}

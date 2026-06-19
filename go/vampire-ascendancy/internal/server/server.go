@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,6 +15,10 @@ type server struct {
 	authClient auth.Client
 	dbClient   db.DbClient
 	gmPasscode string
+	deepPriest deep_priest.DeepPriest // LLM oracle for Part 1 quiz grading
+
+	gradingMu sync.Mutex
+	grading   bool
 }
 
 type Server interface {
@@ -30,11 +36,15 @@ func NewServer(
 		// GM admin passcode. In prod this comes from the ECS task secrets; for
 		// local dev set GM_PASSCODE in local.env.
 		gmPasscode: os.Getenv("GM_PASSCODE"),
+		deepPriest: deep_priest.SummonDeepPriest(),
 	}
 }
 
 func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/health", s.GetHealth)
+
+	// Submission photos are served by unguessable id (no token; not secret content).
+	r.GET("/vampire-ascendancy/photos/:id", s.getPhoto)
 
 	// Public login routes — pick a character + enter its sigil to get a token.
 	r.GET("/vampire-ascendancy/characters", s.listCharactersPublic)
@@ -48,7 +58,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/houses/:id/overview", s.withPlayer, s.getHouseOverview)
 	r.POST("/vampire-ascendancy/missions/:id/submit", s.withPlayer, s.submitMission)
 	r.GET("/vampire-ascendancy/quiz", s.withPlayer, s.getQuiz)
-	r.POST("/vampire-ascendancy/quiz/submit", s.withPlayer, s.submitQuiz)
+	r.POST("/vampire-ascendancy/quiz/part1/submit", s.withPlayer, s.submitQuizPart1)
+	r.POST("/vampire-ascendancy/quiz/part2/submit", s.withPlayer, s.submitQuizPart2)
 
 	// GM admin routes — guarded by the shared passcode.
 	gm := r.Group("/vampire-ascendancy/gm", s.withGM)
@@ -68,7 +79,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.GET("/characters", s.gmListCharacters)
 	gm.POST("/notifications", s.gmPushNotification)
 	gm.POST("/notifications/clear", s.gmClearNotifications)
-	gm.POST("/quiz/open", s.gmSetQuizOpen)
+	gm.POST("/quiz/part1", s.gmSetPart1Open)
+	gm.POST("/quiz/part1/grade", s.gmGradePart1)
+	gm.POST("/quiz/part1/override", s.gmOverridePart1BT)
+	gm.POST("/quiz/part2", s.gmSetPart2Open)
+	gm.POST("/quiz/part2/rescore", s.gmRescorePart2)
 	gm.GET("/quiz/submissions", s.gmListQuizSubmissions)
 }
 

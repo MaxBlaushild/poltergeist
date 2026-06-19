@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { gmListSubmissions, gmVerify, gmReject } from '../../gmApi';
 import type { GMSubmission } from '../../gmApi';
+import { photoUrl } from '../../api';
 import { Card } from './GameSection';
 
 const TIER_LABEL: Record<string, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
@@ -90,6 +91,19 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
       <p className="text-bone bg-black/50 rounded-md p-3 mb-3 whitespace-pre-wrap">
         {sub.playerAnswer || <span className="text-bone/40">— no answer —</span>}
       </p>
+      {sub.photoIds && sub.photoIds.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {sub.photoIds.map((id) => (
+            <a key={id} href={photoUrl(id)} target="_blank" rel="noreferrer">
+              <img
+                src={photoUrl(id)}
+                alt=""
+                className="w-20 h-20 object-cover rounded-md border border-blood/40"
+              />
+            </a>
+          ))}
+        </div>
+      )}
 
       {sub.status !== 'verified' && (
         <div className="flex items-center gap-2">
