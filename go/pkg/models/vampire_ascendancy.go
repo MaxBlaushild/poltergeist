@@ -97,6 +97,16 @@ type VampireMissionSubmission struct {
 
 func (VampireMissionSubmission) TableName() string { return "vampire_mission_submissions" }
 
+type VampireSubmissionPhoto struct {
+	ID           uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt    time.Time `gorm:"not null" json:"createdAt"`
+	SubmissionID uuid.UUID `gorm:"not null" json:"submissionId"`
+	ContentType  string    `gorm:"not null;default:'image/jpeg'" json:"contentType"`
+	Data         []byte    `gorm:"type:bytea" json:"-"`
+}
+
+func (VampireSubmissionPhoto) TableName() string { return "vampire_submission_photos" }
+
 type VampireHouseFavorLedger struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt time.Time `gorm:"not null" json:"createdAt"`

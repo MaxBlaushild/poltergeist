@@ -310,21 +310,21 @@ func (h *vampireHandler) ListSubmissions(ctx context.Context, statusFilter strin
 // SubmissionDetail is a mission submission enriched with the player, character,
 // house, and mission context the GM needs to adjudicate.
 type SubmissionDetail struct {
-	ID            uuid.UUID `json:"id"`
-	PlayerID      uuid.UUID `json:"playerId"`
-	MissionID     uuid.UUID `json:"missionId"`
-	Status        string    `json:"status"`
-	PlayerAnswer  string    `json:"playerAnswer"`
-	AwardedBT     int       `json:"awardedBt"`
-	VerifiedBy    string    `json:"verifiedBy"`
-	CreatedAt     time.Time `json:"createdAt"`
-	GuestLabel    string    `json:"guestLabel"`
-	CharacterName string    `json:"characterName"`
-	HouseName     string    `json:"houseName"`
-	MissionTier         string `json:"missionTier"`
-	MissionPrompt       string `json:"missionPrompt"`
-	MissionAnswerFormat string `json:"missionAnswerFormat"`
-	RewardBT            int    `json:"rewardBt"`
+	ID                  uuid.UUID `json:"id"`
+	PlayerID            uuid.UUID `json:"playerId"`
+	MissionID           uuid.UUID `json:"missionId"`
+	Status              string    `json:"status"`
+	PlayerAnswer        string    `json:"playerAnswer"`
+	AwardedBT           int       `json:"awardedBt"`
+	VerifiedBy          string    `json:"verifiedBy"`
+	CreatedAt           time.Time `json:"createdAt"`
+	GuestLabel          string    `json:"guestLabel"`
+	CharacterName       string    `json:"characterName"`
+	HouseName           string    `json:"houseName"`
+	MissionTier         string    `json:"missionTier"`
+	MissionPrompt       string    `json:"missionPrompt"`
+	MissionAnswerFormat string    `json:"missionAnswerFormat"`
+	RewardBT            int       `json:"rewardBt"`
 }
 
 func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, statusFilter string) ([]SubmissionDetail, error) {
@@ -361,6 +361,57 @@ func (h *vampireHandler) GetSubmissionByID(ctx context.Context, id uuid.UUID) (*
 		return nil, err
 	}
 	return &sub, nil
+}
+
+// ---- Submission photos ----
+
+func (h *vampireHandler) AddSubmissionPhoto(ctx context.Context, submissionID uuid.UUID, contentType string, data []byte) (uuid.UUID, error) {
+	photo := models.VampireSubmissionPhoto{
+		SubmissionID: submissionID,
+		ContentType:  contentType,
+		Data:         data,
+	}
+	if err := h.db.WithContext(ctx).Create(&photo).Error; err != nil {
+		return uuid.Nil, err
+	}
+	return photo.ID, nil
+}
+
+func (h *vampireHandler) DeletePhotosForSubmission(ctx context.Context, submissionID uuid.UUID) error {
+	return h.db.WithContext(ctx).
+		Where("submission_id = ?", submissionID).
+		Delete(&models.VampireSubmissionPhoto{}).Error
+}
+
+func (h *vampireHandler) GetPhoto(ctx context.Context, id uuid.UUID) (*models.VampireSubmissionPhoto, error) {
+	var photo models.VampireSubmissionPhoto
+	if err := h.db.WithContext(ctx).First(&photo, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &photo, nil
+}
+
+// PhotoRef is a lightweight (id, submission) pair — never carries the bytes.
+type PhotoRef struct {
+	ID           uuid.UUID `json:"id"`
+	SubmissionID uuid.UUID `json:"submissionId"`
+}
+
+// ListPhotoRefs returns photo ids grouped by submission (no image data), for
+// attaching to the player and GM submission views.
+func (h *vampireHandler) ListPhotoRefs(ctx context.Context) ([]PhotoRef, error) {
+	out := []PhotoRef{}
+	if err := h.db.WithContext(ctx).
+		Table("vampire_submission_photos").
+		Select("id, submission_id").
+		Order("created_at ASC").
+		Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (h *vampireHandler) UpdateSubmissionStatus(ctx context.Context, id uuid.UUID, status string, awardedBT int, verifiedBy string) error {

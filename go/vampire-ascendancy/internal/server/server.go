@@ -43,6 +43,9 @@ func NewServer(
 func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/health", s.GetHealth)
 
+	// Submission photos are served by unguessable id (no token; not secret content).
+	r.GET("/vampire-ascendancy/photos/:id", s.getPhoto)
+
 	// Public login routes — pick a character + enter its sigil to get a token.
 	r.GET("/vampire-ascendancy/characters", s.listCharactersPublic)
 	r.GET("/vampire-ascendancy/characters/:id", s.getCharacterPublic)

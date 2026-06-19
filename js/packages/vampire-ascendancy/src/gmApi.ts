@@ -58,6 +58,7 @@ export interface GMSubmission {
   missionPrompt: string;
   missionAnswerFormat: string;
   rewardBt: number;
+  photoIds: string[];
 }
 
 export interface GMPlayer {

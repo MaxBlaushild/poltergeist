@@ -100,14 +100,19 @@ export function getHouseOverview(token: string, houseId: string): Promise<HouseO
   return request<HouseOverview>(`/houses/${houseId}/overview`, token);
 }
 
+export function photoUrl(id: string): string {
+  return `${API_BASE}/vampire-ascendancy/photos/${id}`;
+}
+
 export function submitMission(
   token: string,
   missionId: string,
-  answer: string
+  answer: string,
+  opts?: { photos?: string[]; clearPhotos?: boolean }
 ): Promise<{ status: string; playerAnswer: string; awardedBt: number }> {
   return request(`/missions/${missionId}/submit`, token, {
     method: 'POST',
-    body: JSON.stringify({ answer }),
+    body: JSON.stringify({ answer, photos: opts?.photos, clearPhotos: opts?.clearPhotos }),
   });
 }
 

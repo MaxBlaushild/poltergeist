@@ -45,7 +45,9 @@ func (s *server) submitMission(ctx *gin.Context) {
 	}
 
 	var body struct {
-		Answer string `json:"answer"`
+		Answer      string   `json:"answer"`
+		Photos      []string `json:"photos"`      // new photos to append (data URLs)
+		ClearPhotos bool     `json:"clearPhotos"` // remove existing photos first
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -56,6 +58,13 @@ func (s *server) submitMission(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if len(body.Photos) > 0 || body.ClearPhotos {
+		if err := s.savePhotos(ctx, sub.ID, body.Photos, body.ClearPhotos); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{

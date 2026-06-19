@@ -216,6 +216,12 @@ type VampireHandle interface {
 	GetSubmissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMissionSubmission, error)
 	UpdateSubmissionStatus(ctx context.Context, id uuid.UUID, status string, awardedBT int, verifiedBy string) error
 
+	// Submission photos
+	AddSubmissionPhoto(ctx context.Context, submissionID uuid.UUID, contentType string, data []byte) (uuid.UUID, error)
+	DeletePhotosForSubmission(ctx context.Context, submissionID uuid.UUID) error
+	GetPhoto(ctx context.Context, id uuid.UUID) (*models.VampireSubmissionPhoto, error)
+	ListPhotoRefs(ctx context.Context) ([]PhotoRef, error)
+
 	// House Favor
 	AddHouseFavor(ctx context.Context, entry *models.VampireHouseFavorLedger) error
 	Leaderboard(ctx context.Context) ([]HouseFavorStanding, error)

@@ -96,12 +96,22 @@ func (s *server) getMe(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		photoMap, err := s.photoIDsBySubmission(ctx)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		subByMission := map[string]gin.H{}
 		for _, sub := range subs {
+			ids := photoMap[sub.ID.String()]
+			if ids == nil {
+				ids = []string{}
+			}
 			subByMission[sub.MissionID.String()] = gin.H{
 				"status":       sub.Status,
 				"playerAnswer": sub.PlayerAnswer,
 				"awardedBt":    sub.AwardedBT,
+				"photoIds":     ids,
 			}
 		}
 

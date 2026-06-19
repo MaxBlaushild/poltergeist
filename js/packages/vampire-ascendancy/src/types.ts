@@ -15,6 +15,7 @@ export interface MissionSubmission {
   status: SubmissionStatus;
   playerAnswer: string;
   awardedBt: number;
+  photoIds: string[];
 }
 
 export interface Mission {
