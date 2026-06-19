@@ -77,6 +77,21 @@ func (s *server) gmVerifySubmission(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Sabotage missions also deduct House Favor from a target house, once,
+		// on the transition into verified.
+		if mission.SabotageHouseID != nil && mission.SabotageHF > 0 {
+			if err := s.dbClient.Vampire().AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
+				HouseID: *mission.SabotageHouseID,
+				Delta:   -float64(mission.SabotageHF),
+				Reason:  "Sabotage mission confirmed",
+				GMName:  gmName,
+				Source:  "mission",
+			}); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
 	}
 
 	s.logGM(ctx, "verify_submission", map[string]interface{}{

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { getHouseOverview, getToken } from '../api';
 import type { HouseOverview } from '../types';
-import { accentFor, houseInfoFor } from '../theme';
+import { accentFor, houseInfoFor, formatHF } from '../theme';
 
 export const HousePage = () => {
   const token = getToken();
@@ -62,7 +62,7 @@ export const HousePage = () => {
         {info.blurb && <p className="mt-3 text-bone/85 leading-relaxed">{info.blurb}</p>}
         <div className="mt-4 inline-flex items-baseline gap-2">
           <span className="text-bone/60 uppercase tracking-[0.2em] text-xs">House Favor</span>
-          <span className="text-3xl font-bold text-bone">{house.favor}</span>
+          <span className="text-3xl font-bold text-bone">{formatHF(house.favor)}</span>
         </div>
       </header>
 
@@ -81,7 +81,7 @@ export const HousePage = () => {
                     e.delta >= 0 ? 'text-green-400' : 'text-blood-bright'
                   }`}
                 >
-                  {e.delta >= 0 ? `+${e.delta}` : e.delta}
+                  {e.delta >= 0 ? `+${formatHF(e.delta)}` : formatHF(e.delta)}
                 </span>
                 <div className="flex-1">
                   <p className="text-bone">{e.reason || (e.source === 'quiz' ? 'Quiz result' : 'Adjustment')}</p>

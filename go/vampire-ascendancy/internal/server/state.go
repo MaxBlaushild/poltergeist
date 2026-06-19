@@ -11,7 +11,9 @@ func gameStateResponse(state *models.VampireGameState) gin.H {
 	return gin.H{
 		"currentAct":           state.CurrentAct,
 		"contentUnlocked":      state.ContentUnlocked,
-		"quizOpen":             state.QuizOpen,
+		"quizPart1Open":        state.QuizPart1Open,
+		"quizPart2Open":        state.QuizPart2Open,
+		"quizPart1OpenedAt":    state.QuizPart1OpenedAt,
 		"activeNotificationId": state.ActiveNotificationID,
 	}
 }

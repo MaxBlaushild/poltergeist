@@ -120,8 +120,11 @@ export const gmClearNotifications = () =>
 
 export interface GMQuizSubmission {
   id: string;
+  part: number;
   answer: string;
   isCorrect: boolean | null;
+  aiScore: number | null;
+  awardedBt: number;
   locked: boolean;
   guestLabel: string;
   characterName: string;
@@ -131,8 +134,18 @@ export interface GMQuizSubmission {
   questionType: string;
 }
 
-export const gmSetQuizOpen = (open: boolean) =>
-  gm<GameState>('/quiz/open', { method: 'POST', body: JSON.stringify({ open }) });
+export const gmSetPart1Open = (open: boolean) =>
+  gm<GameState>('/quiz/part1', { method: 'POST', body: JSON.stringify({ open }) });
+export const gmSetPart2Open = (open: boolean) =>
+  gm<GameState>('/quiz/part2', { method: 'POST', body: JSON.stringify({ open }) });
+export const gmGradePart1 = () => gm<{ status: string }>('/quiz/part1/grade', { method: 'POST' });
+export const gmOverridePart1BT = (submissionId: string, awardedBt: number) =>
+  gm<{ ok: boolean }>('/quiz/part1/override', {
+    method: 'POST',
+    body: JSON.stringify({ submissionId, awardedBt }),
+  });
+export const gmRescorePart2 = () =>
+  gm<{ standings: HouseStanding[] }>('/quiz/part2/rescore', { method: 'POST' });
 export const gmListQuizSubmissions = () =>
   gm<{ submissions: GMQuizSubmission[] }>('/quiz/submissions');
 

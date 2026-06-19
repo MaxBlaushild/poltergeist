@@ -15,7 +15,7 @@ type HouseFavorStanding struct {
 	HouseID   uuid.UUID `json:"houseId"`
 	Name      string    `json:"name"`
 	SortOrder int       `json:"sortOrder"`
-	Favor     int       `json:"favor"`
+	Favor     float64   `json:"favor"`
 }
 
 // BloodTokenTotal is a player's summed blood tokens (for resolution / reference).
@@ -517,8 +517,11 @@ type QuizSubmissionDetail struct {
 	ID            uuid.UUID `json:"id"`
 	PlayerID      uuid.UUID `json:"playerId"`
 	QuestionID    uuid.UUID `json:"questionId"`
+	Part          int       `json:"part"`
 	Answer        string    `json:"answer"`
 	IsCorrect     *bool     `json:"isCorrect"`
+	AIScore       *float64  `json:"aiScore"`
+	AwardedBT     int       `json:"awardedBt"`
 	Locked        bool      `json:"locked"`
 	GuestLabel    string    `json:"guestLabel"`
 	CharacterName string    `json:"characterName"`
@@ -532,7 +535,9 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]Qui
 	out := []QuizSubmissionDetail{}
 	if err := h.db.WithContext(ctx).
 		Table("vampire_quiz_submissions s").
-		Select(`s.id, s.player_id, s.question_id, s.answer, s.is_correct, s.locked,
+		Select(`s.id, s.player_id, s.question_id, s.answer, s.is_correct, s.ai_score,
+			s.awarded_bt, s.locked,
+			q.part AS part,
 			p.guest_label AS guest_label,
 			COALESCE(c.name, '') AS character_name,
 			COALESCE(h.name, '') AS house_name,
@@ -541,11 +546,85 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]Qui
 		Joins("JOIN vampire_quiz_questions q ON q.id = s.question_id").
 		Joins("LEFT JOIN vampire_characters c ON c.id = p.character_id").
 		Joins("LEFT JOIN vampire_houses h ON h.id = c.house_id").
-		Order("q.ordinal ASC, character_name ASC").
+		Order("q.part ASC, q.ordinal ASC, character_name ASC").
 		Scan(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (h *vampireHandler) ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error) {
+	var qs []models.VampireQuizQuestion
+	q := h.db.WithContext(ctx).Where("part = ?", part).Order("ordinal ASC")
+	if activeOnly {
+		q = q.Where("active = ?", true)
+	}
+	if err := q.Find(&qs).Error; err != nil {
+		return nil, err
+	}
+	return qs, nil
+}
+
+// GetPart1Question returns the single active Part 1 (open-end) question.
+func (h *vampireHandler) GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error) {
+	var qq models.VampireQuizQuestion
+	if err := h.db.WithContext(ctx).
+		Where("part = ? AND active = ?", 1, true).
+		Order("ordinal ASC").First(&qq).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &qq, nil
+}
+
+func (h *vampireHandler) UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error {
+	return h.db.WithContext(ctx).Model(&models.VampireQuizSubmission{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"ai_score":   aiScore,
+			"awarded_bt": awardedBT,
+			"updated_at": time.Now(),
+		}).Error
+}
+
+// Part2Answer is one player's answer to a Part 2 question, with their house —
+// the raw material for the normalized per-house scoring.
+type Part2Answer struct {
+	PlayerID   uuid.UUID `json:"playerId"`
+	HouseID    uuid.UUID `json:"houseId"`
+	QuestionID uuid.UUID `json:"questionId"`
+	Answer     string    `json:"answer"`
+}
+
+func (h *vampireHandler) ListPart2Answers(ctx context.Context) ([]Part2Answer, error) {
+	out := []Part2Answer{}
+	if err := h.db.WithContext(ctx).
+		Table("vampire_quiz_submissions s").
+		Select("s.player_id, c.house_id AS house_id, s.question_id, s.answer").
+		Joins("JOIN vampire_quiz_questions q ON q.id = s.question_id AND q.part = 2").
+		Joins("JOIN vampire_players p ON p.id = s.player_id").
+		Joins("JOIN vampire_characters c ON c.id = p.character_id").
+		Where("c.house_id IS NOT NULL").
+		Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteHouseFavorBySource removes ledger entries of a given source (used to
+// idempotently re-score Part 2).
+func (h *vampireHandler) DeleteHouseFavorBySource(ctx context.Context, source string) error {
+	return h.db.WithContext(ctx).Where("source = ?", source).Delete(&models.VampireHouseFavorLedger{}).Error
+}
+
+// DeleteBloodTokensBySourceForPlayer removes a player's BT entries of a given
+// source (used to idempotently re-grade Part 1).
+func (h *vampireHandler) DeleteBloodTokensBySourceForPlayer(ctx context.Context, playerID uuid.UUID, source string) error {
+	return h.db.WithContext(ctx).
+		Where("player_id = ? AND source = ?", playerID, source).
+		Delete(&models.VampireBloodTokenLog{}).Error
 }
 
 func (h *vampireHandler) GetQuizQuestionByID(ctx context.Context, id uuid.UUID) (*models.VampireQuizQuestion, error) {
@@ -626,7 +705,9 @@ func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
 		return tx.Model(&models.VampireGameState{}).Where("id = ?", 1).Updates(map[string]interface{}{
 			"current_act":            "pre_event",
 			"content_unlocked":       false,
-			"quiz_open":              false,
+			"quiz_part1_open":        false,
+			"quiz_part2_open":        false,
+			"quiz_part1_opened_at":   nil,
 			"active_notification_id": nil,
 			"updated_at":             time.Now(),
 		}).Error

@@ -115,11 +115,18 @@ export function getQuiz(token: string): Promise<QuizResponse> {
   return request<QuizResponse>('/quiz', token);
 }
 
-export function submitQuiz(
+export function submitQuizPart1(token: string, answer: string): Promise<{ ok: boolean }> {
+  return request('/quiz/part1/submit', token, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function submitQuizPart2(
   token: string,
   answers: { questionId: string; answer: string }[]
 ): Promise<{ ok: boolean }> {
-  return request('/quiz/submit', token, {
+  return request('/quiz/part2/submit', token, {
     method: 'POST',
     body: JSON.stringify({ answers }),
   });

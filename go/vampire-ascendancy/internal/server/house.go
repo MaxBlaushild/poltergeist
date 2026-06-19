@@ -38,7 +38,7 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 		return
 	}
 
-	favor := 0
+	favor := 0.0
 	logOut := make([]gin.H, 0, len(log))
 	for _, e := range log {
 		favor += e.Delta

@@ -14,6 +14,9 @@ export const TIER_LABEL: Record<string, string> = {
 
 export const accentFor = (house?: string) => (house && HOUSE_ACCENT[house]) || '#c81912';
 
+// House Favor can be fractional (Part 2 quiz). Show e.g. "2.5", "10.5", "3".
+export const formatHF = (n: number) => String(Math.round(n * 100) / 100);
+
 export interface HouseInfo {
   sigil: string; // path under public/, e.g. /houses/spires.png
   blurb: string;

@@ -41,9 +41,11 @@ export interface Character {
 }
 
 export interface GameState {
-  currentAct: 'pre_event' | 'act1' | 'act2' | 'act3' | 'quiz' | 'resolved';
+  currentAct: 'pre_event' | 'act1' | 'act2' | 'act3' | 'quiz_part1' | 'quiz_part2' | 'resolved';
   contentUnlocked: boolean;
-  quizOpen: boolean;
+  quizPart1Open: boolean;
+  quizPart2Open: boolean;
+  quizPart1OpenedAt: string | null;
   activeNotificationId: string | null;
 }
 
@@ -53,19 +55,32 @@ export interface Notification {
   body: string;
 }
 
-export interface QuizQuestion {
+export interface QuizPart1 {
+  open: boolean;
+  openedAt: string | null;
+  prompt: string;
+  submitted: boolean;
+  answer: string;
+}
+
+export interface QuizPart2Question {
   id: string;
   ordinal: number;
   prompt: string;
-  questionType: 'multiple_choice' | 'open';
+  tier: string;
   options: string[];
   answer: string;
 }
 
-export interface QuizResponse {
-  quizOpen: boolean;
+export interface QuizPart2 {
+  open: boolean;
   submitted: boolean;
-  questions: QuizQuestion[];
+  questions: QuizPart2Question[];
+}
+
+export interface QuizResponse {
+  part1: QuizPart1;
+  part2: QuizPart2;
 }
 
 export interface MeResponse {

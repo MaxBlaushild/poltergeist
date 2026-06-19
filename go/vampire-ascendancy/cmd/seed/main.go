@@ -61,15 +61,26 @@ type seedMission struct {
 	RewardBT     int    `json:"reward_bt"`
 	Prompt       string `json:"prompt"`
 	AnswerFormat string `json:"answer_format"`
+	// Optional sabotage: verifying this mission deducts SabotageHF House Favor
+	// from the named SabotageHouse.
+	SabotageHouse string `json:"sabotage_house"`
+	SabotageHF    int    `json:"sabotage_hf"`
 }
 
-type seedQuizQuestion struct {
-	Ordinal       int            `json:"ordinal"`
-	Prompt        string         `json:"prompt"`
-	QuestionType  string         `json:"questionType"`
-	Options       []string       `json:"options"`
-	CorrectAnswer string         `json:"correctAnswer"`
-	HFEffect      map[string]int `json:"hfEffect"`
+type seedQuiz struct {
+	Part1 struct {
+		Prompt string `json:"prompt"`
+		Rubric string `json:"rubric"`
+		MaxBT  int    `json:"maxBt"`
+	} `json:"part1"`
+	Part2 []struct {
+		Ordinal       int      `json:"ordinal"`
+		Prompt        string   `json:"prompt"`
+		Tier          string   `json:"tier"`
+		HFValue       float64  `json:"hfValue"`
+		Options       []string `json:"options"`
+		CorrectAnswer string   `json:"correctAnswer"`
+	} `json:"part2"`
 }
 
 func main() {
@@ -145,13 +156,21 @@ func main() {
 
 		missions := make([]models.VampireMission, 0, len(c.Missions))
 		for _, m := range c.Missions {
-			missions = append(missions, models.VampireMission{
+			mission := models.VampireMission{
 				Ordinal:      m.Ordinal,
 				Tier:         m.Tier,
 				RewardBT:     m.RewardBT,
 				Prompt:       m.Prompt,
 				AnswerFormat: m.AnswerFormat,
-			})
+				SabotageHF:   m.SabotageHF,
+			}
+			if m.SabotageHouse != "" {
+				if id, ok := houseIDs[m.SabotageHouse]; ok {
+					hid := id
+					mission.SabotageHouseID = &hid
+				}
+			}
+			missions = append(missions, mission)
 		}
 		if err := v.ReplaceMissions(ctx, character.ID, missions); err != nil {
 			log.Fatalf("failed to replace missions for %q: %v", c.Name, err)
@@ -186,34 +205,48 @@ func main() {
 	// the quiz — edit seed/quiz.json and re-run to update it.
 	quizCount := 0
 	if quizRaw, qerr := os.ReadFile(*quizFile); qerr == nil {
-		var quizSeed []seedQuizQuestion
+		var quizSeed seedQuiz
 		if err := json.Unmarshal(quizRaw, &quizSeed); err != nil {
 			log.Fatalf("failed to parse quiz file: %v", err)
 		}
-		questions := make([]models.VampireQuizQuestion, 0, len(quizSeed))
-		for _, q := range quizSeed {
+		questions := make([]models.VampireQuizQuestion, 0, len(quizSeed.Part2)+1)
+
+		// Part 1: the single open-end prompt (AI-graded → BT).
+		if quizSeed.Part1.Prompt != "" {
+			maxBT := quizSeed.Part1.MaxBT
+			if maxBT <= 0 {
+				maxBT = 6
+			}
+			questions = append(questions, models.VampireQuizQuestion{
+				Part:         1,
+				Ordinal:      0,
+				Prompt:       quizSeed.Part1.Prompt,
+				QuestionType: "open",
+				Rubric:       quizSeed.Part1.Rubric,
+				MaxBT:        maxBT,
+				Active:       true,
+			})
+		}
+
+		// Part 2: the multiple-choice questions (normalized → HF).
+		for _, q := range quizSeed.Part2 {
 			opts, _ := json.Marshal(q.Options)
 			if len(q.Options) == 0 {
 				opts = []byte("[]")
 			}
-			eff, _ := json.Marshal(q.HFEffect)
-			if len(q.HFEffect) == 0 {
-				eff = []byte("{}")
-			}
-			qt := q.QuestionType
-			if qt == "" {
-				qt = "open"
-			}
 			questions = append(questions, models.VampireQuizQuestion{
+				Part:          2,
 				Ordinal:       q.Ordinal,
 				Prompt:        q.Prompt,
-				QuestionType:  qt,
+				QuestionType:  "multiple_choice",
 				Options:       opts,
 				CorrectAnswer: q.CorrectAnswer,
-				HFEffect:      eff,
+				HFValue:       q.HFValue,
+				Tier:          q.Tier,
 				Active:        true,
 			})
 		}
+
 		if err := v.ReplaceQuizQuestions(ctx, questions); err != nil {
 			log.Fatalf("failed to load quiz questions: %v", err)
 		}

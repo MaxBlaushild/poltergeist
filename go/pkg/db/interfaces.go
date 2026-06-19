@@ -236,12 +236,18 @@ type VampireHandle interface {
 
 	// Quiz
 	ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error)
 	ReplaceQuizQuestions(ctx context.Context, questions []models.VampireQuizQuestion) error
 	GetQuizQuestionByID(ctx context.Context, id uuid.UUID) (*models.VampireQuizQuestion, error)
 	ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error)
 	UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
+	UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error
 	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
 	ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error)
+	ListPart2Answers(ctx context.Context) ([]Part2Answer, error)
+	DeleteHouseFavorBySource(ctx context.Context, source string) error
+	DeleteBloodTokensBySourceForPlayer(ctx context.Context, playerID uuid.UUID, source string) error
 
 	// GM audit log
 	LogGMAction(ctx context.Context, gmName, action string, payload []byte) error

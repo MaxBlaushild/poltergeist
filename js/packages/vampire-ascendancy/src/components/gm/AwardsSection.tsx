@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { gmListHouses, gmAwardHF, gmListPlayers, gmAwardBT } from '../../gmApi';
 import type { GMPlayer } from '../../gmApi';
 import type { House, HouseStanding } from '../../types';
+import { formatHF } from '../../theme';
 import { Card } from './GameSection';
 
 export const AwardsSection = () => {
@@ -87,7 +88,7 @@ const HouseFavorForm = () => {
           {standings.map((s) => (
             <div key={s.houseId} className="flex justify-between">
               <span>{s.name}</span>
-              <span className="text-bone">{s.favor}</span>
+              <span className="text-bone">{formatHF(s.favor)}</span>
             </div>
           ))}
         </div>

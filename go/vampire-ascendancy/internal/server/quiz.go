@@ -1,91 +1,166 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-// GET /quiz — the quiz for players. Returns questions without the answer key or
-// scoring, plus whether this player has already submitted (answers lock once in).
+// GET /quiz — the two-part end quiz for players. Part 1 is a single open-end
+// prompt (AI-graded → BT); Part 2 is multiple choice (normalized → HF). Neither
+// part ever leaks the answer key or rubric.
 func (s *server) getQuiz(ctx *gin.Context) {
 	player := playerFromContext(ctx)
+	v := s.dbClient.Vampire()
 
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := v.GetGameState(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	questions, err := s.dbClient.Vampire().ListQuizQuestions(ctx, true)
+	subs, err := v.ListQuizSubmissionsForPlayer(ctx, player.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	subs, err := s.dbClient.Vampire().ListQuizSubmissionsForPlayer(ctx, player.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	answersByQ := map[string]string{}
-	submitted := false
+	subByQ := map[string]string{}
+	lockedByQ := map[string]bool{}
 	for _, sub := range subs {
-		answersByQ[sub.QuestionID.String()] = sub.Answer
-		if sub.Locked {
-			submitted = true
-		}
+		subByQ[sub.QuestionID.String()] = sub.Answer
+		lockedByQ[sub.QuestionID.String()] = sub.Locked
 	}
 
-	out := make([]gin.H, 0, len(questions))
-	for _, q := range questions {
-		out = append(out, gin.H{
-			"id":           q.ID,
-			"ordinal":      q.Ordinal,
-			"prompt":       q.Prompt,
-			"questionType": q.QuestionType,
-			"options":      q.Options,
-			"answer":       answersByQ[q.ID.String()], // their prior answer, if any
+	// ---- Part 1 ----
+	part1 := gin.H{"open": state.QuizPart1Open, "openedAt": state.QuizPart1OpenedAt, "submitted": false, "prompt": "", "answer": ""}
+	p1q, err := v.GetPart1Question(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p1q != nil {
+		part1["prompt"] = p1q.Prompt
+		part1["answer"] = subByQ[p1q.ID.String()]
+		part1["submitted"] = lockedByQ[p1q.ID.String()]
+	}
+
+	// ---- Part 2 ----
+	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	p2Out := make([]gin.H, 0, len(p2qs))
+	part2Submitted := false
+	for _, q := range p2qs {
+		if lockedByQ[q.ID.String()] {
+			part2Submitted = true
+		}
+		p2Out = append(p2Out, gin.H{
+			"id":      q.ID,
+			"ordinal": q.Ordinal,
+			"prompt":  q.Prompt,
+			"tier":    q.Tier,
+			"options": q.Options,
+			"answer":  subByQ[q.ID.String()],
 		})
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"quizOpen":  state.QuizOpen,
-		"submitted": submitted,
-		"questions": out,
+		"part1": part1,
+		"part2": gin.H{
+			"open":      state.QuizPart2Open,
+			"submitted": part2Submitted,
+			"questions": p2Out,
+		},
 	})
 }
 
-// POST /quiz/submit — submit and lock all answers at once. Multiple-choice
-// answers are auto-graded and correct ones apply their House Favor effect;
-// open-ended answers are stored for the GMs to read and adjudicate.
-func (s *server) submitQuiz(ctx *gin.Context) {
+// POST /quiz/part1/submit — lock the player's open-end response. Grading is a
+// separate GM-triggered step.
+func (s *server) submitQuizPart1(ctx *gin.Context) {
 	player := playerFromContext(ctx)
+	v := s.dbClient.Vampire()
 
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := v.GetGameState(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !state.QuizOpen {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": "the quiz is not open"})
+	if !state.QuizPart1Open {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "part 1 is not open"})
 		return
 	}
 
-	// One submission per player — reject if they already locked in.
-	existing, err := s.dbClient.Vampire().ListQuizSubmissionsForPlayer(ctx, player.ID)
+	p1q, err := v.GetPart1Question(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if p1q == nil {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "no part 1 question configured"})
+		return
+	}
+
+	if s.playerLockedQuestion(ctx, player.ID, p1q.ID) {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "you have already answered"})
+		return
+	}
+
+	var body struct {
+		Answer string `json:"answer"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := v.UpsertQuizSubmission(ctx, player.ID, p1q.ID, body.Answer, nil, true); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// POST /quiz/part2/submit — lock all of the player's multiple-choice answers.
+// Auto-grades each (is_correct); House Favor is applied later at scoring time.
+func (s *server) submitQuizPart2(ctx *gin.Context) {
+	player := playerFromContext(ctx)
+	v := s.dbClient.Vampire()
+
+	state, err := v.GetGameState(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !state.QuizPart2Open {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "part 2 is not open"})
+		return
+	}
+
+	// One submission per player.
+	existing, err := v.ListQuizSubmissionsForPlayer(ctx, player.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	p2ByID := map[string]string{} // questionID -> correctAnswer
+	for _, q := range p2qs {
+		p2ByID[q.ID.String()] = q.CorrectAnswer
 	}
 	for _, sub := range existing {
 		if sub.Locked {
-			ctx.JSON(http.StatusConflict, gin.H{"error": "you have already answered"})
-			return
+			if _, ok := p2ByID[sub.QuestionID.String()]; ok {
+				ctx.JSON(http.StatusConflict, gin.H{"error": "you have already answered"})
+				return
+			}
 		}
 	}
 
@@ -100,61 +175,33 @@ func (s *server) submitQuiz(ctx *gin.Context) {
 		return
 	}
 
-	// House name -> id, for applying HF effects.
-	houses, err := s.dbClient.Vampire().ListHouses(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	houseByName := map[string]uuid.UUID{}
-	for _, h := range houses {
-		houseByName[h.Name] = h.ID
-	}
-
 	for _, a := range body.Answers {
+		correct, ok := p2ByID[a.QuestionID]
+		if !ok {
+			continue // not a part-2 question
+		}
 		qid, err := uuid.Parse(a.QuestionID)
 		if err != nil {
 			continue
 		}
-		question, err := s.dbClient.Vampire().GetQuizQuestionByID(ctx, qid)
-		if err != nil || question == nil {
-			continue
-		}
-
-		var isCorrect *bool
-		if question.QuestionType == "multiple_choice" && question.CorrectAnswer != "" {
-			correct := strings.EqualFold(strings.TrimSpace(a.Answer), strings.TrimSpace(question.CorrectAnswer))
-			isCorrect = &correct
-		}
-
-		if _, err := s.dbClient.Vampire().UpsertQuizSubmission(ctx, player.ID, qid, a.Answer, isCorrect, true); err != nil {
+		isCorrect := correct != "" && strings.EqualFold(strings.TrimSpace(a.Answer), strings.TrimSpace(correct))
+		if _, err := v.UpsertQuizSubmission(ctx, player.ID, qid, a.Answer, &isCorrect, true); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
 
-		// Apply House Favor for a correct answer.
-		if isCorrect != nil && *isCorrect && len(question.HFEffect) > 0 {
-			effects := map[string]int{}
-			if err := json.Unmarshal(question.HFEffect, &effects); err == nil {
-				for houseName, delta := range effects {
-					if delta == 0 {
-						continue
-					}
-					houseID, ok := houseByName[houseName]
-					if !ok {
-						continue
-					}
-					_ = s.dbClient.Vampire().AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-						HouseID: houseID,
-						Delta:   delta,
-						Reason:  "quiz: " + question.Prompt,
-						GMName:  "quiz",
-						Source:  "quiz",
-					})
-				}
-			}
+func (s *server) playerLockedQuestion(ctx *gin.Context, playerID, questionID uuid.UUID) bool {
+	subs, err := s.dbClient.Vampire().ListQuizSubmissionsForPlayer(ctx, playerID)
+	if err != nil {
+		return false
+	}
+	for _, sub := range subs {
+		if sub.QuestionID == questionID && sub.Locked {
+			return true
 		}
 	}
-
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+	return false
 }

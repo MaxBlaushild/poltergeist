@@ -61,6 +61,10 @@ type VampireMission struct {
 	RewardBT     int       `gorm:"column:reward_bt;not null;default:0" json:"rewardBt"`
 	Prompt       string    `gorm:"not null;default:''" json:"prompt"`
 	AnswerFormat string    `gorm:"not null;default:''" json:"answerFormat"`
+	// Sabotage: when set, verifying this mission deducts SabotageHF House Favor
+	// from SabotageHouseID. Rare — most missions just award Blood Tokens.
+	SabotageHouseID *uuid.UUID `json:"sabotageHouseId"`
+	SabotageHF      int        `gorm:"column:sabotage_hf;not null;default:0" json:"sabotageHf"`
 }
 
 func (VampireMission) TableName() string { return "vampire_missions" }
@@ -97,10 +101,11 @@ type VampireHouseFavorLedger struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
 	HouseID   uuid.UUID `gorm:"not null" json:"houseId"`
-	Delta     int       `gorm:"not null" json:"delta"`
-	Reason    string    `gorm:"not null;default:''" json:"reason"`
-	GMName    string    `gorm:"column:gm_name;not null;default:''" json:"gmName"`
-	Source    string    `gorm:"not null;default:'manual'" json:"source"` // manual | mission | quiz
+	// Decimal — Part 2 quiz scoring produces fractional House Favor.
+	Delta  float64 `gorm:"not null" json:"delta"`
+	Reason string  `gorm:"not null;default:''" json:"reason"`
+	GMName string  `gorm:"column:gm_name;not null;default:''" json:"gmName"`
+	Source string  `gorm:"not null;default:'manual'" json:"source"` // manual | mission | quiz_part2
 }
 
 func (VampireHouseFavorLedger) TableName() string { return "vampire_house_favor_ledger" }
@@ -120,9 +125,11 @@ func (VampireBloodTokenLog) TableName() string { return "vampire_blood_token_log
 type VampireGameState struct {
 	ID                   int        `gorm:"primary_key" json:"id"`
 	UpdatedAt            time.Time  `gorm:"not null" json:"updatedAt"`
-	CurrentAct           string     `gorm:"not null;default:'pre_event'" json:"currentAct"` // pre_event | act1 | act2 | act3 | quiz | resolved
+	CurrentAct           string     `gorm:"not null;default:'pre_event'" json:"currentAct"` // pre_event | act1 | act2 | act3 | quiz_part1 | quiz_part2 | resolved
 	ContentUnlocked      bool       `gorm:"not null;default:false" json:"contentUnlocked"`
-	QuizOpen             bool       `gorm:"not null;default:false" json:"quizOpen"`
+	QuizPart1Open        bool       `gorm:"not null;default:false" json:"quizPart1Open"`
+	QuizPart2Open        bool       `gorm:"not null;default:false" json:"quizPart2Open"`
+	QuizPart1OpenedAt    *time.Time `json:"quizPart1OpenedAt"`
 	ActiveNotificationID *uuid.UUID `json:"activeNotificationId"`
 }
 
@@ -142,15 +149,21 @@ type VampireNotification struct {
 func (VampireNotification) TableName() string { return "vampire_notifications" }
 
 type VampireQuizQuestion struct {
-	ID            uuid.UUID      `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
-	CreatedAt     time.Time      `gorm:"not null" json:"createdAt"`
-	UpdatedAt     time.Time      `gorm:"not null" json:"updatedAt"`
-	Ordinal       int            `gorm:"not null;default:0" json:"ordinal"`
-	Prompt        string         `gorm:"not null;default:''" json:"prompt"`
-	QuestionType  string         `gorm:"not null;default:'open'" json:"questionType"` // multiple_choice | open
+	ID           uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt    time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt    time.Time `gorm:"not null" json:"updatedAt"`
+	Part         int       `gorm:"not null;default:2" json:"part"` // 1 = open-end (BT), 2 = MC (HF)
+	Ordinal      int       `gorm:"not null;default:0" json:"ordinal"`
+	Prompt       string    `gorm:"not null;default:''" json:"prompt"`
+	QuestionType string    `gorm:"not null;default:'open'" json:"questionType"` // multiple_choice | open
+	// Part 1 (open-end, AI-graded)
+	Rubric string `gorm:"not null;default:''" json:"rubric"`
+	MaxBT  int    `gorm:"column:max_bt;not null;default:0" json:"maxBt"`
+	// Part 2 (multiple choice, normalized HF)
 	Options       datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"options"`
 	CorrectAnswer string         `gorm:"not null;default:''" json:"correctAnswer"`
-	HFEffect      datatypes.JSON `gorm:"column:hf_effect;type:jsonb;default:'{}'" json:"hfEffect"`
+	HFValue       float64        `gorm:"column:hf_value;not null;default:0" json:"hfValue"`
+	Tier          string         `gorm:"not null;default:''" json:"tier"`
 	Active        bool           `gorm:"not null;default:true" json:"active"`
 }
 
@@ -163,7 +176,9 @@ type VampireQuizSubmission struct {
 	PlayerID   uuid.UUID `gorm:"not null" json:"playerId"`
 	QuestionID uuid.UUID `gorm:"not null" json:"questionId"`
 	Answer     string    `gorm:"not null;default:''" json:"answer"`
-	IsCorrect  *bool     `json:"isCorrect"`
+	IsCorrect  *bool     `json:"isCorrect"` // Part 2 auto-grade
+	AIScore    *float64  `gorm:"column:ai_score" json:"aiScore"`
+	AwardedBT  int       `gorm:"column:awarded_bt;not null;default:0" json:"awardedBt"` // Part 1 BT
 	Locked     bool      `gorm:"not null;default:false" json:"locked"`
 }
 
