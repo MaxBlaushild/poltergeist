@@ -1,4 +1,5 @@
 const forms = document.querySelectorAll('[data-interest-form]');
+const apiBase = globalThis.BOLTSIGHT_API_URL || 'https://api.unclaimedstreets.com';
 
 forms.forEach((form) => {
   form.addEventListener('submit', async (event) => {
@@ -12,7 +13,7 @@ forms.forEach((form) => {
     submitButton.disabled = true;
 
     try {
-      const response = await fetch('/trades-ar-glasses/interest', {
+      const response = await fetch(`${apiBase}/trades-ar-glasses/interest`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json'

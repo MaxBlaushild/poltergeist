@@ -11,6 +11,27 @@ go/mod:
 deploy-all:
 	aws ecs update-service --cluster poltergeist --service poltergeist_core --force-new-deployment
 
+.PHONY: deploy-webapps webapps/deploy
+deploy-webapps: webapps/deploy
+
+webapps/deploy: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+
+.PHONY: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+boltsight/deploy:
+	$(MAKE) -C js/packages/boltsight deploy
+
+final-fete/web-deploy:
+	$(MAKE) -C js/packages/final-fete deploy
+
+guess-how-many/deploy:
+	$(MAKE) -C js/packages/guess-how-many deploy
+
+ucs-admin-ui/deploy:
+	$(MAKE) -C js/packages/ucs-admin-ui deploy
+
+vampire-ascendancy/deploy:
+	$(MAKE) -C js/packages/vampire-ascendancy deploy
+
 deps:
 	docker-compose -f deps.docker-compose.yml up -d
 

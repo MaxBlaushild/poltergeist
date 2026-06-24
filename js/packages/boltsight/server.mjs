@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const packageDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(packageDir, 'public');
 const distDir = path.join(packageDir, 'dist');
-const defaultApiOrigin = 'http://127.0.0.1:8080';
+const defaultApiOrigin = 'https://api.unclaimedstreets.com';
 
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
