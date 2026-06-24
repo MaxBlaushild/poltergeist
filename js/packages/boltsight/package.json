@@ -1,0 +1,12 @@
+{
+  "name": "boltsight",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "NODE_ENV=production node server.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --check server.mjs && node --check scripts/build.mjs"
+  }
+}

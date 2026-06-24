@@ -184,6 +184,7 @@ type client struct {
 	insiderTradeHandle                        *insiderTradeHandle
 	feedbackItemHandle                        *feedbackItemHandle
 	vampireHandle                             *vampireHandler
+	tradesARGlassesLeadHandle                 *tradesARGlassesLeadHandle
 }
 
 type ClientConfig struct {
@@ -451,6 +452,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		insiderTradeHandle:                        &insiderTradeHandle{db: db},
 		feedbackItemHandle:                        &feedbackItemHandle{db: db},
 		vampireHandle:                             &vampireHandler{db: db},
+		tradesARGlassesLeadHandle:                 &tradesARGlassesLeadHandle{db: db},
 	}, nil
 }
 
@@ -1124,4 +1126,8 @@ func (c *client) FeedbackItem() FeedbackItemHandle {
 
 func (c *client) Vampire() VampireHandle {
 	return c.vampireHandle
+}
+
+func (c *client) TradesARGlassesLead() TradesARGlassesLeadHandle {
+	return c.tradesARGlassesLeadHandle
 }

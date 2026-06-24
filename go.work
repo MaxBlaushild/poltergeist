@@ -34,6 +34,7 @@ use (
 	./go/scorekeeper
 	./go/sonar
 	./go/texter
+	./go/trades-ar-glasses
 	./go/travel-angels
 	./go/trivai
 	./go/vampire-ascendancy

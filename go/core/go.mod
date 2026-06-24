@@ -14,6 +14,8 @@ replace github.com/MaxBlaushild/poltergeist/sonar => ../sonar
 
 replace github.com/MaxBlaushild/poltergeist/travel-angels => ../travel-angels
 
+replace github.com/MaxBlaushild/poltergeist/trades-ar-glasses => ../trades-ar-glasses
+
 replace github.com/MaxBlaushild/poltergeist/verifiable-sn => ../verifiable-sn
 
 replace github.com/MaxBlaushild/poltergeist/vampire-ascendancy => ../vampire-ascendancy
@@ -65,6 +67,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0
 	github.com/MaxBlaushild/poltergeist/sonar v0.0.0
+	github.com/MaxBlaushild/poltergeist/trades-ar-glasses v0.0.0
 	github.com/MaxBlaushild/poltergeist/travel-angels v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/vampire-ascendancy v0.0.0
 	github.com/MaxBlaushild/poltergeist/verifiable-sn v0.0.0

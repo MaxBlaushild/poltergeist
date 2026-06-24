@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
+	tradesarglasses "github.com/MaxBlaushild/poltergeist/trades-ar-glasses/pkg"
 	travelangels "github.com/MaxBlaushild/poltergeist/travel-angels/pkg"
 	vampireascendancy "github.com/MaxBlaushild/poltergeist/vampire-ascendancy/pkg"
 	verifiablesn "github.com/MaxBlaushild/poltergeist/verifiable-sn/pkg"
@@ -95,6 +96,7 @@ func main() {
 	travelAngelsServer := travelangels.NewServerFromDependencies(authClient, dbClient, cfg)
 	verifiableSnServer := verifiablesn.NewServerFromDependencies(authClient, dbClient, cfg)
 	vampireAscendancyServer := vampireascendancy.NewServerFromDependencies(authClient, dbClient)
-	srv := server.NewServer(sonarServer, travelAngelsServer, verifiableSnServer, vampireAscendancyServer, texterClient)
+	tradesARGlassesServer := tradesarglasses.NewServerFromDependencies(dbClient)
+	srv := server.NewServer(sonarServer, travelAngelsServer, verifiableSnServer, vampireAscendancyServer, tradesARGlassesServer, texterClient)
 	srv.ListenAndServe("8080")
 }

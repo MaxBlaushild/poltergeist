@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="BoltSight Go is a fake affordable AR note-taking safety-glasses landing page for tradesworkers."
+    />
+    <title>BoltSight Go | Jobsite AR Notes</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./main.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="BoltSight home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>BoltSight</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="#field-kit">Field Kit</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#pilot">Pilot</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-content">
+          <p class="eyebrow">Impact-rated eyewear with AR notes</p>
+          <h1 id="hero-title">BoltSight Go</h1>
+          <p class="hero-copy">
+            Cheap enough for every apprentice. Tough enough for the jobsite. Capture measurements,
+            checklist steps, and voice notes without taking your gloves off.
+          </p>
+          <form class="interest-form hero-form" data-interest-form>
+            <input type="hidden" name="source" value="hero" />
+            <label class="sr-only" for="hero-email">Work email</label>
+            <input id="hero-email" name="email" type="email" autocomplete="email" placeholder="work email" required />
+            <label class="sr-only" for="hero-trade">Trade</label>
+            <select id="hero-trade" name="trade" aria-label="Trade">
+              <option value="">trade</option>
+              <option>Electrical</option>
+              <option>Plumbing</option>
+              <option>HVAC</option>
+              <option>Carpentry</option>
+              <option>Industrial maintenance</option>
+              <option>Safety or procurement</option>
+              <option>Other</option>
+            </select>
+            <button type="submit">Join pilot list</button>
+            <p class="form-status" role="status" aria-live="polite"></p>
+          </form>
+          <dl class="hero-stats" aria-label="Product highlights">
+            <div>
+              <dt>$149</dt>
+              <dd>target crew price</dd>
+            </div>
+            <div>
+              <dt>8 hr</dt>
+              <dd>shift battery</dd>
+            </div>
+            <div>
+              <dt>Z87.1+</dt>
+              <dd>impact rating</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section intro-band" aria-label="Product promise">
+        <div class="section-inner intro-grid">
+          <p>
+            BoltSight Go keeps punch lists, install photos, and step-by-step notes in the worker's
+            sightline, while the lenses stay clear, sealed, and certified for daily site safety.
+          </p>
+          <a class="text-link" href="#pilot">Get early access</a>
+        </div>
+      </section>
+
+      <section class="section" id="field-kit" aria-labelledby="kit-title">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Field kit</p>
+            <h2 id="kit-title">Built for crews that do real work</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <span class="feature-icon" aria-hidden="true">+</span>
+              <h3>Hands-free notes</h3>
+              <p>Tap the temple pad or speak a note, then sync it to the job folder by task.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-icon" aria-hidden="true">#</span>
+              <h3>Measurement recall</h3>
+              <p>Pin lengths, part numbers, and breaker labels in a quiet heads-up overlay.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-icon" aria-hidden="true">!</span>
+              <h3>Safety first</h3>
+              <p>Polycarbonate wrap lenses, sealed electronics, and high-vis side indicators.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-icon" aria-hidden="true">$</span>
+              <h3>Replaceable parts</h3>
+              <p>Swap lenses, nose pads, and batteries without sending frames back to HQ.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section spec-band" aria-labelledby="spec-title">
+        <div class="section-inner spec-layout">
+          <div>
+            <p class="eyebrow">Site-ready specs</p>
+            <h2 id="spec-title">Smart glasses without the fragile-smart-glasses drama</h2>
+            <p>
+              A simple monocular display shows notes only when called. The rest is familiar safety
+              eyewear: clear lenses, repairable frame, glove-sized controls, and a price that does
+              not turn every toolbox into a liability.
+            </p>
+          </div>
+          <ul class="spec-list">
+            <li><span>Display</span><strong>Low-profile glance panel</strong></li>
+            <li><span>Controls</span><strong>Voice, tap, and crown</strong></li>
+            <li><span>Durability</span><strong>Dust sealed, splash resistant</strong></li>
+            <li><span>Data</span><strong>Encrypted notes, CSV export</strong></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" id="pricing" aria-labelledby="pricing-title">
+        <div class="section-inner pricing-layout">
+          <div class="section-heading">
+            <p class="eyebrow">Crew pricing</p>
+            <h2 id="pricing-title">Made to buy by the dozen</h2>
+          </div>
+          <div class="pricing-table" role="list">
+            <article class="price-card" role="listitem">
+              <h3>Starter Pair</h3>
+              <p class="price">$149</p>
+              <p>One frame, one clear lens set, charging case, and note sync.</p>
+            </article>
+            <article class="price-card accent" role="listitem">
+              <h3>Crew Box</h3>
+              <p class="price">$1,199</p>
+              <p>Ten pairs, spare parts, admin setup, and shared job templates.</p>
+            </article>
+            <article class="price-card" role="listitem">
+              <h3>Safety Desk</h3>
+              <p class="price">$39/mo</p>
+              <p>Fleet assignment, training checkoffs, and exportable audit trails.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section pilot-band" id="pilot" aria-labelledby="pilot-title">
+        <div class="section-inner pilot-layout">
+          <div>
+            <p class="eyebrow">Pilot waitlist</p>
+            <h2 id="pilot-title">Bring the first batch to your site</h2>
+            <p>
+              We are collecting early interest from electricians, plumbers, HVAC crews, shop
+              managers, and safety teams who want wearable notes without premium-device pricing.
+            </p>
+          </div>
+          <form class="interest-form pilot-form" data-interest-form>
+            <input type="hidden" name="source" value="pilot-section" />
+            <label for="pilot-email">Work email</label>
+            <input id="pilot-email" name="email" type="email" autocomplete="email" placeholder="crewlead@example.com" required />
+            <label for="crew-size">Crew size</label>
+            <select id="crew-size" name="crewSize">
+              <option value="">Select crew size</option>
+              <option>1-5</option>
+              <option>6-10</option>
+              <option>11-50</option>
+              <option>51-200</option>
+              <option>200+</option>
+            </select>
+            <button type="submit">Record my interest</button>
+            <p class="form-status" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>BoltSight is a fictional product concept.</p>
+      <a href="#top">Back to top</a>
+    </footer>
+  </body>
+</html>

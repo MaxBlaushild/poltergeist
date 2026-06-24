@@ -177,7 +177,13 @@ type DbClient interface {
 	InsiderTrade() InsiderTradeHandle
 	FeedbackItem() FeedbackItemHandle
 	Vampire() VampireHandle
+	TradesARGlassesLead() TradesARGlassesLeadHandle
 	Exec(ctx context.Context, q string) error
+}
+
+type TradesARGlassesLeadHandle interface {
+	CreateOrGetByEmail(ctx context.Context, lead *models.TradesARGlassesLead) (bool, error)
+	ListRecent(ctx context.Context, limit int) ([]models.TradesARGlassesLead, error)
 }
 
 // VampireHandle is the consolidated data access for the Vampire Ascendancy
