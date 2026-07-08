@@ -6,9 +6,11 @@ import {
   gmOverridePart1BT,
   gmRescorePart2,
   gmListQuizSubmissions,
+  gmGetStandings,
 } from '../../gmApi';
 import type { GMQuizSubmission } from '../../gmApi';
-import type { GameState } from '../../types';
+import type { GameState, HouseStanding } from '../../types';
+import { accentFor, formatHF, houseLabel } from '../../theme';
 import { Card } from './GameSection';
 
 export const QuizSection = ({
@@ -19,11 +21,14 @@ export const QuizSection = ({
   onChange: () => void;
 }) => {
   const [subs, setSubs] = useState<GMQuizSubmission[]>([]);
+  const [standings, setStandings] = useState<HouseStanding[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  const loadSubs = () =>
+  const loadSubs = () => {
     gmListQuizSubmissions().then((d) => setSubs(d.submissions || [])).catch(() => {});
+    gmGetStandings().then((d) => setStandings(d.standings || [])).catch(() => {});
+  };
   useEffect(() => {
     loadSubs();
     const id = setInterval(loadSubs, 6000);
@@ -122,10 +127,172 @@ export const QuizSection = ({
         )}
       </Card>
 
+      <QuizResults subs={subs} standings={standings} />
       <Part2Summary subs={part2Subs} />
     </div>
   );
 };
+
+// Final results: the winning house is decided by cumulative House Favor (favor
+// before the quiz + quiz favor = the current standings). The winning player is
+// the highest Blood Token holder within that house — quiz BT (Part 1) plus the
+// physical count each player self-reported in the numeric Part 2 question.
+type PlayerRow = {
+  character: string;
+  house: string;
+  correct: number;
+  mcTotal: number;
+  quizBt: number;
+  physicalBt: number;
+  total: number;
+};
+
+const buildPlayerRows = (subs: GMQuizSubmission[]): PlayerRow[] => {
+  const byChar = new Map<string, PlayerRow>();
+  const row = (name: string, house: string) => {
+    const key = name || '—';
+    if (!byChar.has(key))
+      byChar.set(key, {
+        character: key,
+        house,
+        correct: 0,
+        mcTotal: 0,
+        quizBt: 0,
+        physicalBt: 0,
+        total: 0,
+      });
+    const r = byChar.get(key)!;
+    if (house) r.house = house;
+    return r;
+  };
+  for (const s of subs) {
+    const r = row(s.characterName, s.houseName);
+    if (s.part === 1) {
+      r.quizBt = s.awardedBt || 0;
+    } else if (s.part === 2) {
+      if (s.questionType === 'number') {
+        r.physicalBt = parseInt((s.answer || '').replace(/[^0-9]/g, ''), 10) || 0;
+      } else {
+        r.mcTotal += 1;
+        if (s.isCorrect) r.correct += 1;
+      }
+    }
+  }
+  const rows = [...byChar.values()];
+  rows.forEach((r) => (r.total = r.quizBt + r.physicalBt));
+  return rows;
+};
+
+const QuizResults = ({
+  subs,
+  standings,
+}: {
+  subs: GMQuizSubmission[];
+  standings: HouseStanding[];
+}) => {
+  if (subs.length === 0) return null;
+  const houses = [...standings].sort((a, b) => b.favor - a.favor);
+  const winningHouse = houses[0]?.name;
+  const players = buildPlayerRows(subs).sort(
+    (a, b) => a.house.localeCompare(b.house) || b.total - a.total
+  );
+  const winner = players
+    .filter((p) => p.house === winningHouse)
+    .sort((a, b) => b.total - a.total || b.quizBt - a.quizBt || b.correct - a.correct)[0];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {winningHouse && (
+        <Card title="The Throne">
+          <p className="text-bone">
+            Winning house:{' '}
+            <span className="font-semibold" style={{ color: accentFor(winningHouse) }}>
+              {houseLabel(winningHouse)}
+            </span>{' '}
+            <span className="text-bone/50">({formatHF(houses[0].favor)} favor)</span>
+          </p>
+          {winner && (
+            <p className="text-bone mt-1">
+              Throne:{' '}
+              <span className="text-gold font-semibold">{winner.character}</span>{' '}
+              <span className="text-bone/50">
+                — {winner.total} BT ({winner.quizBt} quiz + {winner.physicalBt} on hand)
+              </span>
+            </p>
+          )}
+        </Card>
+      )}
+
+      <Card title="House results (cumulative favor)">
+        <Table
+          head={['#', 'House', 'Favor']}
+          rows={houses.map((h, i) => [
+            String(i + 1),
+            houseLabel(h.name),
+            formatHF(h.favor),
+            h.name === winningHouse ? 'win' : '',
+          ])}
+        />
+      </Card>
+
+      <Card title="Player results">
+        <Table
+          head={['Character', 'House', 'MC', 'Quiz BT', 'On hand', 'Total BT']}
+          rows={players.map((p) => [
+            p.character,
+            p.house,
+            `${p.correct}/${p.mcTotal}`,
+            String(p.quizBt),
+            String(p.physicalBt),
+            String(p.total),
+            p.house === winningHouse && winner && p.character === winner.character ? 'win' : '',
+          ])}
+        />
+      </Card>
+    </div>
+  );
+};
+
+// Simple table; a trailing 'win' marker cell highlights the winning row.
+const Table = ({ head, rows }: { head: string[]; rows: string[][] }) => (
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm border-collapse">
+      <thead>
+        <tr>
+          {head.map((h, i) => (
+            <th
+              key={i}
+              className={`border-b border-blood/40 pb-2 font-heading uppercase tracking-[0.12em] text-[11px] text-gold ${
+                i === 0 ? 'text-left' : 'text-right'
+              }`}
+            >
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, ri) => {
+          const win = r[r.length - 1] === 'win';
+          const cells = r.slice(0, head.length);
+          return (
+            <tr key={ri} className={`border-b border-blood/15 last:border-0 ${win ? 'bg-gold/10' : ''}`}>
+              {cells.map((c, ci) => (
+                <td
+                  key={ci}
+                  className={`py-2 ${ci === 0 ? 'text-left text-bone' : 'text-right text-bone/80'}`}
+                >
+                  {c}
+                  {win && ci === 0 && <span className="ml-2 text-gold">👑</span>}
+                </td>
+              ))}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
 
 const Part1Row = ({ sub, onSaved }: { sub: GMQuizSubmission; onSaved: () => void }) => {
   const [bt, setBt] = useState(String(sub.awardedBt));

@@ -87,6 +87,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 			"ordinal": q.Ordinal,
 			"prompt":  q.Prompt,
 			"tier":    q.Tier,
+			"type":    q.QuestionType,
 			"options": shuffledOptions(q.Options, player.ID, q.ID),
 			"answer":  subByQ[q.ID.String()],
 		})

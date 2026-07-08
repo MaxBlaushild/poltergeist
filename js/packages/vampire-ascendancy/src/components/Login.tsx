@@ -73,6 +73,7 @@ const LoginForm = ({
     try {
       const { token } = await login(characterId, sigil);
       saveToken(token);
+      localStorage.removeItem('vampireTab'); // land on the Summons after logging in
       navigate('/');
     } catch (e) {
       setError(

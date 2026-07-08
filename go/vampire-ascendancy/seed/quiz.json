@@ -216,6 +216,15 @@
         "Thessaly Wren"
       ],
       "correctAnswer": "Eiran Vox"
+    },
+    {
+      "ordinal": 16,
+      "prompt": "Last one — how many Blood Tokens do you hold right now? Count everything in your possession. Be honest: within the winning house, whoever holds the most claims the throne.",
+      "type": "number",
+      "tier": "",
+      "hfValue": 0,
+      "options": [],
+      "correctAnswer": ""
     }
   ]
 }

@@ -9,6 +9,23 @@ import (
 
 // Vampire Ascendancy (The Crimson Toast) event app models.
 
+// VampireGame is one of the night's physical contests. Its top-three finishers
+// are recorded when the GM scores it; the Blood Token / House Favor awards live
+// in the ledgers, not here.
+type VampireGame struct {
+	ID                uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt         time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt         time.Time  `gorm:"not null" json:"updatedAt"`
+	Ordinal           int        `gorm:"not null;default:0" json:"ordinal"`
+	Name              string     `gorm:"not null" json:"name"`
+	Status            string     `gorm:"not null;default:'pending'" json:"status"` // pending | played
+	FirstCharacterID  *uuid.UUID `gorm:"column:first_character_id" json:"firstCharacterId"`
+	SecondCharacterID *uuid.UUID `gorm:"column:second_character_id" json:"secondCharacterId"`
+	ThirdCharacterID  *uuid.UUID `gorm:"column:third_character_id" json:"thirdCharacterId"`
+}
+
+func (VampireGame) TableName() string { return "vampire_games" }
+
 type VampireHouse struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt time.Time `gorm:"not null" json:"createdAt"`

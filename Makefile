@@ -32,6 +32,19 @@ ucs-admin-ui/deploy:
 vampire-ascendancy/deploy:
 	$(MAKE) -C js/packages/vampire-ascendancy deploy
 
+# Bring a Vampire Ascendancy database up to date: run all migrations, then load
+# the seed — houses, characters (bios/secrets/missions), quiz, and one player
+# slot + sigil per character. Run this on a backend deploy so character content
+# lands without a manual step. The seed upserts by name and preserves existing
+# sigils/scores; add FRESH=1 to wipe and rebuild character content from scratch.
+#   make vampire-ascendancy/db CONFIG=live
+#   make vampire-ascendancy/db CONFIG=live FRESH=1
+CONFIG ?= local
+.PHONY: vampire-ascendancy/db
+vampire-ascendancy/db:
+	cd go/migrate && go run ./cmd/migrate --config-name $(CONFIG) --direction up
+	cd go/vampire-ascendancy && go run ./cmd/seed --config-name $(CONFIG) $(if $(FRESH),--fresh,)
+
 deps:
 	docker-compose -f deps.docker-compose.yml up -d
 

@@ -124,7 +124,7 @@ func (s *server) gmResetGame(ctx *gin.Context) {
 
 var validActs = map[string]bool{
 	"pre_event": true, "act1": true, "act2": true, "act3": true,
-	"quiz_part1": true, "quiz_part2": true, "resolved": true,
+	"quiz": true, "quiz_part1": true, "quiz_part2": true, "resolved": true,
 }
 
 // POST /gm/act — advance the night (act1 -> act2 -> act3 -> quiz -> resolved).

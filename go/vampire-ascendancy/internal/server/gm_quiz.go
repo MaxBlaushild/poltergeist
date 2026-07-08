@@ -118,6 +118,12 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 	}
 	qmap := map[uuid.UUID]q2{}
 	for _, q := range questions {
+		// Only multiple-choice questions score House Favor; the numeric
+		// "Blood Tokens on hand" question is informational and is skipped so it
+		// doesn't inflate the participant count in the normalization.
+		if q.QuestionType != "multiple_choice" {
+			continue
+		}
 		qmap[q.ID] = q2{correct: q.CorrectAnswer, hf: q.HFValue}
 	}
 

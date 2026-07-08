@@ -10,7 +10,7 @@ export interface Secret {
   body: string;
 }
 
-export type SubmissionStatus = 'submitted' | 'verified' | 'rejected';
+export type SubmissionStatus = 'submitted' | 'approved' | 'redeemed' | 'rejected';
 
 export interface MissionSubmission {
   status: SubmissionStatus;
@@ -44,7 +44,7 @@ export interface Character {
 }
 
 export interface GameState {
-  currentAct: 'pre_event' | 'act1' | 'act2' | 'act3' | 'quiz_part1' | 'quiz_part2' | 'resolved';
+  currentAct: 'pre_event' | 'act1' | 'act2' | 'act3' | 'quiz' | 'quiz_part1' | 'quiz_part2' | 'resolved';
   contentUnlocked: boolean;
   quizPart1Open: boolean;
   quizPart2Open: boolean;
@@ -71,6 +71,7 @@ export interface QuizPart2Question {
   ordinal: number;
   prompt: string;
   tier: string;
+  type?: string; // 'multiple_choice' (default) | 'number'
   options: string[];
   answer: string;
 }
@@ -84,6 +85,22 @@ export interface QuizPart2 {
 export interface QuizResponse {
   part1: QuizPart1;
   part2: QuizPart2;
+}
+
+export interface GameWinner {
+  characterId: string;
+  characterName: string;
+  house?: string;
+}
+
+export interface Game {
+  id: string;
+  ordinal: number;
+  name: string;
+  status: 'pending' | 'played';
+  first: GameWinner | null;
+  second: GameWinner | null;
+  third: GameWinner | null;
 }
 
 export interface MeResponse {

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { gmListSubmissions, gmVerify, gmReject } from '../../gmApi';
+import { gmListSubmissions, gmApprove, gmRedeem, gmReject } from '../../gmApi';
 import type { GMSubmission } from '../../gmApi';
 import { photoUrl } from '../../api';
 import { Card } from './GameSection';
 
 const TIER_LABEL: Record<string, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+const FILTERS = ['submitted', 'approved', 'redeemed', 'rejected', ''];
 
 export const SubmissionsSection = () => {
   const [subs, setSubs] = useState<GMSubmission[]>([]);
@@ -28,8 +29,8 @@ export const SubmissionsSection = () => {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2">
-        {['submitted', 'verified', 'rejected', ''].map((f) => (
+      <div className="flex gap-2 flex-wrap">
+        {FILTERS.map((f) => (
           <button
             key={f || 'all'}
             onClick={() => setFilter(f)}
@@ -57,24 +58,18 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
   const [bt, setBt] = useState(String(sub.rewardBt));
   const [busy, setBusy] = useState(false);
 
-  const verify = async () => {
+  const run = (fn: () => Promise<unknown>) => async () => {
     setBusy(true);
     try {
-      await gmVerify(sub.id, Number(bt));
+      await fn();
       onChange();
     } finally {
       setBusy(false);
     }
   };
-  const reject = async () => {
-    setBusy(true);
-    try {
-      await gmReject(sub.id);
-      onChange();
-    } finally {
-      setBusy(false);
-    }
-  };
+  const approve = run(() => gmApprove(sub.id, Number(bt)));
+  const redeem = run(() => gmRedeem(sub.id));
+  const reject = run(() => gmReject(sub.id));
 
   return (
     <Card title={`${sub.characterName} · ${sub.houseName}`}>
@@ -105,7 +100,8 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
         </div>
       )}
 
-      {sub.status !== 'verified' && (
+      {/* submitted → set BT + Approve/Reject */}
+      {sub.status === 'submitted' && (
         <div className="flex items-center gap-2">
           <label className="text-xs text-bone/50">BT</label>
           <input
@@ -114,11 +110,11 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
             className="w-16 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-center"
           />
           <button
-            onClick={verify}
+            onClick={approve}
             disabled={busy}
             className="flex-1 py-2 rounded-md bg-green-700/70 text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
           >
-            Verify
+            Approve
           </button>
           <button
             onClick={reject}
@@ -129,9 +125,27 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
           </button>
         </div>
       )}
-      {sub.status === 'verified' && (
-        <p className="text-green-400 text-sm">Verified · {sub.awardedBt} BT</p>
+
+      {/* approved → awaiting Blood Bank payout; Mark paid records the BT */}
+      {sub.status === 'approved' && (
+        <div className="flex items-center gap-3">
+          <p className="text-amber-300 text-sm flex-1">
+            Approved · {sub.awardedBt} BT — player sent to the Blood Bank
+          </p>
+          <button
+            onClick={redeem}
+            disabled={busy}
+            className="py-2 px-4 rounded-md bg-green-700/70 text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
+          >
+            Mark paid
+          </button>
+        </div>
       )}
+
+      {sub.status === 'redeemed' && (
+        <p className="text-green-400 text-sm">Redeemed · {sub.awardedBt} BT paid</p>
+      )}
+      {sub.status === 'rejected' && <p className="text-blood-bright text-sm">Rejected</p>}
     </Card>
   );
 };
@@ -139,7 +153,8 @@ const SubmissionCard = ({ sub, onChange }: { sub: GMSubmission; onChange: () => 
 const StatusPill = ({ status }: { status: string }) => {
   const map: Record<string, string> = {
     submitted: 'text-amber-300',
-    verified: 'text-green-400',
+    approved: 'text-sky-300',
+    redeemed: 'text-green-400',
     rejected: 'text-blood-bright',
   };
   return <span className={`text-xs uppercase tracking-[0.15em] ${map[status] || ''}`}>{status}</span>;

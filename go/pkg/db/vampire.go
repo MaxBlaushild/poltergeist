@@ -778,6 +778,89 @@ func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
 	})
 }
 
+// WipeCharactersAndRoster clears the roster and all character content so a seed
+// run can rebuild from scratch (used for the --fresh re-seed). Deleting players
+// cascades their submissions, blood-token log, and quiz answers; deleting
+// characters cascades their secrets and missions. Score ledgers are archived
+// first so the wipe is recoverable, and houses / game state are left intact.
+func (h *vampireHandler) WipeCharactersAndRoster(ctx context.Context) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		archives := map[string]string{
+			"vampire_house_favor_ledger": "vampire_house_favor_ledger_archive",
+			"vampire_blood_token_log":    "vampire_blood_token_log_archive",
+		}
+		for src, dst := range archives {
+			if err := tx.Exec("INSERT INTO " + dst + " SELECT *, now() FROM " + src).Error; err != nil {
+				return err
+			}
+		}
+		// Notifications first (may reference players), then players (cascades their
+		// play data), then characters (cascades secrets + missions).
+		stmts := []string{
+			"DELETE FROM vampire_notifications",
+			"DELETE FROM vampire_players",
+			"DELETE FROM vampire_characters",
+		}
+		for _, s := range stmts {
+			if err := tx.Exec(s).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ---- Physical games ----
+
+func (h *vampireHandler) ListGames(ctx context.Context) ([]models.VampireGame, error) {
+	var games []models.VampireGame
+	if err := h.db.WithContext(ctx).Order("ordinal ASC, created_at ASC").Find(&games).Error; err != nil {
+		return nil, err
+	}
+	return games, nil
+}
+
+func (h *vampireHandler) GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error) {
+	var g models.VampireGame
+	if err := h.db.WithContext(ctx).First(&g, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &g, nil
+}
+
+// UpsertGame creates or updates a game by name (idempotent seeding).
+func (h *vampireHandler) UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error) {
+	game := models.VampireGame{Name: name, Ordinal: ordinal}
+	if err := h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "name"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"ordinal": ordinal, "updated_at": time.Now()}),
+		}).
+		Create(&game).Error; err != nil {
+		return nil, err
+	}
+	var out models.VampireGame
+	if err := h.db.WithContext(ctx).First(&out, "name = ?", name).Error; err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first, second, third *uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"status":              "played",
+			"first_character_id":  first,
+			"second_character_id": second,
+			"third_character_id":  third,
+			"updated_at":          time.Now(),
+		}).Error
+}
+
 // ---- GM audit log ----
 
 func (h *vampireHandler) LogGMAction(ctx context.Context, gmName, action string, payload []byte) error {

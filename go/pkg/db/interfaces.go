@@ -266,6 +266,15 @@ type VampireHandle interface {
 
 	// Playtest reset
 	ResetGameProgress(ctx context.Context) error
+	// WipeCharactersAndRoster clears all characters, secrets, missions, and player
+	// slots for a from-scratch content re-seed. Score ledgers are archived first.
+	WipeCharactersAndRoster(ctx context.Context) error
+
+	// Physical games
+	ListGames(ctx context.Context) ([]models.VampireGame, error)
+	GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error)
+	UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error)
+	SetGameResult(ctx context.Context, id uuid.UUID, first, second, third *uuid.UUID) error
 }
 
 type ScoreHandle interface {

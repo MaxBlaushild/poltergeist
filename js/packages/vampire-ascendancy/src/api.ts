@@ -1,4 +1,4 @@
-import type { MeResponse, HouseStanding, QuizResponse, HouseOverview } from './types';
+import type { MeResponse, HouseStanding, QuizResponse, HouseOverview, Game } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://api.unclaimedstreets.com';
 
@@ -94,6 +94,10 @@ export async function login(characterId: string, password: string): Promise<{ to
 
 export function getLeaderboard(token: string): Promise<{ standings: HouseStanding[] }> {
   return request('/leaderboard', token);
+}
+
+export function getGames(token: string): Promise<{ games: Game[] }> {
+  return request('/games', token);
 }
 
 export function getHouseOverview(token: string, houseId: string): Promise<HouseOverview> {

@@ -29,7 +29,7 @@ export const BroadcastSection = () => {
       await gmPushNotification(title.trim(), body.trim(), scope, targetId);
       setTitle('');
       setBody('');
-      setMsg('Broadcast sent.');
+      setMsg('Announcement sent.');
     } catch {
       setMsg('Failed to send.');
     } finally {
@@ -50,7 +50,7 @@ export const BroadcastSection = () => {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card title="Broadcast">
+      <Card title="Announcement">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -117,14 +117,14 @@ export const BroadcastSection = () => {
           disabled={busy || !body.trim() || (scope !== 'all' && !targetId)}
           className="w-full py-2.5 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm disabled:opacity-40"
         >
-          Send broadcast
+          Send announcement
         </button>
         {msg && <p className="text-bone/60 text-sm mt-2">{msg}</p>}
       </Card>
 
       <Card title="Clear">
         <div className="flex items-center justify-between">
-          <p className="text-bone/60 text-sm">Dismiss the current broadcast on everyone's screens.</p>
+          <p className="text-bone/60 text-sm">Dismiss the current announcement on everyone's screens.</p>
           <button
             onClick={clear}
             disabled={busy}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { getHouseOverview, getToken } from '../api';
 import type { HouseOverview } from '../types';
-import { accentFor, houseInfoFor, formatHF } from '../theme';
+import { accentFor, houseInfoFor, formatHF, taglineFor, houseLabel } from '../theme';
 
 export const HousePage = () => {
   const token = getToken();
@@ -57,9 +57,14 @@ export const HousePage = () => {
         {info.sigil && <HouseSigil src={info.sigil} />}
         <p className="text-xs uppercase tracking-[0.4em] text-gold">The Crimson Toast</p>
         <h1 className="mt-2 font-display text-4xl font-bold leading-tight" style={{ color: accent }}>
-          House of {house.name}
+          {houseLabel(house.name)}
         </h1>
-        {info.blurb && <p className="mt-3 text-bone/85 leading-relaxed">{info.blurb}</p>}
+        {taglineFor(house.name) && (
+          <p className="mt-3 font-bold" style={{ color: accent }}>
+            {taglineFor(house.name)}
+          </p>
+        )}
+        {info.blurb && <p className="mt-2 text-bone/85 leading-relaxed">{info.blurb}</p>}
         <div className="mt-4 inline-flex items-baseline gap-2">
           <span className="text-bone/60 uppercase tracking-[0.2em] text-xs">House Favor</span>
           <span className="text-3xl font-bold text-bone">{formatHF(house.favor)}</span>

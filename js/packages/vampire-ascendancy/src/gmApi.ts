@@ -113,11 +113,12 @@ export const gmAwardBT = (playerId: string, delta: number, reason: string) =>
 
 export const gmListSubmissions = (status: string) =>
   gm<{ submissions: GMSubmission[] }>(`/submissions?status=${encodeURIComponent(status)}`);
-export const gmVerify = (id: string, awardedBt?: number) =>
-  gm(`/submissions/${id}/verify`, {
+export const gmApprove = (id: string, awardedBt?: number) =>
+  gm(`/submissions/${id}/approve`, {
     method: 'POST',
     body: JSON.stringify(awardedBt != null ? { awardedBt } : {}),
   });
+export const gmRedeem = (id: string) => gm(`/submissions/${id}/redeem`, { method: 'POST' });
 export const gmReject = (id: string) => gm(`/submissions/${id}/reject`, { method: 'POST' });
 
 export const gmPushNotification = (
@@ -132,6 +133,30 @@ export const gmPushNotification = (
   });
 export const gmClearNotifications = () =>
   gm<{ ok: boolean }>('/notifications/clear', { method: 'POST' });
+
+// ---- Physical games ----
+export interface GameWinner {
+  characterId: string;
+  characterName: string;
+  house?: string;
+}
+export interface GMGame {
+  id: string;
+  ordinal: number;
+  name: string;
+  status: 'pending' | 'played';
+  first: GameWinner | null;
+  second: GameWinner | null;
+  third: GameWinner | null;
+}
+export const gmGetStandings = () => gm<{ standings: HouseStanding[] }>('/standings');
+export const gmListGames = () => gm<{ games: GMGame[] }>('/games');
+export const gmCreateGame = (name: string, ordinal = 0) =>
+  gm<{ id: string }>('/games', { method: 'POST', body: JSON.stringify({ name, ordinal }) });
+export const gmRecordGameResult = (
+  id: string,
+  body: { firstId?: string; secondId?: string; thirdId?: string; participantIds?: string[] }
+) => gm<{ ok: boolean }>(`/games/${id}/result`, { method: 'POST', body: JSON.stringify(body) });
 
 export interface GMQuizSubmission {
   id: string;

@@ -10,17 +10,21 @@ const ACT_LABEL: Record<string, string> = {
   act2: 'Act 2',
   act3: 'Act 3',
   quiz: 'Quiz',
-  resolved: 'Resolved',
+  resolved: 'Final Reveal',
 };
 
 export const GameSection = ({
   state,
   onChange,
+  quizSlot,
 }: {
   state: GameState | null;
   onChange: () => void;
+  // Rendered as an accordion under the Act toggle when the Quiz act is active.
+  quizSlot?: React.ReactNode;
 }) => {
   const [busy, setBusy] = useState(false);
+  const [actErr, setActErr] = useState<string | null>(null);
 
   if (!state) return <p className="text-bone/50">Loading game state…</p>;
 
@@ -35,10 +39,23 @@ export const GameSection = ({
   };
 
   const setAct = async (act: string) => {
+    // The Final Reveal shows every player the full solution — guard it like Reset
+    // so a stray tap can't spoil the whole game.
+    if (
+      act === 'resolved' &&
+      !window.confirm(
+        '⚠️ FINAL REVEAL\n\nThis ends the game and shows EVERY player the full solution to the mystery. Doing this early ruins the game for everyone.\n\nOnly trigger it once the game is truly over. Reveal now?'
+      )
+    ) {
+      return;
+    }
     setBusy(true);
+    setActErr(null);
     try {
       await gmSetAct(act);
       onChange();
+    } catch (e) {
+      setActErr(e instanceof Error ? e.message : 'Could not change the act.');
     } finally {
       setBusy(false);
     }
@@ -133,7 +150,10 @@ export const GameSection = ({
             </button>
           ))}
         </div>
+        {actErr && <p className="text-blood-bright text-sm mt-3">{actErr}</p>}
       </Card>
+
+      {quizSlot && <QuizAccordion>{quizSlot}</QuizAccordion>}
 
       <Card title="Standings backup">
         <div className="flex items-center justify-between gap-4">
@@ -177,3 +197,24 @@ export const Card = ({ title, children }: { title: string; children: React.React
     {children}
   </div>
 );
+
+// Collapsible container for the closing-quiz controls, shown under the Act toggle
+// once the Quiz act is active. Defaults open so the controls are ready to hand.
+const QuizAccordion = ({ children }: { children: React.ReactNode }) => {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-lg border border-gold/40 bg-black/40 overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-5 py-4 text-left"
+      >
+        <span className={`text-gold transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+        <span className="font-heading text-gold text-xs uppercase tracking-[0.3em]">
+          Closing Quiz
+        </span>
+      </button>
+      {open && <div className="px-5 pb-5">{children}</div>}
+    </div>
+  );
+};

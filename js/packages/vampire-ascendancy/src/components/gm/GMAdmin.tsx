@@ -12,9 +12,20 @@ import { AwardsSection } from './AwardsSection';
 import { PlayersSection } from './PlayersSection';
 import { BroadcastSection } from './BroadcastSection';
 import { QuizSection } from './QuizSection';
+import { GamesSection } from './GamesSection';
+import { StandingsSection } from './StandingsSection';
+import { BroadcastScreen } from './BroadcastScreen';
 
 const GM_NAMES = ['Ali', 'Max', 'Ngozi', 'Jon'];
-type Tab = 'game' | 'submissions' | 'awards' | 'broadcast' | 'quiz' | 'players';
+type Tab =
+  | 'controls'
+  | 'submissions'
+  | 'awards'
+  | 'games'
+  | 'standings'
+  | 'notifications'
+  | 'broadcast'
+  | 'players';
 
 export const GMAdmin = () => {
   const [authed, setAuthed] = useState(false);
@@ -104,7 +115,7 @@ const GMLogin = ({ onAuthed }: { onAuthed: () => void }) => {
 };
 
 const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
-  const [tab, setTab] = useState<Tab>('game');
+  const [tab, setTab] = useState<Tab>('controls');
   const [state, setState] = useState<GameState | null>(null);
   const { name } = getGMAuth();
 
@@ -114,11 +125,13 @@ const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
   }, []);
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'game', label: 'Game' },
+    { id: 'controls', label: 'Controls' },
     { id: 'submissions', label: 'Submissions' },
-    { id: 'awards', label: 'Awards' },
+    { id: 'awards', label: 'HF Awards' },
+    { id: 'games', label: 'Games' },
+    { id: 'standings', label: 'Standings' },
+    { id: 'notifications', label: 'Announcements' },
     { id: 'broadcast', label: 'Broadcast' },
-    { id: 'quiz', label: 'Quiz' },
     { id: 'players', label: 'Players' },
   ];
 
@@ -148,11 +161,23 @@ const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
         ))}
       </nav>
 
-      {tab === 'game' && <GameSection state={state} onChange={refreshState} />}
+      {tab === 'controls' && (
+        <GameSection
+          state={state}
+          onChange={refreshState}
+          quizSlot={
+            state?.currentAct === 'quiz' ? (
+              <QuizSection state={state} onChange={refreshState} />
+            ) : undefined
+          }
+        />
+      )}
       {tab === 'submissions' && <SubmissionsSection />}
       {tab === 'awards' && <AwardsSection />}
-      {tab === 'broadcast' && <BroadcastSection />}
-      {tab === 'quiz' && <QuizSection state={state} onChange={refreshState} />}
+      {tab === 'games' && <GamesSection />}
+      {tab === 'standings' && <StandingsSection />}
+      {tab === 'notifications' && <BroadcastSection />}
+      {tab === 'broadcast' && <BroadcastScreen />}
       {tab === 'players' && <PlayersSection />}
     </div>
   );

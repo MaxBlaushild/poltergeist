@@ -14,6 +14,24 @@ export const TIER_LABEL: Record<string, string> = {
 
 export const accentFor = (house?: string) => (house && HOUSE_ACCENT[house]) || '#c81912';
 
+// House mottos, shown on Standings and the Summons house list.
+export const HOUSE_TAGLINE: Record<string, string> = {
+  Spires: 'Order is power',
+  Chains: 'Secrets are power',
+  Cinders: 'Passion is power',
+  Ashglass: 'Knowledge is power',
+  "Marquess's Court": 'Power is power',
+};
+
+export const taglineFor = (house?: string) => (house && HOUSE_TAGLINE[house]) || '';
+
+// Display label for a house. Drops "of" for the named houses ("House Ashglass"),
+// but keeps it for the Marquess's Court ("House of Marquess's Court").
+export const houseLabel = (house?: string) => {
+  if (!house) return 'House';
+  return house === "Marquess's Court" ? `House of ${house}` : `House ${house}`;
+};
+
 // House Favor can be fractional (Part 2 quiz). Show e.g. "2.5", "10.5", "3".
 export const formatHF = (n: number) => String(Math.round(n * 100) / 100);
 

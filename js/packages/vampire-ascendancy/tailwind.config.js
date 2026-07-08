@@ -10,6 +10,8 @@ export default {
         heading: ['Cinzel', 'Georgia', 'serif'],
         serif: ['"EB Garamond"', 'Georgia', 'serif'],
         sans: ['"EB Garamond"', 'Georgia', 'serif'],
+        // Lora has a more legible italic — used for the mission "what to submit" line.
+        note: ['Lora', 'Georgia', 'serif'],
       },
       colors: {
         blood: {

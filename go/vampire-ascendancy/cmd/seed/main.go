@@ -101,6 +101,7 @@ type seedQuiz struct {
 		HFValue       float64  `json:"hfValue"`
 		Options       []string `json:"options"`
 		CorrectAnswer string   `json:"correctAnswer"`
+		Type          string   `json:"type"` // multiple_choice (default) | number
 	} `json:"part2"`
 }
 
@@ -108,6 +109,7 @@ func main() {
 	// Register our own flags before config.ParseFlagsAndGetConfig calls flag.Parse.
 	filePath := flag.String("file", "seed/characters.json", "Path to the characters.json seed file.")
 	quizFile := flag.String("quiz-file", "seed/quiz.json", "Path to the quiz.json seed file (optional).")
+	fresh := flag.Bool("fresh", false, "Wipe all existing characters and roster before seeding (from-scratch re-upload). Score ledgers are archived first.")
 
 	cfg, err := config.ParseFlagsAndGetConfig()
 	if err != nil {
@@ -136,6 +138,16 @@ func main() {
 
 	ctx := context.Background()
 	v := dbClient.Vampire()
+
+	// --fresh: clear the old roster + character content so this seed rebuilds from
+	// scratch. Necessary when characters were renamed or removed, since the upsert
+	// below is keyed by name and would otherwise leave orphaned characters behind.
+	if *fresh {
+		if err := v.WipeCharactersAndRoster(ctx); err != nil {
+			log.Fatalf("failed to wipe characters and roster: %v", err)
+		}
+		log.Printf("--fresh: wiped existing characters, secrets, missions, and roster")
+	}
 
 	// Houses first; build a name -> id map for character assignment.
 	houseIDs := map[string]uuid.UUID{}
@@ -306,11 +318,15 @@ func main() {
 			if len(q.Options) == 0 {
 				opts = []byte("[]")
 			}
+			qtype := q.Type
+			if qtype == "" {
+				qtype = "multiple_choice"
+			}
 			questions = append(questions, models.VampireQuizQuestion{
 				Part:          2,
 				Ordinal:       q.Ordinal,
 				Prompt:        q.Prompt,
-				QuestionType:  "multiple_choice",
+				QuestionType:  qtype,
 				Options:       opts,
 				CorrectAnswer: q.CorrectAnswer,
 				HFValue:       q.HFValue,

@@ -1,28 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getToken, submitMission, photoUrl } from '../api';
-import type { MeResponse, Mission, Secret } from '../types';
-import { TIER_LABEL, accentFor } from '../theme';
-import { fileToResizedDataURL } from '../photo';
+import type { MeResponse, Secret } from '../types';
+import { accentFor, houseLabel } from '../theme';
 import { VampireMark } from './VampireMark';
 
-export type DossierSection = 'dossier' | 'chronicle' | 'secrets' | 'missions';
+type Segment = 'bio' | 'postAct' | 'secrets';
 
-// Presentational — the PlayerShell owns token capture, /me polling, the loading
-// and error states, and the top navigation. Dossier renders the character header
-// plus whichever section is selected.
-export const Dossier = ({
-  me,
-  reload,
-  section,
-}: {
-  me: MeResponse;
-  reload: () => void;
-  section: DossierSection;
-}) => {
-  const token = getToken() || '';
+// "Who you are." A fixed character header + segmented control; only the panel
+// below changes. Post-Act and Secrets are gated until the host opens the evening
+// (act one complete); until then they show a sealed panel.
+export const Dossier = ({ me }: { me: MeResponse }) => {
   const { character, gameState } = me;
   const unlocked = gameState.contentUnlocked;
+  const [seg, setSeg] = useState<Segment>('bio');
 
   if (!character) {
     return (
@@ -41,7 +31,7 @@ export const Dossier = ({
 
   return (
     <div className="pb-8">
-      <header className="text-center mb-6">
+      <header className="text-center mb-5">
         <p className="text-xs uppercase tracking-[0.4em] text-gold">The Crimson Toast</p>
         <Portrait imageUrl={character.imageUrl} name={character.name} accent={accent} />
         <h1 className="mt-4 font-display text-3xl md:text-4xl font-bold text-bone leading-tight">
@@ -55,7 +45,7 @@ export const Dossier = ({
               className="inline-block mt-3 px-3 py-1 rounded-full text-xs uppercase tracking-[0.25em] border transition-colors hover:bg-white/5"
               style={{ color: accent, borderColor: accent }}
             >
-              House of {character.house.name}
+              {houseLabel(character.house.name)}
             </Link>
             {character.house.tagline && (
               <p className="mt-2 text-xs uppercase tracking-[0.3em] text-bone/50 italic">
@@ -66,46 +56,88 @@ export const Dossier = ({
         )}
       </header>
 
-      {section === 'dossier' && (
-        <>
-          <Section title="Pre-Event Briefing">
-            <Prose text={character.preEventInfo} />
-          </Section>
+      {/* Segmented control — fixed across all three panels. */}
+      <div className="flex gap-1 p-1 rounded-lg bg-black/50 border border-blood/30 mb-5">
+        <SegButton active={seg === 'bio'} onClick={() => setSeg('bio')}>
+          Bio
+        </SegButton>
+        <SegButton active={seg === 'postAct'} onClick={() => setSeg('postAct')} locked={!unlocked}>
+          The Night
+        </SegButton>
+        <SegButton active={seg === 'secrets'} onClick={() => setSeg('secrets')} locked={!unlocked}>
+          Secrets
+        </SegButton>
+      </div>
 
-          {!unlocked && (
-            <div className="mt-6 rounded-lg border border-blood/40 bg-black/40 p-6 text-center">
-              <VampireMark className="w-12 h-12 mx-auto mb-3 opacity-80" />
-              <p className="font-heading text-gold uppercase tracking-[0.3em] text-xs mb-2">
-                Sealed
-              </p>
-              <p className="text-bone/85">
-                The ceremony has not yet begun. The rest of your story unlocks when the host opens the
-                evening.
-              </p>
-            </div>
-          )}
-        </>
-      )}
+      {seg === 'bio' && <Prose text={character.preEventInfo} />}
 
-      {section === 'chronicle' &&
+      {seg === 'postAct' &&
         (unlocked && character.postAct1Context ? (
-          <Section title="As the Night Unfolds">
-            <Prose text={character.postAct1Context} />
-          </Section>
+          <Prose text={character.postAct1Context} />
         ) : (
-          <div className="mt-6 rounded-lg border border-blood/40 bg-black/40 p-6 text-center">
-            <VampireMark className="w-12 h-12 mx-auto mb-3 opacity-80" />
-            <p className="font-heading text-gold uppercase tracking-[0.3em] text-xs mb-2">Sealed</p>
-            <p className="text-bone/85">
-              This chapter opens once the host begins the evening.
-            </p>
-          </div>
+          <SealedPanel body="As the night unfolds, your story will deepen. This chapter opens once the first act has passed." />
         ))}
 
-      {section === 'secrets' && <SecretsView secrets={character.secrets || []} />}
-      {section === 'missions' && (
-        <MissionsView missions={character.missions || []} token={token} onSubmitted={reload} />
-      )}
+      {seg === 'secrets' &&
+        (unlocked ? (
+          <SecretsView secrets={character.secrets || []} />
+        ) : (
+          <SealedPanel body="Your secrets are yours alone — sealed until the first act has passed." />
+        ))}
+    </div>
+  );
+};
+
+const SegButton = ({
+  active,
+  locked,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  locked?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) => (
+  <button
+    onClick={onClick}
+    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md uppercase tracking-[0.12em] text-xs sm:text-sm transition-colors ${
+      active ? 'bg-blood text-bone' : 'text-bone/70 hover:text-bone'
+    }`}
+  >
+    {children}
+    {locked && <LockIcon className="w-3 h-3 opacity-70" />}
+  </button>
+);
+
+const SealedPanel = ({ body }: { body: string }) => (
+  <div className="rounded-lg border border-blood/40 bg-black/40 p-8 text-center">
+    <LockIcon className="w-8 h-8 mx-auto mb-3 text-gold/80" />
+    <p className="font-heading text-gold uppercase tracking-[0.3em] text-xs mb-2">Sealed for now</p>
+    <p className="text-bone/85 leading-relaxed mb-4">{body}</p>
+    <span className="inline-block px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.2em] border border-gold/40 text-gold/90">
+      Unlocks after Act One
+    </span>
+  </div>
+);
+
+const SecretsView = ({ secrets }: { secrets: Secret[] }) => {
+  if (secrets.length === 0) return <CenteredNote>You carry no secrets tonight.</CenteredNote>;
+  return (
+    <div>
+      <p className="text-center text-bone/60 text-sm italic mb-4">
+        These are yours alone — reveal them, trade them, or guard them as you see fit.
+      </p>
+      <div className="flex flex-col gap-4">
+        {secrets.map((s) => (
+          <div key={s.id} className="rounded-lg border border-blood/40 bg-black/40 p-5">
+            <p className="font-heading text-gold text-sm uppercase tracking-[0.3em] mb-2">
+              Secret {s.ordinal}
+            </p>
+            <Prose text={s.body} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -133,229 +165,11 @@ const Portrait = ({
   </div>
 );
 
-const SecretsView = ({ secrets }: { secrets: Secret[] }) => {
-  if (secrets.length === 0) return <CenteredNote>You carry no secrets tonight.</CenteredNote>;
-  return (
-    <div className="flex flex-col gap-4">
-      {secrets.map((s) => (
-        <div key={s.id} className="rounded-lg border border-blood/40 bg-black/40 p-5">
-          <p className="font-heading text-gold text-sm uppercase tracking-[0.3em] mb-2">
-            Secret {s.ordinal}
-          </p>
-          <Prose text={s.body} />
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const MissionsView = ({
-  missions,
-  token,
-  onSubmitted,
-}: {
-  missions: Mission[];
-  token: string;
-  onSubmitted: () => void;
-}) => {
-  if (missions.length === 0) return <CenteredNote>You have no missions tonight.</CenteredNote>;
-  return (
-    <div className="flex flex-col gap-4">
-      {missions.map((m) => (
-        <MissionCard key={m.id} mission={m} token={token} onSubmitted={onSubmitted} />
-      ))}
-    </div>
-  );
-};
-
-const MissionCard = ({
-  mission,
-  token,
-  onSubmitted,
-}: {
-  mission: Mission;
-  token: string;
-  onSubmitted: () => void;
-}) => {
-  const draftKey = `vampireDraft:${mission.id}`;
-  const sub = mission.submission;
-  const verified = sub?.status === 'verified';
-
-  // Drafts persist locally so a flaky connection never loses a typed answer.
-  const [answer, setAnswer] = useState(
-    () => localStorage.getItem(draftKey) ?? sub?.playerAnswer ?? ''
-  );
-  const [newPhotos, setNewPhotos] = useState<string[]>([]); // data URLs to upload
-  const [cleared, setCleared] = useState(false); // remove existing photos
-  const [adding, setAdding] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    localStorage.setItem(draftKey, answer);
-  }, [answer, draftKey]);
-
-  const existingPhotos = cleared ? [] : sub?.photoIds ?? [];
-  const canSubmit = answer.trim().length > 0 || newPhotos.length > 0 || cleared;
-
-  const addPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = ''; // allow re-picking the same file
-    if (files.length === 0) return;
-    setAdding(true);
-    const urls: string[] = [];
-    for (const f of files) {
-      try {
-        urls.push(await fileToResizedDataURL(f));
-      } catch {
-        /* skip unreadable files */
-      }
-    }
-    setNewPhotos((p) => [...p, ...urls].slice(0, 6));
-    setAdding(false);
-  };
-
-  const submit = async () => {
-    if (!canSubmit || submitting) return;
-    setSubmitting(true);
-    setErr(null);
-    try {
-      await submitMission(token, mission.id, answer.trim(), {
-        photos: newPhotos.length ? newPhotos : undefined,
-        clearPhotos: cleared || undefined,
-      });
-      setNewPhotos([]);
-      setCleared(false);
-      onSubmitted();
-    } catch {
-      setErr('The court did not hear you — your answer is saved. Try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-blood/40 bg-black/40 p-5">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs uppercase tracking-[0.25em] text-bone/60">
-          {TIER_LABEL[mission.tier] || mission.tier}
-        </span>
-        <span className="text-blood-bright text-sm font-semibold">
-          {mission.rewardBt} Blood Tokens
-        </span>
-      </div>
-      <Prose text={mission.prompt} />
-      {mission.answerFormat && (
-        <p className="mt-3 text-xs text-bone/50 italic">{mission.answerFormat}</p>
-      )}
-
-      {sub && <StatusBadge status={sub.status} awardedBt={sub.awardedBt} />}
-
-      <textarea
-        value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
-        disabled={verified}
-        placeholder="Record your answer…"
-        rows={3}
-        className="mt-3 w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone placeholder:text-bone/30 focus:outline-none focus:border-blood-bright disabled:opacity-60"
-      />
-
-      {(existingPhotos.length > 0 || newPhotos.length > 0) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {existingPhotos.map((id) => (
-            <img
-              key={id}
-              src={photoUrl(id)}
-              alt=""
-              className="w-16 h-16 object-cover rounded-md border border-blood/40"
-            />
-          ))}
-          {newPhotos.map((d, i) => (
-            <div key={i} className="relative">
-              <img
-                src={d}
-                alt=""
-                className="w-16 h-16 object-cover rounded-md border border-blood-bright/60"
-              />
-              {!verified && (
-                <button
-                  onClick={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blood text-bone text-xs leading-none"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!verified && (
-        <div className="mt-3 flex items-center gap-4">
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="text-xs text-gold uppercase tracking-[0.15em]"
-          >
-            {adding ? 'Adding…' : '+ Add photo'}
-          </button>
-          {existingPhotos.length > 0 && (
-            <button
-              onClick={() => setCleared(true)}
-              className="text-xs text-bone/40 uppercase tracking-[0.15em]"
-            >
-              Remove photos
-            </button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={addPhotos}
-            className="hidden"
-          />
-        </div>
-      )}
-
-      {err && <p className="mt-2 text-xs text-blood-bright">{err}</p>}
-      {!verified && (
-        <button
-          onClick={submit}
-          disabled={submitting || !canSubmit}
-          className="mt-3 w-full py-2.5 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright transition-colors disabled:opacity-40"
-        >
-          {submitting ? 'Submitting…' : sub ? 'Resubmit' : 'Submit'}
-        </button>
-      )}
-    </div>
-  );
-};
-
-const StatusBadge = ({ status, awardedBt }: { status: string; awardedBt: number }) => {
-  const styles: Record<string, { label: string; cls: string }> = {
-    submitted: {
-      label: 'Submitted — awaiting the court',
-      cls: 'text-amber-300 border-amber-400/40',
-    },
-    verified: { label: `Verified · ${awardedBt} BT`, cls: 'text-green-300 border-green-400/40' },
-    rejected: { label: 'Returned — try again', cls: 'text-blood-bright border-blood/50' },
-  };
-  const s = styles[status] || styles.submitted;
-  return (
-    <div
-      className={`mt-3 inline-block px-3 py-1 rounded-full text-xs uppercase tracking-[0.18em] border ${s.cls}`}
-    >
-      {s.label}
-    </div>
-  );
-};
-
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <section className="mt-6">
-    <h2 className="font-heading text-gold text-sm uppercase tracking-[0.3em] mb-2">{title}</h2>
-    {children}
-  </section>
+const LockIcon = ({ className = '' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+    <rect x="4" y="11" width="16" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
 );
 
 // Renders prose, splitting on blank lines into paragraphs.
@@ -374,7 +188,7 @@ const Prose = ({ text }: { text: string }) => (
 );
 
 const CenteredNote = ({ children }: { children: React.ReactNode }) => (
-  <div className="min-h-screen flex items-center justify-center px-6 text-center">
+  <div className="min-h-[50vh] flex items-center justify-center px-6 text-center">
     <div className="max-w-md text-bone/80">{children}</div>
   </div>
 );

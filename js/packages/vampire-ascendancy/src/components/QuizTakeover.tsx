@@ -179,26 +179,40 @@ const Part2 = ({
               <span className="text-gold mr-2">{i + 1}.</span>
               {q.prompt}
             </p>
-            <div className="flex flex-col gap-2">
-              {q.options.map((opt) => (
-                <label
-                  key={opt}
-                  className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
-                    answers[q.id] === opt
-                      ? 'border-blood-bright bg-blood/20 text-bone'
-                      : 'border-blood/30 text-bone/80 hover:text-bone'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={q.id}
-                    checked={answers[q.id] === opt}
-                    onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
-                  />
-                  {opt}
-                </label>
-              ))}
-            </div>
+            {q.type === 'number' ? (
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={answers[q.id] ?? ''}
+                onChange={(e) =>
+                  setAnswers((a) => ({ ...a, [q.id]: e.target.value.replace(/[^0-9]/g, '') }))
+                }
+                placeholder="Number of Blood Tokens"
+                className="w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone text-lg"
+              />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {q.options.map((opt) => (
+                  <label
+                    key={opt}
+                    className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+                      answers[q.id] === opt
+                        ? 'border-blood-bright bg-blood/20 text-bone'
+                        : 'border-blood/30 text-bone/80 hover:text-bone'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={q.id}
+                      checked={answers[q.id] === opt}
+                      onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
+                    />
+                    {opt}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
