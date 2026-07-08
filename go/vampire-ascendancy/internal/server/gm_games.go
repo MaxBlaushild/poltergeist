@@ -224,6 +224,106 @@ func (s *server) awardGameBT(ctx *gin.Context, characterID uuid.UUID, delta int,
 	})
 }
 
+// PUT /gm/games/:id — rename / reorder a game. A recorded game can't be renamed
+// (its award ledger entries are matched by name); clear its result first.
+func (s *server) gmUpdateGame(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid game id"})
+		return
+	}
+	game, err := s.dbClient.Vampire().GetGameByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if game == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
+		return
+	}
+	var body struct {
+		Name    string `json:"name"`
+		Ordinal int    `json:"ordinal"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil || body.Name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "a game name is required"})
+		return
+	}
+	if game.Status == "played" && body.Name != game.Name {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "clear this game's result before renaming it"})
+		return
+	}
+	if err := s.dbClient.Vampire().UpdateGame(ctx, id, body.Name, body.Ordinal); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "update_game", map[string]interface{}{"gameId": id.String(), "name": body.Name})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// DELETE /gm/games/:id — remove a game, reversing its awards first if recorded.
+func (s *server) gmDeleteGame(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid game id"})
+		return
+	}
+	v := s.dbClient.Vampire()
+	game, err := v.GetGameByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if game == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
+		return
+	}
+	if game.Status == "played" {
+		if err := v.DeleteGameAwards(ctx, game.Name); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := v.DeleteGame(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "delete_game", map[string]interface{}{"gameId": id.String(), "name": game.Name})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// POST /gm/games/:id/clear — undo a recorded result: reverse the Blood Token /
+// House Favor awards and reset the game to pending so it can be re-recorded.
+func (s *server) gmClearGameResult(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid game id"})
+		return
+	}
+	v := s.dbClient.Vampire()
+	game, err := v.GetGameByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if game == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
+		return
+	}
+	if game.Status == "played" {
+		if err := v.DeleteGameAwards(ctx, game.Name); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := v.ClearGameResult(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "clear_game_result", map[string]interface{}{"gameId": id.String(), "name": game.Name})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // GET /games — the player-facing game list: order, what's been played, and each
 // played game's finishers.
 func (s *server) getGames(ctx *gin.Context) {

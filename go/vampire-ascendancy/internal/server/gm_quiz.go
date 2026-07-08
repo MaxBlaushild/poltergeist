@@ -53,17 +53,9 @@ func (s *server) gmSetPart2Open(ctx *gin.Context) {
 		return
 	}
 
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if body.Open && state.QuizPart1Open {
-		ctx.JSON(http.StatusConflict, gin.H{"error": "close Part 1 before opening Part 2"})
-		return
-	}
-
-	state, err = s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{"quiz_part2_open": body.Open})
+	// Part 2 can open independently of Part 1's state, so GMs can start the MC
+	// round while they finish reviewing Part 1 scores.
+	state, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{"quiz_part2_open": body.Open})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -227,9 +219,10 @@ func (s *server) gradePart1(ctx context.Context) {
 		if sub.QuestionID != p1q.ID {
 			continue
 		}
-		score := s.aiGradePart1(p1q, sub.Answer, maxBT)
+		score, rationale := s.aiGradePart1(p1q, sub.Answer, maxBT)
 		sf := float64(score)
 		_ = v.UpdateQuizSubmissionGrade(ctx, sub.ID, &sf, score)
+		_ = v.SetQuizSubmissionRationale(ctx, sub.ID, rationale)
 		// Record the BT idempotently (one entry per player for Part 1).
 		_ = v.DeleteBloodTokensBySourceForPlayer(ctx, sub.PlayerID, "quiz_part1")
 		if score > 0 {
@@ -244,9 +237,9 @@ func (s *server) gradePart1(ctx context.Context) {
 	}
 }
 
-func (s *server) aiGradePart1(q *models.VampireQuizQuestion, answer string, maxBT int) int {
+func (s *server) aiGradePart1(q *models.VampireQuizQuestion, answer string, maxBT int) (int, string) {
 	if strings.TrimSpace(answer) == "" || s.deepPriest == nil {
-		return 0
+		return 0, ""
 	}
 	prompt := fmt.Sprintf(`You are grading a murder-mystery quiz answer for accuracy.
 
@@ -259,14 +252,36 @@ THE QUESTION ASKED:
 THE PLAYER'S ANSWER:
 %s
 
-Score how much of the canonical truth the answer captures, on an integer scale from 0 to %d, where %d means it captures essentially all of the key facts and 0 means it captures none of them. Reply with ONLY the integer score and nothing else.`,
-		q.Rubric, q.Prompt, answer, maxBT, maxBT)
+Score the answer from 0 to %d on how accurately and completely it captures the canonical truth, where %d means it captures essentially everything and 0 means nothing relevant.
+
+Reply in EXACTLY this format and nothing else:
+SCORE: <integer 0-%d>
+WHY: <one short sentence, ~15 words max, on what the answer got right or missed>`,
+		q.Rubric, q.Prompt, answer, maxBT, maxBT, maxBT)
 
 	ans, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil || ans == nil {
-		return 0 // graceful: a GM can set the BT manually
+		return 0, "" // graceful: a GM can set the BT manually
 	}
-	return clampInt(parseFirstInt(ans.Answer), 0, maxBT)
+	return parseScoreAndWhy(ans.Answer, maxBT)
+}
+
+// parseScoreAndWhy pulls "SCORE: n" and "WHY: ..." out of the grader's reply.
+func parseScoreAndWhy(text string, maxBT int) (int, string) {
+	scoreText := text
+	if i := strings.Index(strings.ToUpper(text), "SCORE:"); i >= 0 {
+		scoreText = text[i+len("SCORE:"):]
+	}
+	score := clampInt(parseFirstInt(scoreText), 0, maxBT)
+
+	rationale := ""
+	if i := strings.Index(strings.ToUpper(text), "WHY:"); i >= 0 {
+		rationale = strings.TrimSpace(text[i+len("WHY:"):])
+		if nl := strings.IndexAny(rationale, "\r\n"); nl >= 0 {
+			rationale = strings.TrimSpace(rationale[:nl])
+		}
+	}
+	return score, rationale
 }
 
 // POST /gm/quiz/part1/override — a GM adjusts the BT awarded for one response.

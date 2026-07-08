@@ -157,6 +157,28 @@ export const gmRecordGameResult = (
   id: string,
   body: { firstId?: string; secondId?: string; thirdId?: string; participantIds?: string[] }
 ) => gm<{ ok: boolean }>(`/games/${id}/result`, { method: 'POST', body: JSON.stringify(body) });
+export const gmUpdateGame = (id: string, name: string, ordinal: number) =>
+  gm<{ ok: boolean }>(`/games/${id}`, { method: 'PUT', body: JSON.stringify({ name, ordinal }) });
+export const gmDeleteGame = (id: string) => gm<{ ok: boolean }>(`/games/${id}`, { method: 'DELETE' });
+export const gmClearGameResult = (id: string) =>
+  gm<{ ok: boolean }>(`/games/${id}/clear`, { method: 'POST' });
+
+// ---- Quiz question editor ----
+export interface GMQuizPart2Edit {
+  ordinal?: number;
+  prompt: string;
+  options: string[];
+  correctAnswer: string;
+  hfValue: number;
+  tier: string;
+}
+export interface GMQuizQuestions {
+  part1: { prompt: string; rubric: string; maxBt: number };
+  part2: GMQuizPart2Edit[];
+}
+export const gmGetQuizQuestions = () => gm<GMQuizQuestions>('/quiz/questions');
+export const gmUpdateQuizQuestions = (body: GMQuizQuestions) =>
+  gm<{ ok: boolean }>('/quiz/questions', { method: 'PUT', body: JSON.stringify(body) });
 
 export interface GMQuizSubmission {
   id: string;
@@ -164,6 +186,7 @@ export interface GMQuizSubmission {
   answer: string;
   isCorrect: boolean | null;
   aiScore: number | null;
+  aiRationale: string;
   awardedBt: number;
   locked: boolean;
   guestLabel: string;
@@ -195,3 +218,43 @@ export const gmUpdatePlayer = (
   body: { characterId: string | null; guestLabel: string; active: boolean }
 ) => gm(`/players/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 export const gmListCharacters = () => gm<{ characters: GMCharacter[] }>('/characters');
+
+// ---- Character content editor ----
+export interface GMMissionEdit {
+  tier: string;
+  rewardBt: number;
+  prompt: string;
+  answerFormat: string;
+}
+export interface GMCharacterFull {
+  id: string;
+  name: string;
+  title: string;
+  roleType: string;
+  isOptional: boolean;
+  houseId: string | null;
+  preEventInfo: string;
+  postAct1Context: string;
+  imageUrl: string;
+  sigil: string;
+  playerName: string;
+  secrets: { ordinal: number; body: string }[];
+  missions: (GMMissionEdit & { ordinal: number })[];
+}
+export interface GMCharacterUpdate {
+  name: string;
+  title: string;
+  roleType: string;
+  houseId: string | null;
+  preEventInfo: string;
+  postAct1Context: string;
+  imageUrl: string;
+  playerName: string;
+  secrets: string[];
+  missions: GMMissionEdit[];
+}
+export const gmGetCharacter = (id: string) => gm<GMCharacterFull>(`/characters/${id}`);
+export const gmUpdateCharacter = (id: string, body: GMCharacterUpdate) =>
+  gm<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+export const gmUpdateHouse = (id: string, tagline: string) =>
+  gm<{ ok: boolean }>(`/houses/${id}`, { method: 'PUT', body: JSON.stringify({ tagline }) });

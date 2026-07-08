@@ -195,9 +195,11 @@ type VampireHandle interface {
 	ListCharactersByHouse(ctx context.Context, houseID uuid.UUID) ([]models.VampireCharacter, error)
 	ListHouseFavorLog(ctx context.Context, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error)
 	UpsertHouse(ctx context.Context, name string, sortOrder int, tagline string) (*models.VampireHouse, error)
+	UpdateHouseTagline(ctx context.Context, id uuid.UUID, tagline string) error
 
 	// Characters / secrets / missions
 	UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error)
+	UpdateCharacter(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error
 	GetCharacterByName(ctx context.Context, name string) (*models.VampireCharacter, error)
 	GetCharacterByID(ctx context.Context, id uuid.UUID) (*models.VampireCharacter, error)
 	ListCharacters(ctx context.Context) ([]models.VampireCharacter, error)
@@ -255,6 +257,7 @@ type VampireHandle interface {
 	ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error)
 	UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
 	UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error
+	SetQuizSubmissionRationale(ctx context.Context, id uuid.UUID, rationale string) error
 	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
 	ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error)
 	ListPart2Answers(ctx context.Context) ([]Part2Answer, error)
@@ -275,6 +278,12 @@ type VampireHandle interface {
 	GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error)
 	UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error)
 	SetGameResult(ctx context.Context, id uuid.UUID, first, second, third *uuid.UUID) error
+	UpdateGame(ctx context.Context, id uuid.UUID, name string, ordinal int) error
+	DeleteGame(ctx context.Context, id uuid.UUID) error
+	ClearGameResult(ctx context.Context, id uuid.UUID) error
+	// DeleteGameAwards reverses the Blood Token / House Favor ledger entries a game
+	// wrote when it was recorded (matched by the game's name).
+	DeleteGameAwards(ctx context.Context, gameName string) error
 }
 
 type ScoreHandle interface {

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { gmListGames, gmCreateGame, gmRecordGameResult, gmListCharacters } from '../../gmApi';
+import {
+  gmListGames,
+  gmCreateGame,
+  gmRecordGameResult,
+  gmListCharacters,
+  gmUpdateGame,
+  gmDeleteGame,
+  gmClearGameResult,
+} from '../../gmApi';
 import type { GMGame, GMCharacter } from '../../gmApi';
 import { Card } from './GameSection';
 
@@ -128,6 +136,7 @@ const GameCard = ({
           )}
           <p className="mt-1 text-xs text-green-400 uppercase tracking-[0.15em]">Recorded · awards applied</p>
         </div>
+        <ManageBar game={game} onChange={onChange} />
       </Card>
     );
   }
@@ -165,10 +174,89 @@ const GameCard = ({
           Record result &amp; award
         </button>
         <p className="text-[11px] text-bone/40">
-          BT/HF are applied automatically: 1st +5/+5, 2nd +3/+3, 3rd +1/+2. Can't be undone here.
+          BT/HF are applied automatically: 1st +5/+5, 2nd +3/+3, 3rd +1/+2. You can clear the result
+          afterward to undo the awards.
         </p>
       </div>
+      <ManageBar game={game} onChange={onChange} />
     </Card>
+  );
+};
+
+// Rename / delete / clear-result controls, collapsed by default. A recorded game
+// can't be renamed (awards are matched by name) — clear it first.
+const ManageBar = ({ game, onChange }: { game: GMGame; onChange: () => void }) => {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(game.name);
+  const [busy, setBusy] = useState(false);
+  const played = game.status === 'played';
+
+  const run = (fn: () => Promise<unknown>) => async () => {
+    setBusy(true);
+    try {
+      await fn();
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const rename = run(() => gmUpdateGame(game.id, name.trim(), game.ordinal));
+  const del = () => {
+    if (window.confirm(`Delete "${game.name}"?${played ? '\n\nThis also reverses the awards it applied.' : ''}`))
+      run(() => gmDeleteGame(game.id))();
+  };
+  const clear = () => {
+    if (window.confirm(`Clear the result for "${game.name}"?\n\nThis reverses the Blood Tokens and House Favor it awarded.`))
+      run(() => gmClearGameResult(game.id))();
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-blood/20">
+      <button onClick={() => setOpen((o) => !o)} className="text-xs text-bone/50 uppercase tracking-[0.15em]">
+        {open ? '▾ Manage' : '▸ Manage'}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-2">
+          {!played && (
+            <div className="flex gap-2">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="flex-1 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+              />
+              <button
+                onClick={rename}
+                disabled={busy || !name.trim() || name.trim() === game.name}
+                className="px-3 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-xs disabled:opacity-40"
+              >
+                Rename
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            {played && (
+              <button
+                onClick={clear}
+                disabled={busy}
+                className="flex-1 py-2 rounded-md border border-gold/50 text-gold uppercase tracking-[0.15em] text-xs disabled:opacity-40"
+              >
+                Clear result
+              </button>
+            )}
+            <button
+              onClick={del}
+              disabled={busy}
+              className="flex-1 py-2 rounded-md border border-blood/50 text-blood-bright uppercase tracking-[0.15em] text-xs disabled:opacity-40"
+            >
+              Delete game
+            </button>
+          </div>
+          {played && (
+            <p className="text-[11px] text-bone/40">Rename is disabled while recorded — clear the result first.</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

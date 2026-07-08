@@ -80,9 +80,15 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/players", s.gmCreatePlayer)
 	gm.PUT("/players/:id", s.gmUpdatePlayer)
 	gm.GET("/characters", s.gmListCharacters)
+	gm.GET("/characters/:id", s.gmGetCharacter)
+	gm.PUT("/characters/:id", s.gmUpdateCharacter)
+	gm.PUT("/houses/:id", s.gmUpdateHouse)
 	gm.GET("/games", s.gmListGames)
 	gm.POST("/games", s.gmCreateGame)
+	gm.PUT("/games/:id", s.gmUpdateGame)
+	gm.DELETE("/games/:id", s.gmDeleteGame)
 	gm.POST("/games/:id/result", s.gmRecordGameResult)
+	gm.POST("/games/:id/clear", s.gmClearGameResult)
 	gm.POST("/notifications", s.gmPushNotification)
 	gm.POST("/notifications/clear", s.gmClearNotifications)
 	gm.POST("/quiz/part1", s.gmSetPart1Open)
@@ -91,6 +97,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/quiz/part2", s.gmSetPart2Open)
 	gm.POST("/quiz/part2/rescore", s.gmRescorePart2)
 	gm.GET("/quiz/submissions", s.gmListQuizSubmissions)
+	gm.GET("/quiz/questions", s.gmGetQuizQuestions)
+	gm.PUT("/quiz/questions", s.gmUpdateQuizQuestions)
 }
 
 func (s *server) ListenAndServe(port string) {

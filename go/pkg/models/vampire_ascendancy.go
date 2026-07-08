@@ -208,9 +208,10 @@ type VampireQuizSubmission struct {
 	QuestionID uuid.UUID `gorm:"not null" json:"questionId"`
 	Answer     string    `gorm:"not null;default:''" json:"answer"`
 	IsCorrect  *bool     `json:"isCorrect"` // Part 2 auto-grade
-	AIScore    *float64  `gorm:"column:ai_score" json:"aiScore"`
-	AwardedBT  int       `gorm:"column:awarded_bt;not null;default:0" json:"awardedBt"` // Part 1 BT
-	Locked     bool      `gorm:"not null;default:false" json:"locked"`
+	AIScore     *float64 `gorm:"column:ai_score" json:"aiScore"`
+	AIRationale string   `gorm:"column:ai_rationale;not null;default:''" json:"aiRationale"` // one-line AI note
+	AwardedBT   int      `gorm:"column:awarded_bt;not null;default:0" json:"awardedBt"`      // Part 1 BT
+	Locked      bool     `gorm:"not null;default:false" json:"locked"`
 }
 
 func (VampireQuizSubmission) TableName() string { return "vampire_quiz_submissions" }

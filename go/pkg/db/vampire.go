@@ -90,6 +90,13 @@ func (h *vampireHandler) UpsertHouse(ctx context.Context, name string, sortOrder
 	return &out, nil
 }
 
+// UpdateHouseTagline sets a house's tagline by id (GM editor).
+func (h *vampireHandler) UpdateHouseTagline(ctx context.Context, id uuid.UUID, tagline string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireHouse{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"tagline": tagline, "updated_at": time.Now()}).Error
+}
+
 // ---- Characters ----
 
 func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error) {
@@ -105,6 +112,12 @@ func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireC
 		return nil, err
 	}
 	return h.GetCharacterByName(ctx, c.Name)
+}
+
+// UpdateCharacter patches a character's columns by id (used by the GM editor).
+func (h *vampireHandler) UpdateCharacter(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error {
+	fields["updated_at"] = time.Now()
+	return h.db.WithContext(ctx).Model(&models.VampireCharacter{}).Where("id = ?", id).Updates(fields).Error
 }
 
 func (h *vampireHandler) GetCharacterByName(ctx context.Context, name string) (*models.VampireCharacter, error) {
@@ -572,6 +585,7 @@ type QuizSubmissionDetail struct {
 	Answer        string    `json:"answer"`
 	IsCorrect     *bool     `json:"isCorrect"`
 	AIScore       *float64  `json:"aiScore"`
+	AIRationale   string    `json:"aiRationale"`
 	AwardedBT     int       `json:"awardedBt"`
 	Locked        bool      `json:"locked"`
 	GuestLabel    string    `json:"guestLabel"`
@@ -587,7 +601,7 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]Qui
 	if err := h.db.WithContext(ctx).
 		Table("vampire_quiz_submissions s").
 		Select(`s.id, s.player_id, s.question_id, s.answer, s.is_correct, s.ai_score,
-			s.awarded_bt, s.locked,
+			s.ai_rationale, s.awarded_bt, s.locked,
 			q.part AS part,
 			p.guest_label AS guest_label,
 			COALESCE(c.name, '') AS character_name,
@@ -638,6 +652,13 @@ func (h *vampireHandler) UpdateQuizSubmissionGrade(ctx context.Context, id uuid.
 			"awarded_bt": awardedBT,
 			"updated_at": time.Now(),
 		}).Error
+}
+
+// SetQuizSubmissionRationale stores the one-line AI note for a Part 1 grade.
+func (h *vampireHandler) SetQuizSubmissionRationale(ctx context.Context, id uuid.UUID, rationale string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireQuizSubmission{}).
+		Where("id = ?", id).
+		Update("ai_rationale", rationale).Error
 }
 
 // Part2Answer is one player's answer to a Part 2 question, with their house —
@@ -859,6 +880,44 @@ func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first,
 			"third_character_id":  third,
 			"updated_at":          time.Now(),
 		}).Error
+}
+
+func (h *vampireHandler) UpdateGame(ctx context.Context, id uuid.UUID, name string, ordinal int) error {
+	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"name": name, "ordinal": ordinal, "updated_at": time.Now()}).Error
+}
+
+func (h *vampireHandler) DeleteGame(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampireGame{}, "id = ?", id).Error
+}
+
+// ClearGameResult resets a game to pending and drops its recorded finishers.
+func (h *vampireHandler) ClearGameResult(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"status":              "pending",
+			"first_character_id":  nil,
+			"second_character_id": nil,
+			"third_character_id":  nil,
+			"updated_at":          time.Now(),
+		}).Error
+}
+
+func (h *vampireHandler) DeleteGameAwards(ctx context.Context, gameName string) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(
+			"DELETE FROM vampire_house_favor_ledger WHERE source = 'game' AND reason = ?",
+			"Game: "+gameName,
+		).Error; err != nil {
+			return err
+		}
+		return tx.Exec(
+			"DELETE FROM vampire_blood_token_log WHERE source = 'game' AND reason IN (?, ?)",
+			"Game: "+gameName, "Game participation: "+gameName,
+		).Error
+	})
 }
 
 // ---- GM audit log ----
