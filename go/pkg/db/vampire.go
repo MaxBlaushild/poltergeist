@@ -73,12 +73,12 @@ func (h *vampireHandler) ListHouseFavorLog(ctx context.Context, houseID uuid.UUI
 	return entries, nil
 }
 
-func (h *vampireHandler) UpsertHouse(ctx context.Context, name string, sortOrder int) (*models.VampireHouse, error) {
-	house := models.VampireHouse{Name: name, SortOrder: sortOrder}
+func (h *vampireHandler) UpsertHouse(ctx context.Context, name string, sortOrder int, tagline string) (*models.VampireHouse, error) {
+	house := models.VampireHouse{Name: name, SortOrder: sortOrder, Tagline: tagline}
 	if err := h.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "name"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{"sort_order": sortOrder, "updated_at": time.Now()}),
+			DoUpdates: clause.Assignments(map[string]interface{}{"sort_order": sortOrder, "tagline": tagline, "updated_at": time.Now()}),
 		}).
 		Create(&house).Error; err != nil {
 		return nil, err
@@ -740,6 +740,19 @@ func (h *vampireHandler) ListQuizSubmissions(ctx context.Context) ([]models.Vamp
 // questions are preserved.
 func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Snapshot the score ledgers before wiping them, so a reset is always
+		// recoverable. Same transaction as the delete, so archive and wipe are
+		// atomic — we never delete without a durable copy landing first.
+		archives := map[string]string{
+			"vampire_house_favor_ledger": "vampire_house_favor_ledger_archive",
+			"vampire_blood_token_log":    "vampire_blood_token_log_archive",
+		}
+		for src, dst := range archives {
+			if err := tx.Exec("INSERT INTO " + dst + " SELECT *, now() FROM " + src).Error; err != nil {
+				return err
+			}
+		}
+
 		tables := []string{
 			"vampire_mission_submissions",
 			"vampire_house_favor_ledger",

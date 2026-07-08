@@ -1,49 +1,221 @@
 {
   "part1": {
-    "prompt": "In your own words, what do you believe happened to Caspian Vael? Describe what you think occurred, who was involved, and why. Be as specific as you can.",
-    "rubric": "Canonical truth: Caspian Vael, the named heir, was secretly a thrall bound to Marquess Gruber. To remove a too-conspicuous heir, Gruber arranged for Caspian to be poisoned with the ceremonial wine. Valen Drear — also Gruber's thrall, his bond degrading — tried to warn the sommelier with an unsigned note not to serve the wine. Ashglass (via Doctor Thorne Virell's lab and the necromantic revival research) supplied the means. The cover story is that Caspian simply failed to appear. Key facts worth credit: (1) Caspian was a thrall/bound to Gruber; (2) he was poisoned, via the wine; (3) Gruber orchestrated it; (4) Valen tried to warn against the wine; (5) Ashglass/Thorne supplied the poison or method.",
-    "maxBt": 6
+    "prompt": "In your own words, explain what truly happened to Caspian Vael — and who was responsible. Include as much as you can: how his death came about, who set it in motion, who unknowingly played a part, and what the Marquess had been doing that led to all of this. The more accurate and complete your account, the more you'll be rewarded.",
+    "rubric": "Rubric-graded for accuracy; award 1 BT per correct core element (7 core), up to +3 BT for deep-cut bonus elements, then a separate first-place bonus applied by the GM. CORE ELEMENTS (1 BT each): (1) Caspian was a thrall, secretly bound to the Marquess against his knowledge/will. (2) Binding method: her blood plus a binding agent worked into the ceremonial wine he drank. (3) Motive: Gruber's puppet succession — to rule through a compliant heir. (4) Caspian discovered his bond and sought to break it via the Rite of Undoing. (5) The Rite was sabotaged — a page was swapped by Calven Rue. (6) Ivara Saye paid for the swap and is the primary knowing cause of death (extra credit for noting her tragic error — she believed she was stopping Valen's bond-breaking, not killing Caspian). (7) Two died — Caspian and the mortal Lena Ashford — at the mill road, from the corrupted ritual. BONUS DEEP-CUT ELEMENTS (up to +3 BT total): Thorne's unwitting role and the research chain (Silas, Jasper); Brother Aldric captured alive; Mara Voss also bound as a thrall to Eiran Vox; why the corrupted Rite was lethal (a Rite drawing blood from all five houses releases enormous force that, corrupted, had nowhere safe to go).",
+    "maxBt": 10
   },
   "part2": [
     {
       "ordinal": 1,
-      "prompt": "Who orchestrated Caspian Vael's death?",
+      "prompt": "What became of Caspian Vael?",
       "tier": "medium",
       "hfValue": 3,
-      "options": ["Marquess Gruber", "Valen Drear", "Eiran Vox", "Doctor Thorne Virell"],
-      "correctAnswer": "Marquess Gruber"
+      "options": [
+        "He fled the estate willingly to escape the succession",
+        "He is being held captive somewhere on the grounds",
+        "He took his own life knowingly, to escape a worse fate",
+        "He was exiled quietly by the Marquess",
+        "He was killed by another's design, though not by their hand",
+        "He was killed directly, by another's hand"
+      ],
+      "correctAnswer": "He was killed by another's design, though not by their hand"
     },
     {
       "ordinal": 2,
-      "prompt": "How was Caspian killed?",
-      "tier": "easy",
-      "hfValue": 2,
-      "options": ["Poisoned wine", "A duel", "A ritual", "He was never killed"],
-      "correctAnswer": "Poisoned wine"
+      "prompt": "Where did Caspian die?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "In the Marquess's private cellar",
+        "In the Ashglass ritual archives",
+        "At the old mill house, on the mill road",
+        "In his own quarters",
+        "At the ceremonial hall, before the guests arrived"
+      ],
+      "correctAnswer": "At the old mill house, on the mill road"
     },
     {
       "ordinal": 3,
-      "prompt": "Which house supplied the means of the poisoning?",
-      "tier": "hard",
-      "hfValue": 4,
-      "options": ["Ashglass", "Cinders", "Chains", "Spires"],
-      "correctAnswer": "Ashglass"
+      "prompt": "Did anyone else die that night, and if so, who?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "Yes — Brother Aldric Voss, the scholar who vanished",
+        "Yes — a mortal woman, Lena Ashford",
+        "Yes — Valen Drear, killed a second time and once again revived",
+        "No — Caspian died alone",
+        "Yes — an unnamed servant who witnessed the ritual"
+      ],
+      "correctAnswer": "Yes — a mortal woman, Lena Ashford"
     },
     {
       "ordinal": 4,
-      "prompt": "What was Caspian's hidden status?",
+      "prompt": "What was Caspian trying to accomplish that night?",
       "tier": "medium",
       "hfValue": 3,
-      "options": ["A thrall bound to the Marquess", "A spy for Chains", "Already dead", "An impostor"],
-      "correctAnswer": "A thrall bound to the Marquess"
+      "options": [
+        "Perform a rite to leap ahead of Valen in the succession",
+        "Poison the Marquess with wine drawn from her private cellar",
+        "Slip away from the estate with Lena before the ceremony",
+        "Sever a hidden bond that was controlling him",
+        "Destroy an archive record that threatened his claim"
+      ],
+      "correctAnswer": "Sever a hidden bond that was controlling him"
     },
     {
       "ordinal": 5,
-      "prompt": "Who tried to warn against serving the wine?",
+      "prompt": "What is the name of the ritual Caspian sought?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "The Sanguine Severance",
+        "The Unbinding of Blood",
+        "The Rite of Undoing",
+        "The Rite of Release",
+        "The Undying Covenant"
+      ],
+      "correctAnswer": "The Rite of Undoing"
+    },
+    {
+      "ordinal": 6,
+      "prompt": "How did the Marquess bind Caspian to her?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "A blood-oath sworn between them at his private investiture",
+        "Repeated small doses of a binding tincture slipped into his food across the season",
+        "A ritual performed over him in the Ashglass archives",
+        "An enchanted object she gifted him, worn close to the skin",
+        "A binding agent and her blood, worked into wine he drank in ceremony",
+        "An incantation murmured over a glass of sparkling, toasting his succession"
+      ],
+      "correctAnswer": "A binding agent and her blood, worked into wine he drank in ceremony"
+    },
+    {
+      "ordinal": 7,
+      "prompt": "What did Doctor Thorne believe he was making?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "A medical formula to ease Valen's suffering as he declined",
+        "A treatment to stabilize Valen's failing bond, in penance for his lab's past accident",
+        "A truth serum for the Marquess's private interrogations",
+        "A strengthening tonic for the Marquess's own bloodline",
+        "A safer revival method, so no one would die as they did last year"
+      ],
+      "correctAnswer": "A treatment to stabilize Valen's failing bond, in penance for his lab's past accident"
+    },
+    {
+      "ordinal": 8,
+      "prompt": "Several people unknowingly helped Caspian reach the ritual. Which sequence is correct?",
       "tier": "hard",
       "hfValue": 4,
-      "options": ["Valen Drear", "Aurel Voss", "Orla Thass", "Mira Ashvane"],
-      "correctAnswer": "Valen Drear"
+      "options": [
+        "Silas referred him to Isla → Jasper sourced the intel → Mirth located the text",
+        "Jasper referred him to Isla → Isla sourced the intel → Silas located the text",
+        "Isla sourced the intel → Mirth referred him to Silas → Jasper located the text",
+        "Isla referred him to Silas → Silas sourced the intel → Jasper located the text",
+        "Silas referred him to Jasper → Isla sourced the intel → Mirth located the text"
+      ],
+      "correctAnswer": "Isla referred him to Silas → Silas sourced the intel → Jasper located the text"
+    },
+    {
+      "ordinal": 9,
+      "prompt": "Who physically altered the ritual text?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": [
+        "Jasper Delle",
+        "Father Mirth",
+        "Brother Aldric Voss",
+        "Velka Saye",
+        "Calven Rue"
+      ],
+      "correctAnswer": "Calven Rue"
+    },
+    {
+      "ordinal": 10,
+      "prompt": "Why did the corrupted Rite kill Caspian, rather than simply fail?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": [
+        "A Rite drawing blood from all five houses releases enormous force; corrupted, that force had nowhere safe to go",
+        "The Marquess poisoned the ritual site in advance",
+        "The severed bond recoiled and killed the master; but Caspian was mistaken for one",
+        "Lena disrupted the ritual, causing it to backfire",
+        "The ritual was never meant to be survived by anyone"
+      ],
+      "correctAnswer": "A Rite drawing blood from all five houses releases enormous force; corrupted, that force had nowhere safe to go"
+    },
+    {
+      "ordinal": 11,
+      "prompt": "What was the Marquess ultimately trying to achieve with her bond on Caspian?",
+      "tier": "medium",
+      "hfValue": 3,
+      "options": [
+        "To extend her own life using the heir's blood",
+        "To punish Valen for his failure last year",
+        "To rule the Court indefinitely through a controlled heir",
+        "To prevent Caspian from ever taking the throne",
+        "To protect the Court from an external threat only she could see"
+      ],
+      "correctAnswer": "To rule the Court indefinitely through a controlled heir"
+    },
+    {
+      "ordinal": 12,
+      "prompt": "Caspian died performing a Rite that had been deliberately corrupted. Who was the primary person who knowingly caused his death?",
+      "tier": "hard",
+      "hfValue": 5,
+      "options": [
+        "Marquess Gruber",
+        "Eiran Vox",
+        "Calven Rue",
+        "Ivara Saye",
+        "Doctor Thorne Virell"
+      ],
+      "correctAnswer": "Ivara Saye"
+    },
+    {
+      "ordinal": 13,
+      "prompt": "Brother Aldric vanished. What actually happened to him?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": [
+        "He is being held captive, alive, by the Marquess's own people",
+        "He fled the estate and has gone into hiding",
+        "He died at the mill house alongside Caspian",
+        "He was the one who corrupted the Rite, and escaped",
+        "He returned to the Ashglass order and is in seclusion"
+      ],
+      "correctAnswer": "He is being held captive, alive, by the Marquess's own people"
+    },
+    {
+      "ordinal": 14,
+      "prompt": "Why has Valen's bond been visibly failing all year?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": [
+        "The Marquess's own power has been waning, weakening every bond she holds",
+        "Valen has been secretly taking something to fight the bond's hold",
+        "The spell used to revive him was made for mortals, and degrades when forced onto a vampire",
+        "The binding agent used on him was an early, unstable version",
+        "His revival was incomplete, and the bond never fully took"
+      ],
+      "correctAnswer": "The spell used to revive him was made for mortals, and degrades when forced onto a vampire"
+    },
+    {
+      "ordinal": 15,
+      "prompt": "Mara Voss is secretly bound as a thrall, like the others. Who holds/held her bond?",
+      "tier": "hard",
+      "hfValue": 4,
+      "options": [
+        "Marquess Gruber",
+        "Eiran Vox",
+        "Aurel Drear",
+        "The late Caspian Vael",
+        "Thessaly Wren"
+      ],
+      "correctAnswer": "Eiran Vox"
     }
   ]
 }

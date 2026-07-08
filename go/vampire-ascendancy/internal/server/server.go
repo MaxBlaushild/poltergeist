@@ -67,6 +67,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/unlock", s.gmSetUnlock)
 	gm.POST("/act", s.gmSetAct)
 	gm.POST("/reset", s.gmResetGame)
+	gm.GET("/export", s.gmExportStandings)
 	gm.GET("/houses", s.getHouses)
 	gm.POST("/hf", s.gmAwardHouseFavor)
 	gm.POST("/bt", s.gmAwardBloodTokens)

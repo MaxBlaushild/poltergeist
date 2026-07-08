@@ -88,10 +88,27 @@ func (s *server) gmSetUnlock(ctx *gin.Context) {
 func (s *server) gmResetGame(ctx *gin.Context) {
 	var body struct {
 		Confirm string `json:"confirm"`
+		Force   bool   `json:"force"`
 	}
 	_ = ctx.ShouldBindJSON(&body)
 	if body.Confirm != "RESET" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "confirmation required"})
+		return
+	}
+
+	// Live-lock: once the game is past pre-event, refuse a reset unless the caller
+	// explicitly forces it. This stops a live game's scores from being wiped by an
+	// accidental click; a deliberate reset must roll back to pre-event or pass force.
+	// (Either way, ResetGameProgress archives the score ledgers first.)
+	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if state.CurrentAct != "pre_event" && !body.Force {
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error": "the game is live (" + state.CurrentAct + "); reset is locked. Roll back to pre-event or pass force to override.",
+		})
 		return
 	}
 
@@ -101,7 +118,7 @@ func (s *server) gmResetGame(ctx *gin.Context) {
 	}
 
 	// The reset cleared the audit log; record that the reset happened.
-	s.logGM(ctx, "reset_game", map[string]interface{}{})
+	s.logGM(ctx, "reset_game", map[string]interface{}{"forced": body.Force, "fromAct": state.CurrentAct})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

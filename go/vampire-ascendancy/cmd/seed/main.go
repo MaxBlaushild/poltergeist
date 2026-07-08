@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,6 +23,16 @@ import (
 	"github.com/MaxBlaushild/poltergeist/vampire-ascendancy/internal/config"
 	"github.com/google/uuid"
 )
+
+// genToken returns a fresh opaque login token for a player slot, matching the
+// format the GM "create player" endpoint uses.
+func genToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
 
 // uniquePIN returns a 4-digit PIN not already in used, marking it used.
 func uniquePIN(used map[string]bool) string {
@@ -39,6 +50,7 @@ type seedFile struct {
 	Houses []struct {
 		Name      string `json:"name"`
 		SortOrder int    `json:"sort_order"`
+		Tagline   string `json:"tagline"`
 	} `json:"houses"`
 	Characters []seedCharacter `json:"characters"`
 }
@@ -53,6 +65,15 @@ type seedCharacter struct {
 	PostAct1Context string        `json:"post_act1_context"`
 	Secrets         []string      `json:"secrets"`
 	Missions        []seedMission `json:"missions"`
+	// ImageURL is the character's portrait (empty until image files are supplied).
+	ImageURL string `json:"image_url"`
+	// PlayerName is the real-world player assigned to this character (from the
+	// roster spreadsheet). It seeds the GM Players tab's "Guest name" box and is
+	// GM-only — it never reaches the player app. Optional.
+	PlayerName string `json:"player_name"`
+	// Active seeds whether this character's player slot starts active. Defaults
+	// to true when omitted; set false for a character no one is playing yet.
+	Active *bool `json:"active"`
 }
 
 type seedMission struct {
@@ -119,13 +140,28 @@ func main() {
 	// Houses first; build a name -> id map for character assignment.
 	houseIDs := map[string]uuid.UUID{}
 	for _, h := range seed.Houses {
-		house, err := v.UpsertHouse(ctx, h.Name, h.SortOrder)
+		house, err := v.UpsertHouse(ctx, h.Name, h.SortOrder, h.Tagline)
 		if err != nil {
 			log.Fatalf("failed to upsert house %q: %v", h.Name, err)
 		}
 		houseIDs[h.Name] = house.ID
 	}
 	log.Printf("upserted %d houses", len(seed.Houses))
+
+	// Existing player slots keyed by character, so slot seeding is idempotent and
+	// never duplicates a slot a GM has since marked inactive (a lookup filtered on
+	// active=true would miss those and re-create them).
+	existingPlayers, err := v.ListPlayers(ctx)
+	if err != nil {
+		log.Fatalf("failed to list players: %v", err)
+	}
+	slotByChar := map[uuid.UUID]models.VampirePlayer{}
+	for _, p := range existingPlayers {
+		if p.CharacterID != nil {
+			slotByChar[*p.CharacterID] = p
+		}
+	}
+	slotsCreated, slotsFilled := 0, 0
 
 	for _, c := range seed.Characters {
 		var houseID *uuid.UUID
@@ -141,6 +177,7 @@ func main() {
 			IsOptional:      c.IsOptional,
 			PreEventInfo:    c.PreEventInfo,
 			PostAct1Context: c.PostAct1Context,
+			ImageURL:        c.ImageURL,
 		})
 		if err != nil {
 			log.Fatalf("failed to upsert character %q: %v", c.Name, err)
@@ -174,6 +211,41 @@ func main() {
 		}
 		if err := v.ReplaceMissions(ctx, character.ID, missions); err != nil {
 			log.Fatalf("failed to replace missions for %q: %v", c.Name, err)
+		}
+
+		// Roster: seed the GM Players tab from the spreadsheet assignment. Create
+		// one login slot per character that has a player name, so GMs open the tab
+		// pre-populated. The name lands in the GM-only guest-label field — it is
+		// never sent to the player app.
+		if c.PlayerName != "" {
+			active := true
+			if c.Active != nil {
+				active = *c.Active
+			}
+			if slot, ok := slotByChar[character.ID]; ok {
+				// Only fill an empty label, so we never clobber a day-of GM edit.
+				if slot.GuestLabel == "" {
+					if err := v.UpdatePlayerAssignment(ctx, slot.ID, slot.CharacterID, c.PlayerName, slot.Active); err != nil {
+						log.Fatalf("failed to update player slot for %q: %v", c.Name, err)
+					}
+					slotsFilled++
+				}
+			} else {
+				token, err := genToken()
+				if err != nil {
+					log.Fatalf("failed to generate token for %q: %v", c.Name, err)
+				}
+				cid := character.ID
+				if err := v.CreatePlayer(ctx, &models.VampirePlayer{
+					Token:       token,
+					CharacterID: &cid,
+					GuestLabel:  c.PlayerName,
+					Active:      active,
+				}); err != nil {
+					log.Fatalf("failed to create player slot for %q: %v", c.Name, err)
+				}
+				slotsCreated++
+			}
 		}
 	}
 
@@ -253,6 +325,6 @@ func main() {
 		quizCount = len(questions)
 	}
 
-	fmt.Printf("seeded %d characters across %d houses (assigned %d new sigils, %d quiz questions)\n",
-		len(seed.Characters), len(seed.Houses), assigned, quizCount)
+	fmt.Printf("seeded %d characters across %d houses (assigned %d new sigils, %d quiz questions, %d player slots created, %d labels filled)\n",
+		len(seed.Characters), len(seed.Houses), assigned, quizCount, slotsCreated, slotsFilled)
 }

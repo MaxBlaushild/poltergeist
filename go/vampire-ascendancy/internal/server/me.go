@@ -21,9 +21,10 @@ func (s *server) getMe(ctx *gin.Context) {
 	}
 
 	resp := gin.H{
+		// guestLabel is intentionally omitted: it holds the real-world player name
+		// (a GM-only roster field) and must never reach the player app.
 		"player": gin.H{
-			"id":         player.ID,
-			"guestLabel": player.GuestLabel,
+			"id": player.ID,
 		},
 		"gameState": gin.H{
 			"currentAct":           state.CurrentAct,
@@ -80,9 +81,10 @@ func (s *server) getMe(ctx *gin.Context) {
 		"title":        character.Title,
 		"roleType":     character.RoleType,
 		"preEventInfo": character.PreEventInfo,
+		"imageUrl":     character.ImageURL,
 	}
 	if character.House != nil {
-		charResp["house"] = gin.H{"id": character.House.ID, "name": character.House.Name}
+		charResp["house"] = gin.H{"id": character.House.ID, "name": character.House.Name, "tagline": character.House.Tagline}
 	}
 
 	// Gated content — only revealed after the host opens the evening.

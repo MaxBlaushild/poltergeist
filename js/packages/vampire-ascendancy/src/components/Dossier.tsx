@@ -6,7 +6,7 @@ import { TIER_LABEL, accentFor } from '../theme';
 import { fileToResizedDataURL } from '../photo';
 import { VampireMark } from './VampireMark';
 
-export type DossierSection = 'dossier' | 'secrets' | 'missions';
+export type DossierSection = 'dossier' | 'chronicle' | 'secrets' | 'missions';
 
 // Presentational — the PlayerShell owns token capture, /me polling, the loading
 // and error states, and the top navigation. Dossier renders the character header
@@ -43,18 +43,26 @@ export const Dossier = ({
     <div className="pb-8">
       <header className="text-center mb-6">
         <p className="text-xs uppercase tracking-[0.4em] text-gold">The Crimson Toast</p>
-        <h1 className="mt-3 font-display text-3xl md:text-4xl font-bold text-bone leading-tight">
+        <Portrait imageUrl={character.imageUrl} name={character.name} accent={accent} />
+        <h1 className="mt-4 font-display text-3xl md:text-4xl font-bold text-bone leading-tight">
           {character.name}
         </h1>
         <p className="mt-2 text-bone/80 italic text-lg">{character.title}</p>
         {character.house && (
-          <Link
-            to={`/house/${character.house.id}`}
-            className="inline-block mt-3 px-3 py-1 rounded-full text-xs uppercase tracking-[0.25em] border transition-colors hover:bg-white/5"
-            style={{ color: accent, borderColor: accent }}
-          >
-            House of {character.house.name}
-          </Link>
+          <>
+            <Link
+              to={`/house/${character.house.id}`}
+              className="inline-block mt-3 px-3 py-1 rounded-full text-xs uppercase tracking-[0.25em] border transition-colors hover:bg-white/5"
+              style={{ color: accent, borderColor: accent }}
+            >
+              House of {character.house.name}
+            </Link>
+            {character.house.tagline && (
+              <p className="mt-2 text-xs uppercase tracking-[0.3em] text-bone/50 italic">
+                {character.house.tagline}
+              </p>
+            )}
+          </>
         )}
       </header>
 
@@ -71,19 +79,28 @@ export const Dossier = ({
                 Sealed
               </p>
               <p className="text-bone/85">
-                The ceremony has not yet begun. Your full dossier will unlock when the host opens the
+                The ceremony has not yet begun. The rest of your story unlocks when the host opens the
                 evening.
               </p>
             </div>
           )}
-
-          {unlocked && character.postAct1Context && (
-            <Section title="As the Night Unfolds">
-              <Prose text={character.postAct1Context} />
-            </Section>
-          )}
         </>
       )}
+
+      {section === 'chronicle' &&
+        (unlocked && character.postAct1Context ? (
+          <Section title="As the Night Unfolds">
+            <Prose text={character.postAct1Context} />
+          </Section>
+        ) : (
+          <div className="mt-6 rounded-lg border border-blood/40 bg-black/40 p-6 text-center">
+            <VampireMark className="w-12 h-12 mx-auto mb-3 opacity-80" />
+            <p className="font-heading text-gold uppercase tracking-[0.3em] text-xs mb-2">Sealed</p>
+            <p className="text-bone/85">
+              This chapter opens once the host begins the evening.
+            </p>
+          </div>
+        ))}
 
       {section === 'secrets' && <SecretsView secrets={character.secrets || []} />}
       {section === 'missions' && (
@@ -92,6 +109,29 @@ export const Dossier = ({
     </div>
   );
 };
+
+// Character portrait. Falls back to a house-tinted crest until an image is
+// supplied, so the header never looks broken pre-artwork.
+const Portrait = ({
+  imageUrl,
+  name,
+  accent,
+}: {
+  imageUrl?: string;
+  name: string;
+  accent: string;
+}) => (
+  <div
+    className="mt-4 mx-auto w-28 h-28 rounded-full overflow-hidden border-2 flex items-center justify-center bg-black/40"
+    style={{ borderColor: accent }}
+  >
+    {imageUrl ? (
+      <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+    ) : (
+      <VampireMark className="w-12 h-12 opacity-70" />
+    )}
+  </div>
+);
 
 const SecretsView = ({ secrets }: { secrets: Secret[] }) => {
   if (secrets.length === 0) return <CenteredNote>You carry no secrets tonight.</CenteredNote>;

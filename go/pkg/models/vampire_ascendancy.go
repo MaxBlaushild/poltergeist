@@ -15,6 +15,8 @@ type VampireHouse struct {
 	UpdatedAt time.Time `gorm:"not null" json:"updatedAt"`
 	Name      string    `gorm:"not null" json:"name"`
 	SortOrder int       `gorm:"not null;default:0" json:"sortOrder"`
+	// Tagline is the house's motto, e.g. "Order is power".
+	Tagline string `gorm:"not null;default:''" json:"tagline"`
 }
 
 func (VampireHouse) TableName() string { return "vampire_houses" }
@@ -30,6 +32,8 @@ type VampireCharacter struct {
 	IsOptional      bool       `gorm:"not null;default:false" json:"isOptional"`
 	PreEventInfo    string     `gorm:"not null;default:''" json:"preEventInfo"`
 	PostAct1Context string     `gorm:"not null;default:''" json:"postAct1Context"`
+	// ImageURL is the player's portrait for this character (empty until supplied).
+	ImageURL string `gorm:"column:image_url;not null;default:''" json:"imageUrl"`
 	// Per-character sigil. json:"-" so it never leaks through the player /me view.
 	Password string `gorm:"not null;default:''" json:"-"`
 

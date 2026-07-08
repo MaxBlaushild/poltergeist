@@ -85,8 +85,22 @@ export const gmSetUnlock = (unlocked: boolean) =>
   gm<GameState>('/unlock', { method: 'POST', body: JSON.stringify({ unlocked }) });
 export const gmSetAct = (act: string) =>
   gm<GameState>('/act', { method: 'POST', body: JSON.stringify({ act }) });
-export const gmResetGame = () =>
-  gm<{ ok: boolean }>('/reset', { method: 'POST', body: JSON.stringify({ confirm: 'RESET' }) });
+export const gmResetGame = (force = false) =>
+  gm<{ ok: boolean }>('/reset', { method: 'POST', body: JSON.stringify({ confirm: 'RESET', force }) });
+
+export interface StandingsExport {
+  exportedAt: string;
+  houseFavor: { houseId: string; name: string; favor: number }[];
+  players: {
+    playerId: string;
+    playerName: string;
+    active: boolean;
+    bloodTokens: number;
+    character: string | null;
+    house: string | null;
+  }[];
+}
+export const gmExportStandings = () => gm<StandingsExport>('/export');
 
 export const gmListHouses = () => gm<{ houses: House[] }>('/houses');
 export const gmAwardHF = (houseId: string, delta: number, reason: string) =>

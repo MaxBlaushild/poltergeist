@@ -1,6 +1,7 @@
 export interface House {
   id: string;
   name: string;
+  tagline?: string;
 }
 
 export interface Secret {
@@ -34,6 +35,7 @@ export interface Character {
   title: string;
   roleType: string;
   preEventInfo: string;
+  imageUrl?: string;
   house?: House;
   // Gated — only present once content is unlocked.
   postAct1Context?: string;
@@ -85,7 +87,8 @@ export interface QuizResponse {
 }
 
 export interface MeResponse {
-  player: { id: string; guestLabel: string };
+  // guestLabel is a GM-only roster field (the real player name) and is not sent here.
+  player: { id: string };
   gameState: GameState;
   character: Character | null;
   notification: Notification | null;

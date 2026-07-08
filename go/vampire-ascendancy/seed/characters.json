@@ -2,23 +2,28 @@
   "houses": [
     {
       "name": "Spires",
-      "sort_order": 0
+      "sort_order": 0,
+      "tagline": "Order is power"
     },
     {
       "name": "Chains",
-      "sort_order": 1
+      "sort_order": 1,
+      "tagline": "Secrets are power"
     },
     {
       "name": "Cinders",
-      "sort_order": 2
+      "sort_order": 2,
+      "tagline": "Passion is power"
     },
     {
       "name": "Ashglass",
-      "sort_order": 3
+      "sort_order": 3,
+      "tagline": "Knowledge is power"
     },
     {
       "name": "Marquess's Court",
-      "sort_order": 4
+      "sort_order": 4,
+      "tagline": "Power is power"
     }
   ],
   "characters": [

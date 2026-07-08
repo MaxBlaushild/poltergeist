@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { getMe, getToken, clearToken, ApiError } from '../api';
 import type { MeResponse } from '../types';
-import { Dossier } from './Dossier';
+import { Dossier, type DossierSection } from './Dossier';
+import { HowToPlay, EarnSpend } from './Rules';
 import { Leaderboard } from './Leaderboard';
 import { VampireMark } from './VampireMark';
 import { NotificationTakeover } from './NotificationTakeover';
@@ -11,14 +12,22 @@ import { QuizTakeover } from './QuizTakeover';
 const DISMISSED_KEY = 'vampireDismissedNotif';
 const TAB_KEY = 'vampireTab';
 
-type Tab = 'dossier' | 'secrets' | 'missions' | 'standings';
+type Tab = 'dossier' | 'chronicle' | 'missions' | 'secrets' | 'standings' | 'rules' | 'earn';
 
 const TAB_LABEL: Record<Tab, string> = {
-  dossier: 'Dossier',
-  secrets: 'Secrets',
+  dossier: 'Briefing',
+  chronicle: 'The Night',
   missions: 'Missions',
+  secrets: 'Secrets',
   standings: 'Standings',
+  rules: 'How to Play',
+  earn: 'Earn & Spend',
 };
+
+// Tabs that need no unlocked content — available the whole evening.
+const ALWAYS_TABS: Tab[] = ['dossier', 'standings', 'rules', 'earn'];
+// Personal story + tasks, revealed once the host opens the evening.
+const UNLOCKED_TABS: Tab[] = ['chronicle', 'missions', 'secrets'];
 
 // PlayerShell owns the token, the /me poll, and the single top navigation. The
 // screens are presentational and read from the shared state.
@@ -32,6 +41,7 @@ export const PlayerShell = () => {
   const [tab, setTab] = useState<Tab>(() => (localStorage.getItem(TAB_KEY) as Tab) || 'dossier');
   const [dismissedNotif, setDismissedNotif] = useState(() => localStorage.getItem(DISMISSED_KEY));
   const [quizDismissedPart, setQuizDismissedPart] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!token) {
@@ -87,16 +97,22 @@ export const PlayerShell = () => {
     );
   }
 
-  // Standings is always available; the rest only once content is unlocked.
+  // Briefing, standings, and the rules are always available; personal story and
+  // tasks only once content is unlocked. Keep a stable display order.
   const unlocked = me.gameState.contentUnlocked;
-  const tabs: Tab[] = unlocked
-    ? ['dossier', 'secrets', 'missions', 'standings']
-    : ['dossier', 'standings'];
+  const ORDER: Tab[] = ['dossier', 'chronicle', 'missions', 'secrets', 'standings', 'rules', 'earn'];
+  const available = new Set<Tab>([...ALWAYS_TABS, ...(unlocked ? UNLOCKED_TABS : [])]);
+  const tabs = ORDER.filter((t) => available.has(t));
   const activeTab = tabs.includes(tab) ? tab : 'dossier';
 
   const selectTab = (t: Tab) => {
     localStorage.setItem(TAB_KEY, t);
     setTab(t);
+  };
+
+  const logout = () => {
+    clearToken();
+    navigate('/login', { replace: true });
   };
 
   // Show a GM broadcast as a takeover until this player dismisses it.
@@ -122,42 +138,100 @@ export const PlayerShell = () => {
       {!showQuiz && showTakeover && me.notification && (
         <NotificationTakeover notification={me.notification} onDismiss={dismissTakeover} />
       )}
-      <TopNav tabs={tabs} active={activeTab} onSelect={selectTab} />
+      <TopNav tabs={tabs} active={activeTab} onSelect={selectTab} onLogout={logout} />
       {activeTab === 'standings' ? (
         <Leaderboard myHouse={me.character?.house?.name} />
+      ) : activeTab === 'rules' ? (
+        <HowToPlay />
+      ) : activeTab === 'earn' ? (
+        <EarnSpend />
       ) : (
-        <Dossier me={me} reload={reload} section={activeTab} />
+        <Dossier me={me} reload={reload} section={activeTab as DossierSection} />
       )}
     </div>
   );
 };
 
+// A single menu button opens the full tab list. With up to seven tabs plus
+// logout, an overflow menu stays legible on a phone where a flat bar would clip.
 const TopNav = ({
   tabs,
   active,
   onSelect,
+  onLogout,
 }: {
   tabs: Tab[];
   active: Tab;
   onSelect: (t: Tab) => void;
-}) => (
-  <nav className="sticky top-0 z-10 -mx-4 px-2 py-2 mb-4 bg-blood-ink/90 backdrop-blur-sm border-b border-blood/30">
-    {/* Tabs share the width equally and shrink to fit, so the bar never clips. */}
-    <div className="flex gap-1">
-      {tabs.map((t) => (
+  onLogout: () => void;
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const pick = (t: Tab) => {
+    onSelect(t);
+    setOpen(false);
+  };
+
+  return (
+    <nav className="sticky top-0 z-20 -mx-4 px-3 py-2 mb-4 bg-blood-ink/95 backdrop-blur-sm border-b border-blood/30">
+      <div className="flex items-center gap-3">
         <button
-          key={t}
-          onClick={() => onSelect(t)}
-          className={`flex-1 min-w-0 px-1 py-2 rounded-md text-center uppercase tracking-[0.08em] text-[11px] sm:text-sm transition-colors ${
-            active === t ? 'bg-blood text-bone' : 'text-bone/80 hover:text-bone'
-          }`}
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Menu"
+          aria-expanded={open}
+          className="p-2 -ml-1 rounded-md text-bone/80 hover:text-bone"
         >
-          {TAB_LABEL[t]}
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            {open ? (
+              <>
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="6" y1="18" x2="18" y2="6" />
+              </>
+            ) : (
+              <>
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </>
+            )}
+          </svg>
         </button>
-      ))}
-    </div>
-  </nav>
-);
+        <span className="font-heading uppercase tracking-[0.2em] text-sm text-bone">
+          {TAB_LABEL[active]}
+        </span>
+      </div>
+
+      {open && (
+        <>
+          {/* Tap-away scrim so the menu closes when the player taps the page. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-2 right-2 mt-2 z-20 rounded-lg border border-blood/40 bg-blood-ink shadow-xl overflow-hidden">
+            {tabs.map((t) => (
+              <button
+                key={t}
+                onClick={() => pick(t)}
+                className={`w-full text-left px-4 py-3 uppercase tracking-[0.12em] text-sm transition-colors ${
+                  active === t ? 'bg-blood text-bone' : 'text-bone/80 hover:bg-white/5 hover:text-bone'
+                }`}
+              >
+                {TAB_LABEL[t]}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setOpen(false);
+                onLogout();
+              }}
+              className="w-full text-left px-4 py-3 uppercase tracking-[0.12em] text-sm text-blood-bright border-t border-blood/30 hover:bg-white/5"
+            >
+              Log out / change character
+            </button>
+          </div>
+        </>
+      )}
+    </nav>
+  );
+};
 
 const Centered = ({ children }: { children: React.ReactNode }) => (
   <div className="min-h-screen flex items-center justify-center px-6 text-center">

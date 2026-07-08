@@ -194,7 +194,7 @@ type VampireHandle interface {
 	GetHouseByID(ctx context.Context, id uuid.UUID) (*models.VampireHouse, error)
 	ListCharactersByHouse(ctx context.Context, houseID uuid.UUID) ([]models.VampireCharacter, error)
 	ListHouseFavorLog(ctx context.Context, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error)
-	UpsertHouse(ctx context.Context, name string, sortOrder int) (*models.VampireHouse, error)
+	UpsertHouse(ctx context.Context, name string, sortOrder int, tagline string) (*models.VampireHouse, error)
 
 	// Characters / secrets / missions
 	UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error)

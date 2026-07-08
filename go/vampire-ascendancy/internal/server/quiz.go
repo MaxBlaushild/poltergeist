@@ -1,12 +1,36 @@
 package server
 
 import (
+	"encoding/json"
+	"hash/fnv"
+	"math/rand"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
+
+// shuffledOptions decodes a question's stored option list and returns it in a
+// per-player order. The order is deterministic in (playerID, questionID): every
+// player sees a different arrangement, but a given player always sees the same
+// one — so reloads and re-rendered locked answers don't reshuffle. Scoring is
+// unaffected because submissions are matched by option text, not position.
+func shuffledOptions(raw datatypes.JSON, playerID, questionID uuid.UUID) []string {
+	options := []string{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &options); err != nil {
+			return []string{}
+		}
+	}
+	h := fnv.New64a()
+	h.Write(playerID[:])
+	h.Write(questionID[:])
+	r := rand.New(rand.NewSource(int64(h.Sum64())))
+	r.Shuffle(len(options), func(i, j int) { options[i], options[j] = options[j], options[i] })
+	return options
+}
 
 // GET /quiz — the two-part end quiz for players. Part 1 is a single open-end
 // prompt (AI-graded → BT); Part 2 is multiple choice (normalized → HF). Neither
@@ -63,7 +87,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 			"ordinal": q.Ordinal,
 			"prompt":  q.Prompt,
 			"tier":    q.Tier,
-			"options": q.Options,
+			"options": shuffledOptions(q.Options, player.ID, q.ID),
 			"answer":  subByQ[q.ID.String()],
 		})
 	}

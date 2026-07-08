@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { gmSetUnlock, gmSetAct, gmResetGame } from '../../gmApi';
+import { gmSetUnlock, gmSetAct, gmResetGame, gmExportStandings } from '../../gmApi';
+import { ApiError } from '../../api';
 import type { GameState } from '../../types';
 
 const ACTS = ['pre_event', 'act1', 'act2', 'act3', 'quiz', 'resolved'];
@@ -43,17 +44,43 @@ export const GameSection = ({
     }
   };
 
-  const reset = async () => {
+  const exportStandings = async () => {
+    setBusy(true);
+    try {
+      const data = await gmExportStandings();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vampire-standings-${data.exportedAt.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = async (force = false) => {
     if (
       !window.confirm(
-        'Reset for a clean playtest?\n\nThis wipes ALL submissions, House Favor, Blood Tokens, quiz answers, and notifications, and re-seals content. Character assignments and player links are kept.'
+        'Reset for a clean playtest?\n\nThis wipes ALL submissions, House Favor, Blood Tokens, quiz answers, and notifications, and re-seals content. Character assignments and player links are kept.\n\n(Scores are archived first and can be recovered.)'
       )
     )
       return;
     setBusy(true);
     try {
-      await gmResetGame();
+      await gmResetGame(force);
       onChange();
+    } catch (e) {
+      // Live-lock: the server refuses a reset while the game is live. Offer to override.
+      if (e instanceof ApiError && e.status === 409) {
+        if (window.confirm(`${e.message}\n\nForce the reset anyway?`)) {
+          setBusy(false);
+          return reset(true);
+        }
+      } else {
+        throw e;
+      }
     } finally {
       setBusy(false);
     }
@@ -108,14 +135,31 @@ export const GameSection = ({
         </div>
       </Card>
 
-      <Card title="Playtest">
-        <div className="flex items-center justify-between">
+      <Card title="Standings backup">
+        <div className="flex items-center justify-between gap-4">
           <p className="text-bone/60 text-sm max-w-sm">
-            Reset to a clean game — clears all progress, keeps the roster and player links. Use
-            before a fresh run-through.
+            Download a snapshot of every house's Favor and every player's Blood Tokens. Keep an
+            off-system copy so scores are never only in one place.
           </p>
           <button
-            onClick={reset}
+            onClick={exportStandings}
+            disabled={busy}
+            className="px-5 py-3 rounded-md border border-gold/60 text-gold uppercase tracking-[0.15em] text-sm hover:bg-gold hover:text-blood-ink disabled:opacity-40 whitespace-nowrap"
+          >
+            Export
+          </button>
+        </div>
+      </Card>
+
+      <Card title="Playtest">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-bone/60 text-sm max-w-sm">
+            Reset to a clean game — clears all progress, keeps the roster and player links. Use
+            before a fresh run-through. Scores are archived first, and reset is locked once the
+            game is live.
+          </p>
+          <button
+            onClick={() => reset()}
             disabled={busy}
             className="px-5 py-3 rounded-md border border-blood text-blood-bright uppercase tracking-[0.15em] text-sm hover:bg-blood hover:text-bone disabled:opacity-40"
           >
