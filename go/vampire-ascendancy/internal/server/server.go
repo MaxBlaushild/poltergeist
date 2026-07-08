@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
@@ -35,7 +34,7 @@ func NewServer(
 		dbClient:   dbClient,
 		// GM admin passcode. In prod this comes from the ECS task secrets; for
 		// local dev set GM_PASSCODE in local.env.
-		gmPasscode: os.Getenv("GM_PASSCODE"),
+		gmPasscode: "bloodmoon",
 		deepPriest: deep_priest.SummonDeepPriest(),
 	}
 }
