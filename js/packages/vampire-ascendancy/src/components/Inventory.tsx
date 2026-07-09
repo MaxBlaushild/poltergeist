@@ -15,7 +15,7 @@ export const Inventory = () => {
     getInventory(token)
       .then((d) => {
         setItems(d.items);
-        setTargets(d.targets);
+        setTargets([...d.targets].sort((a, b) => a.name.localeCompare(b.name)));
         setLocked(d.locked);
       })
       .catch(() => setItems([]));
@@ -28,8 +28,7 @@ export const Inventory = () => {
   return (
     <div className="pb-8">
       <header className="text-center mb-6">
-        <p className="text-xs uppercase tracking-[0.4em] text-gold">Your Inventory</p>
-        <h1 className="mt-3 font-display text-3xl font-bold text-bone">What You Carry</h1>
+        <h1 className="font-display text-3xl font-bold text-bone">What You Carry</h1>
         {locked && (
           <p className="mt-2 text-xs uppercase tracking-[0.2em] text-blood-bright">
             Targets are locked — the quiz has begun
@@ -90,9 +89,9 @@ const ItemCard = ({
   return (
     <div className="rounded-lg border border-blood/40 bg-black/40 p-5">
       <h2 className="font-display text-xl text-bone mb-1">{item.name}</h2>
-      {item.description && <p className="text-bone/80 leading-relaxed mb-2">{item.description}</p>}
+      {item.description && <p className="text-bone/80 text-lg leading-relaxed mb-2">{item.description}</p>}
       {item.effect && (
-        <p className="text-sm text-gold/90 italic mb-1">{item.effect}</p>
+        <p className="text-base text-gold/90 italic mb-1">{item.effect}</p>
       )}
 
       {item.targetsPlayer && (

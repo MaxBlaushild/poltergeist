@@ -29,7 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'tournament', label: 'Rules' },
   { id: 'dossier', label: 'Dossier' },
   { id: 'missions', label: 'Missions' },
-  { id: 'inventory', label: 'Inventory' },
+  { id: 'inventory', label: 'Items' },
   { id: 'games', label: 'Games' },
   { id: 'standings', label: 'Standings' },
 ];

@@ -226,7 +226,7 @@ const Prose = ({ text }: { text: string }) => (
       .map((p) => p.trim())
       .filter(Boolean)
       .map((p, i) => (
-        <p key={i} className="text-bone leading-relaxed">
+        <p key={i} className="text-bone text-lg leading-relaxed">
           {p}
         </p>
       ))}
