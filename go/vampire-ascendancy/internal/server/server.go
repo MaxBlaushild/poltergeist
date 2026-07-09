@@ -60,6 +60,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/vampire-ascendancy/quiz/part1/submit", s.withPlayer, s.submitQuizPart1)
 	r.POST("/vampire-ascendancy/quiz/part2/submit", s.withPlayer, s.submitQuizPart2)
 	r.GET("/vampire-ascendancy/games", s.withPlayer, s.getGames)
+	r.GET("/vampire-ascendancy/inventory", s.withPlayer, s.getInventory)
+	r.POST("/vampire-ascendancy/inventory/:id/target", s.withPlayer, s.setInventoryTarget)
 
 	// GM admin routes — guarded by the shared passcode.
 	gm := r.Group("/vampire-ascendancy/gm", s.withGM)
@@ -89,6 +91,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.DELETE("/games/:id", s.gmDeleteGame)
 	gm.POST("/games/:id/result", s.gmRecordGameResult)
 	gm.POST("/games/:id/clear", s.gmClearGameResult)
+	gm.GET("/items", s.gmListItems)
+	gm.POST("/items", s.gmCreateItem)
+	gm.PUT("/items/:id", s.gmUpdateItem)
+	gm.DELETE("/items/:id", s.gmDeleteItem)
+	gm.GET("/player-items", s.gmListPlayerItems)
+	gm.POST("/player-items", s.gmAssignItem)
+	gm.DELETE("/player-items/:id", s.gmRemovePlayerItem)
 	gm.POST("/notifications", s.gmPushNotification)
 	gm.POST("/notifications/clear", s.gmClearNotifications)
 	gm.POST("/quiz/part1", s.gmSetPart1Open)
@@ -97,6 +106,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/quiz/part2", s.gmSetPart2Open)
 	gm.POST("/quiz/part2/rescore", s.gmRescorePart2)
 	gm.GET("/quiz/submissions", s.gmListQuizSubmissions)
+	gm.GET("/quiz/tally", s.gmQuizTally)
 	gm.GET("/quiz/questions", s.gmGetQuizQuestions)
 	gm.PUT("/quiz/questions", s.gmUpdateQuizQuestions)
 }

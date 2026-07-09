@@ -32,7 +32,6 @@ export const Dossier = ({ me }: { me: MeResponse }) => {
   return (
     <div className="pb-8">
       <header className="text-center mb-5">
-        <p className="text-xs uppercase tracking-[0.4em] text-gold">The Crimson Toast</p>
         <Portrait imageUrl={character.imageUrl} name={character.name} accent={accent} />
         <h1 className="mt-4 font-display text-3xl md:text-4xl font-bold text-bone leading-tight">
           {character.name}
@@ -142,8 +141,18 @@ const SecretsView = ({ secrets }: { secrets: Secret[] }) => {
   );
 };
 
-// Character portrait. Falls back to a house-tinted crest until an image is
-// supplied, so the header never looks broken pre-artwork.
+// Slug used to locate a character's static portrait (matches the filenames in
+// public/portraits/). Must stay in sync with how those files are named.
+const portraitSlug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/['"’“”]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+// Character portrait. Uses an explicit imageUrl if set, else the conventional
+// /portraits/<slug>.png, and falls back to a house-tinted crest if the image is
+// missing — so the header never looks broken.
 const Portrait = ({
   imageUrl,
   name,
@@ -152,18 +161,53 @@ const Portrait = ({
   imageUrl?: string;
   name: string;
   accent: string;
-}) => (
-  <div
-    className="mt-4 mx-auto w-28 h-28 rounded-full overflow-hidden border-2 flex items-center justify-center bg-black/40"
-    style={{ borderColor: accent }}
-  >
-    {imageUrl ? (
-      <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
-    ) : (
-      <VampireMark className="w-12 h-12 opacity-70" />
-    )}
-  </div>
-);
+}) => {
+  const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const src = imageUrl || `/portraits/${portraitSlug(name)}.png`;
+  const hasImage = !!src && !failed;
+
+  return (
+    <>
+      {hasImage ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`View ${name}'s portrait`}
+          className="mt-4 mx-auto block w-56 max-w-full rounded-2xl overflow-hidden border-2 cursor-pointer hover:opacity-90 transition-opacity"
+          style={{ borderColor: accent }}
+        >
+          {/* h-auto keeps the image's own aspect ratio — scales, never crops. */}
+          <img src={src} alt={name} onError={() => setFailed(true)} className="block w-full h-auto" />
+        </button>
+      ) : (
+        <div
+          className="mt-4 mx-auto w-40 h-40 rounded-2xl overflow-hidden border-2 flex items-center justify-center bg-black/40"
+          style={{ borderColor: accent }}
+        >
+          <VampireMark className="w-16 h-16 opacity-70" />
+        </div>
+      )}
+
+      {open && hasImage && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-6"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-label={`${name} portrait`}
+        >
+          <img
+            src={src}
+            alt={name}
+            className="max-h-[82vh] max-w-[92vw] rounded-lg border-2 object-contain"
+            style={{ borderColor: accent }}
+          />
+          <p className="mt-4 font-display text-2xl text-bone">{name}</p>
+        </div>
+      )}
+    </>
+  );
+};
 
 const LockIcon = ({ className = '' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>

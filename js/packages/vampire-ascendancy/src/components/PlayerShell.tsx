@@ -6,6 +6,7 @@ import { Summons } from './Summons';
 import { Tournament } from './Tournament';
 import { Dossier } from './Dossier';
 import { Missions } from './Missions';
+import { Inventory } from './Inventory';
 import { PhysicalGames } from './PhysicalGames';
 import { Leaderboard } from './Leaderboard';
 import { VampireMark } from './VampireMark';
@@ -17,7 +18,7 @@ const DISMISSED_KEY = 'vampireDismissedNotif';
 const REVEAL_KEY = 'vampireRevealDismissed';
 const TAB_KEY = 'vampireTab';
 
-type Tab = 'tournament' | 'dossier' | 'missions' | 'games' | 'standings';
+type Tab = 'tournament' | 'dossier' | 'missions' | 'inventory' | 'games' | 'standings';
 // A view is a strip tab or the Summons, which lives in the hamburger menu.
 type View = Tab | 'summons';
 
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'tournament', label: 'Rules' },
   { id: 'dossier', label: 'Dossier' },
   { id: 'missions', label: 'Missions' },
+  { id: 'inventory', label: 'Inventory' },
   { id: 'games', label: 'Games' },
   { id: 'standings', label: 'Standings' },
 ];
@@ -170,6 +172,7 @@ export const PlayerShell = () => {
       {activeView === 'tournament' && <Tournament />}
       {activeView === 'dossier' && <Dossier me={me} />}
       {activeView === 'missions' && <Missions me={me} reload={reload} />}
+      {activeView === 'inventory' && <Inventory />}
       {activeView === 'games' && <PhysicalGames />}
       {activeView === 'standings' && <Leaderboard myHouse={me.character?.house?.name} />}
     </div>

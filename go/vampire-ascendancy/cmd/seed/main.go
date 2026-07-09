@@ -109,6 +109,7 @@ func main() {
 	// Register our own flags before config.ParseFlagsAndGetConfig calls flag.Parse.
 	filePath := flag.String("file", "seed/characters.json", "Path to the characters.json seed file.")
 	quizFile := flag.String("quiz-file", "seed/quiz.json", "Path to the quiz.json seed file (optional).")
+	itemsFile := flag.String("items-file", "seed/items.json", "Path to the items.json seed file (optional).")
 	fresh := flag.Bool("fresh", false, "Wipe all existing characters and roster before seeding (from-scratch re-upload). Score ledgers are archived first.")
 
 	cfg, err := config.ParseFlagsAndGetConfig()
@@ -341,6 +342,53 @@ func main() {
 		quizCount = len(questions)
 	}
 
-	fmt.Printf("seeded %d characters across %d houses (assigned %d new sigils, %d quiz questions, %d player slots created, %d labels filled)\n",
-		len(seed.Characters), len(seed.Houses), assigned, quizCount, slotsCreated, slotsFilled)
+	// Inventory items (optional). Upserted by name so re-running updates in place.
+	itemCount := 0
+	if itemsRaw, ierr := os.ReadFile(*itemsFile); ierr == nil {
+		var itemsSeed struct {
+			Items []struct {
+				Code            string `json:"code"`
+				Name            string `json:"name"`
+				Description     string `json:"description"`
+				Effect          string `json:"effect"`
+				TargetsPlayer   bool   `json:"targets_player"`
+				HFEffect        int    `json:"hf_effect"`
+				BTSelf          int    `json:"bt_self"`
+				BTFromTarget    int    `json:"bt_from_target"`
+				BTDeductTarget  int    `json:"bt_deduct_target"`
+				QuizBTPct       int    `json:"quiz_bt_pct"`
+				DoubleGameBT    bool   `json:"double_game_bt"`
+				Immune          bool   `json:"immune"`
+				Reflect         bool   `json:"reflect"`
+				StripResistance bool   `json:"strip_resistance"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(itemsRaw, &itemsSeed); err != nil {
+			log.Fatalf("failed to parse items file: %v", err)
+		}
+		for _, it := range itemsSeed.Items {
+			if err := v.UpsertItem(ctx, &models.VampireItem{
+				Code:            it.Code,
+				Name:            it.Name,
+				Description:     it.Description,
+				Effect:          it.Effect,
+				TargetsPlayer:   it.TargetsPlayer,
+				HFEffect:        it.HFEffect,
+				BTSelf:          it.BTSelf,
+				BTFromTarget:    it.BTFromTarget,
+				BTDeductTarget:  it.BTDeductTarget,
+				QuizBTPct:       it.QuizBTPct,
+				DoubleGameBT:    it.DoubleGameBT,
+				Immune:          it.Immune,
+				Reflect:         it.Reflect,
+				StripResistance: it.StripResistance,
+			}); err != nil {
+				log.Fatalf("failed to upsert item %q: %v", it.Name, err)
+			}
+		}
+		itemCount = len(itemsSeed.Items)
+	}
+
+	fmt.Printf("seeded %d characters across %d houses (assigned %d new sigils, %d quiz questions, %d items, %d player slots created, %d labels filled)\n",
+		len(seed.Characters), len(seed.Houses), assigned, quizCount, itemCount, slotsCreated, slotsFilled)
 }

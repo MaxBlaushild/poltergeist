@@ -212,6 +212,22 @@ export const gmRescorePart2 = () =>
 export const gmListQuizSubmissions = () =>
   gm<{ submissions: GMQuizSubmission[] }>('/quiz/submissions');
 
+// Final Blood Token tally with item effects resolved (steal/deduct/multiplier/
+// double-games, with immune/reflect precedence). finalBt = quizBt + physicalBt + itemBt.
+export interface GMTallyRow {
+  playerId: string;
+  character: string;
+  house: string;
+  correct: number;
+  mcTotal: number;
+  quizBt: number;
+  physicalBt: number;
+  itemBt: number;
+  finalBt: number;
+  notes: string[];
+}
+export const gmGetTally = () => gm<{ players: GMTallyRow[] }>('/quiz/tally');
+
 export const gmListPlayers = () => gm<{ players: GMPlayer[] }>('/players');
 export const gmUpdatePlayer = (
   id: string,
@@ -258,3 +274,44 @@ export const gmUpdateCharacter = (id: string, body: GMCharacterUpdate) =>
   gm<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 export const gmUpdateHouse = (id: string, tagline: string) =>
   gm<{ ok: boolean }>(`/houses/${id}`, { method: 'PUT', body: JSON.stringify({ tagline }) });
+
+// ---- Inventory ----
+export interface GMItem {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  effect: string;
+  targetsPlayer: boolean;
+  hfEffect: number;
+  btSelf: number;
+  btFromTarget: number;
+  btDeductTarget: number;
+  quizBtPct: number;
+  doubleGameBt: boolean;
+  immune: boolean;
+  reflect: boolean;
+  stripResistance: boolean;
+}
+export type GMItemDraft = Omit<GMItem, 'id'>;
+export interface GMPlayerItem {
+  id: string;
+  playerId: string;
+  playerName: string;
+  itemName: string;
+  effect: string;
+  targetsPlayer: boolean;
+  targetName: string | null;
+}
+export const gmListItems = () => gm<{ items: GMItem[] }>('/items');
+export const gmCreateItem = (draft: GMItemDraft) =>
+  gm<{ id: string }>('/items', { method: 'POST', body: JSON.stringify(draft) });
+export const gmUpdateItem = (id: string, draft: GMItemDraft) =>
+  gm<{ ok: boolean }>(`/items/${id}`, { method: 'PUT', body: JSON.stringify(draft) });
+export const gmDeleteItem = (id: string) =>
+  gm<{ ok: boolean }>(`/items/${id}`, { method: 'DELETE' });
+export const gmListPlayerItems = () => gm<{ playerItems: GMPlayerItem[] }>('/player-items');
+export const gmAssignItem = (playerId: string, itemId: string) =>
+  gm<{ id: string }>('/player-items', { method: 'POST', body: JSON.stringify({ playerId, itemId }) });
+export const gmRemovePlayerItem = (id: string) =>
+  gm<{ ok: boolean }>(`/player-items/${id}`, { method: 'DELETE' });

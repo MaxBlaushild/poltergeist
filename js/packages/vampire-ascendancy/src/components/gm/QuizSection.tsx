@@ -7,10 +7,11 @@ import {
   gmRescorePart2,
   gmListQuizSubmissions,
   gmGetStandings,
+  gmGetTally,
   gmGetQuizQuestions,
   gmUpdateQuizQuestions,
 } from '../../gmApi';
-import type { GMQuizSubmission, GMQuizQuestions } from '../../gmApi';
+import type { GMQuizSubmission, GMQuizQuestions, GMTallyRow } from '../../gmApi';
 import type { GameState, HouseStanding } from '../../types';
 import { accentFor, formatHF, houseLabel } from '../../theme';
 import { Card } from './GameSection';
@@ -24,12 +25,14 @@ export const QuizSection = ({
 }) => {
   const [subs, setSubs] = useState<GMQuizSubmission[]>([]);
   const [standings, setStandings] = useState<HouseStanding[]>([]);
+  const [tally, setTally] = useState<GMTallyRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const loadSubs = () => {
     gmListQuizSubmissions().then((d) => setSubs(d.submissions || [])).catch(() => {});
     gmGetStandings().then((d) => setStandings(d.standings || [])).catch(() => {});
+    gmGetTally().then((d) => setTally(d.players || [])).catch(() => {});
   };
   useEffect(() => {
     loadSubs();
@@ -132,7 +135,7 @@ export const QuizSection = ({
         )}
       </Card>
 
-      <QuizResults subs={subs} standings={standings} />
+      <QuizResults subs={subs} standings={standings} tally={tally} />
       <Part2Summary subs={part2Subs} />
     </div>
   );
@@ -149,9 +152,13 @@ type PlayerRow = {
   mcTotal: number;
   quizBt: number;
   physicalBt: number;
+  itemBt: number;
   total: number;
+  notes: string[];
 };
 
+// Fallback for a stale backend that doesn't yet serve /quiz/tally: reconstruct
+// rows from the raw submissions (no item effects). itemBt stays 0.
 const buildPlayerRows = (subs: GMQuizSubmission[]): PlayerRow[] => {
   const byChar = new Map<string, PlayerRow>();
   const row = (name: string, house: string) => {
@@ -164,7 +171,9 @@ const buildPlayerRows = (subs: GMQuizSubmission[]): PlayerRow[] => {
         mcTotal: 0,
         quizBt: 0,
         physicalBt: 0,
+        itemBt: 0,
         total: 0,
+        notes: [],
       });
     const r = byChar.get(key)!;
     if (house) r.house = house;
@@ -188,17 +197,36 @@ const buildPlayerRows = (subs: GMQuizSubmission[]): PlayerRow[] => {
   return rows;
 };
 
+const tallyToRows = (tally: GMTallyRow[]): PlayerRow[] =>
+  tally.map((t) => ({
+    character: t.character || '—',
+    house: t.house,
+    correct: t.correct,
+    mcTotal: t.mcTotal,
+    quizBt: t.quizBt,
+    physicalBt: t.physicalBt,
+    itemBt: t.itemBt,
+    total: t.finalBt,
+    notes: t.notes || [],
+  }));
+
 const QuizResults = ({
   subs,
   standings,
+  tally,
 }: {
   subs: GMQuizSubmission[];
   standings: HouseStanding[];
+  tally: GMTallyRow[];
 }) => {
   if (subs.length === 0) return null;
+  // Prefer the authoritative backend tally (item effects resolved); fall back to
+  // recomputing from submissions if the tally endpoint isn't available yet.
+  const usingTally = tally.length > 0;
+  const anyItems = tally.some((t) => t.itemBt !== 0);
   const houses = [...standings].sort((a, b) => b.favor - a.favor);
   const winningHouse = houses[0]?.name;
-  const players = buildPlayerRows(subs).sort(
+  const players = (usingTally ? tallyToRows(tally) : buildPlayerRows(subs)).sort(
     (a, b) => a.house.localeCompare(b.house) || b.total - a.total
   );
   const winner = players
@@ -221,7 +249,8 @@ const QuizResults = ({
               Throne:{' '}
               <span className="text-gold font-semibold">{winner.character}</span>{' '}
               <span className="text-bone/50">
-                — {winner.total} BT ({winner.quizBt} quiz + {winner.physicalBt} on hand)
+                — {winner.total} BT ({winner.quizBt} quiz + {winner.physicalBt} on hand
+                {winner.itemBt !== 0 ? ` ${winner.itemBt > 0 ? '+' : '−'}${Math.abs(winner.itemBt)} items` : ''})
               </span>
             </p>
           )}
@@ -242,18 +271,45 @@ const QuizResults = ({
 
       <Card title="Player results">
         <Table
-          head={['Character', 'House', 'MC', 'Quiz BT', 'On hand', 'Total BT']}
-          rows={players.map((p) => [
-            p.character,
-            p.house,
-            `${p.correct}/${p.mcTotal}`,
-            String(p.quizBt),
-            String(p.physicalBt),
-            String(p.total),
-            p.house === winningHouse && winner && p.character === winner.character ? 'win' : '',
-          ])}
+          head={
+            anyItems
+              ? ['Character', 'House', 'MC', 'Quiz BT', 'On hand', 'Items', 'Total BT']
+              : ['Character', 'House', 'MC', 'Quiz BT', 'On hand', 'Total BT']
+          }
+          rows={players.map((p) => {
+            const cells = [
+              p.character,
+              p.house,
+              `${p.correct}/${p.mcTotal}`,
+              String(p.quizBt),
+              String(p.physicalBt),
+            ];
+            if (anyItems) cells.push(p.itemBt === 0 ? '—' : `${p.itemBt > 0 ? '+' : '−'}${Math.abs(p.itemBt)}`);
+            cells.push(String(p.total));
+            cells.push(p.house === winningHouse && winner && p.character === winner.character ? 'win' : '');
+            return cells;
+          })}
         />
       </Card>
+
+      {anyItems && (
+        <Card title="Item effects applied">
+          <div className="flex flex-col gap-2 text-sm">
+            {players
+              .filter((p) => p.notes.length > 0)
+              .map((p) => (
+                <div key={p.character}>
+                  <span className="text-gold">{p.character}</span>
+                  <ul className="mt-0.5 ml-4 list-disc text-bone/70">
+                    {p.notes.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

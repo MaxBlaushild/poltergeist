@@ -273,38 +273,38 @@
       "player_name": "Matt Barr"
     },
     {
-      "name": "(OG) Siriah Vellum",
-      "title": "The Disinherited",
+      "name": "Siriah Vellum",
+      "title": "The Architect",
       "house": "Spires",
       "role_type": "player",
       "is_optional": false,
-      "pre_event_info": "Elegant, quietly furious, and perpetually underestimated. You are Valen Drear's half-sibling - born outside the formal line, and Valen has never let you forget it. Five years ago, when his star rose within Spires, he leveraged your illegitimacy to have you stripped from the succession register entirely. He didn't manage to exile you from the house, but he didn't need to. You have been working the Court's edges ever since, collecting favors, brokering small arrangements, and building the kind of quiet influence that doesn't appear in any register. You are patient in the way that only truly angry people can be.\n\n​​Brilliant, grandiose, and convinced that every problem in the Court could be solved by building higher. You are the Court's foremost architect, the mind behind the great spires for which the house is named — and you are nowhere near finished. Where lesser minds see a tower, you see a statement: a blade of stone driven into the sky to remind every other house exactly who looks down upon whom. Height, to you, is power made visible; the taller the spire, the greater the distance between those who rise to its peak and those who scurry at its base, and that distance is the entire point. You are known to sketch the same impossible tower over and over, on napkins and ledgers and the backs of other people's correspondence — a spire half again as tall as anything standing, one the Court keeps refusing to fund and you keep refusing to abandon. Some call it obsession. You call it vision. The difference, you've found, is merely a matter of who is proven right.",
-      "post_act1_context": "Valen's behavior has been increasingly erratic this past season - distracted, occasionally incoherent, undermining the very authority he used to take what was yours. You have been watching it carefully, looking for a way to use it. A few days ago, a key appeared on the floor of your bedroom chambers with no note and no explanation. You suspect someone wants you to use it; possibly someone who wants whatever is in the Marquess's private cellar to be seen. Tonight, with the succession suddenly uncertain, your name feels less permanently buried than it did this morning.",
+      "pre_event_info": "Brilliant, grandiose, and convinced that every problem in the Court could be solved by building higher. You are the Court's foremost architect, the mind behind the great spires for which the house is named — and you are nowhere near finished. Where lesser minds see a tower, you see a statement: a blade of stone driven into the sky to remind every other house exactly who looks down upon whom. Height, to you, is power made visible; the taller the spire, the greater the distance between those who rise to its peak and those who scurry at its base, and that distance is the entire point. You sketch impossible towers on every surface you can find, mutter about load-bearing limits as though they were personal insults, and dream of a spire so tall the lower houses would have to crane their necks just to glimpse where their betters reside. Over and over you sketch it, and in your stranger moods you half-believe the building wants to be built and is merely using you to do it. House Spires preaches that order is power. You have done the math, and the math says: taller.",
+      "post_act1_context": "You designed the bones of this estate, and you know its hidden anatomy as no one else does; which is why the events of the past few nights intrigue you rather than alarm you. A cellar key appeared under your locked door, slid there in the dark, and where a lesser mind would call it an accident, you know better: someone understood that you, of all people, know the way into the Marquess's private cellar, and they chose you. What makes it stranger still is that you scarcely need the key at all. Years ago you built a private passage into that cellar that appears on no plan but your own, and the Marquess has been using it far more this past year than any innocent thirst could explain. A key slipped to you in secret, a passage no one knows of, and a Marquess with a sudden and secret thirst. The heir is missing, the order of the estate is visibly slipping, and you find yourself reading the whole evening like one of your blueprints: certain that if you rise high enough above it, the true shape of things will reveal itself. You must confess that the puzzle delights you more than it troubles you.",
       "secrets": [
-        "I have been watching my half-brother closely this season. I know his tells better than anyone alive, and I have been looking for weaknesses I can use. What I have found unsettles me more than it pleases me. Valen does not behave like a man recovering from a hard revival. He stops mid-sentence and stares at nothing. He defers to the Marquess in moments where the brother I knew would have fought her. Twice I have seen his hands shake. I do not have the learning to name what is wrong with him — but I know it is not grief, and it is not drink. Something has been done to him.",
-        "A few days ago, a key appeared on the floor of my bedroom chambers with no note and no explanation. I do not know who sent it, but suspect someone wants me to use it — possibly someone who wants whatever is in the Marquess's private cellar to be seen. I plan to use it to gain access to her cellar to investigate tonight."
+        "A cellar key was slid beneath my locked door two nights ago — the key to the Marquess's private cellar, where she keeps her oldest and most guarded vintages. I do not believe for a moment that it was an accident. Someone knows what I know: that I designed that cellar and understand it better than any soul in this Court. The key was a message, an invitation, a test — left for me by someone who recognized exactly who they were choosing. I have not yet decided what they wish me to do with it. But I do not intend to disappoint them.",
+        "Years ago I built the Marquess a private route from her own chambers down to that same wine cellar — a passage that appears on no plan but mine, no guards, no witnesses. I assumed at the time it was a vanity, a lady's wish for her wine without the bother of being seen. But she has used it far more this past year than any such whim could explain, slipping down to those vintages again and again."
       ],
       "missions": [
         {
           "ordinal": 1,
           "tier": "easy",
           "reward_bt": 2,
-          "prompt": "Introduce yourself in character to at least three players from other houses before Act 2 ends.",
-          "answer_format": "Enter the character names of the three players you introduced yourself to."
+          "prompt": "Draw an impossibly tall spire and show it to at least three other players. You should tell them that this tower demands to be built.",
+          "answer_format": "Enter the character names of the three players you showed your drawing to."
         },
         {
           "ordinal": 2,
           "tier": "medium",
           "reward_bt": 4,
-          "prompt": "Share both of your secrets with a player from a rival house — in exchange for one of theirs.",
-          "answer_format": "Enter the character name of who you exchanged with, what you shared, and what you received."
+          "prompt": "Indulge your curiosity. See why the Marquess is making so many trips to the cellar by using your cellar key to enter it. Afterwards, you may sell the cellar key to the reliquary for 2 BT, or perhaps to another player who is willing to pay more for it.",
+          "answer_format": "Write down what you observed in the cellar."
         },
         {
           "ordinal": 3,
           "tier": "hard",
           "reward_bt": 6,
-          "prompt": "You possess a cellar key of unclear origin. Before the end of Act 2, find the Marquess's private cellar and use your key to gain access. After viewing the cellar, drop the key off at the Reliquary to enter it into inventory. Report back to at least one Spires member with what you found or learned in the cellar. Note, only half points (3 BT) will be awarded if the key is entered into the Reliquary during Act 3 or later.",
-          "answer_format": "Enter what you discovered in the cellar and who in Spires you told."
+          "prompt": "Your great spire has been refused funding three times. If the Court will not build it, you will — in miniature, tonight. Recruit at least three players from different houses to help you construct a tower from whatever materials you can scavenge (cups, bottles, cans, books, anything that stacks), and raise it as tall as it will stand. The tower must remain standing for one full minute to count.",
+          "answer_format": "Enter who helped you build it and submit a picture capturing how tall it stood."
         }
       ],
       "image_url": "",

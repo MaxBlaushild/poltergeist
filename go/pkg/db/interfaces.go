@@ -237,6 +237,7 @@ type VampireHandle interface {
 	// Blood Tokens
 	AddBloodTokens(ctx context.Context, entry *models.VampireBloodTokenLog) error
 	BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodTokenTotal, error)
+	BloodTokenTotalsBySource(ctx context.Context, source string) ([]BloodTokenTotal, error)
 
 	// Game state
 	GetGameState(ctx context.Context) (*models.VampireGameState, error)
@@ -284,6 +285,18 @@ type VampireHandle interface {
 	// DeleteGameAwards reverses the Blood Token / House Favor ledger entries a game
 	// wrote when it was recorded (matched by the game's name).
 	DeleteGameAwards(ctx context.Context, gameName string) error
+
+	// Inventory
+	ListItems(ctx context.Context) ([]models.VampireItem, error)
+	UpsertItem(ctx context.Context, item *models.VampireItem) error
+	CreateItem(ctx context.Context, item *models.VampireItem) error
+	UpdateItem(ctx context.Context, id uuid.UUID, item *models.VampireItem) error
+	DeleteItem(ctx context.Context, id uuid.UUID) error
+	ListPlayerItems(ctx context.Context, playerID uuid.UUID) ([]models.VampirePlayerItem, error)
+	ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error)
+	AssignItem(ctx context.Context, playerID, itemID uuid.UUID) (*models.VampirePlayerItem, error)
+	DeletePlayerItem(ctx context.Context, id uuid.UUID) error
+	SetPlayerItemTarget(ctx context.Context, id uuid.UUID, targetPlayerID *uuid.UUID) error
 }
 
 type ScoreHandle interface {

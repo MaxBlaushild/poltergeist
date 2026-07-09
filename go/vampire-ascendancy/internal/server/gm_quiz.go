@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -104,15 +105,45 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 		return err
 	}
 
+	favorByHouse := scorePart2Favor(questions, answers)
+
+	if err := v.DeleteHouseFavorBySource(ctx, "quiz_part2"); err != nil {
+		return err
+	}
+
+	for houseID, total := range favorByHouse {
+		if total == 0 {
+			continue
+		}
+		if err := v.AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
+			HouseID: houseID,
+			Delta:   total,
+			Reason:  "End quiz (Part 2)",
+			GMName:  "quiz",
+			Source:  "quiz_part2",
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scorePart2Favor computes each house's size-normalized Part 2 House Favor (pure,
+// so it can be unit-tested):
+//
+//	house HF for a question = (correct answerers in house ÷ house participants) × question HF
+//	house Part 2 HF         = sum of the above over all questions, rounded to 2 dp
+//
+// Only multiple-choice questions score; the numeric "Blood Tokens on hand"
+// question is skipped so it doesn't inflate the participant count. Houses with
+// zero participants (or a zero total) are omitted from the result.
+func scorePart2Favor(questions []models.VampireQuizQuestion, answers []db.Part2Answer) map[uuid.UUID]float64 {
 	type q2 struct {
 		correct string
 		hf      float64
 	}
 	qmap := map[uuid.UUID]q2{}
 	for _, q := range questions {
-		// Only multiple-choice questions score House Favor; the numeric
-		// "Blood Tokens on hand" question is informational and is skipped so it
-		// doesn't inflate the participant count in the normalization.
 		if q.QuestionType != "multiple_choice" {
 			continue
 		}
@@ -138,10 +169,7 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 		}
 	}
 
-	if err := v.DeleteHouseFavorBySource(ctx, "quiz_part2"); err != nil {
-		return err
-	}
-
+	out := map[uuid.UUID]float64{}
 	for houseID, players := range participants {
 		n := len(players)
 		if n == 0 {
@@ -160,17 +188,9 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 		if total == 0 {
 			continue
 		}
-		if err := v.AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-			HouseID: houseID,
-			Delta:   total,
-			Reason:  "End quiz (Part 2)",
-			GMName:  "quiz",
-			Source:  "quiz_part2",
-		}); err != nil {
-			return err
-		}
+		out[houseID] = total
 	}
-	return nil
+	return out
 }
 
 // POST /gm/quiz/part1/grade — kick off AI grading of every Part 1 response in

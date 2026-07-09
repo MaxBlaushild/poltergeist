@@ -15,6 +15,7 @@ import { QuizSection } from './QuizSection';
 import { GamesSection } from './GamesSection';
 import { StandingsSection } from './StandingsSection';
 import { BroadcastScreen } from './BroadcastScreen';
+import { ItemsSection } from './ItemsSection';
 
 const GM_NAMES = ['Ali', 'Max', 'Ngozi', 'Jon'];
 type Tab =
@@ -22,6 +23,7 @@ type Tab =
   | 'submissions'
   | 'awards'
   | 'games'
+  | 'items'
   | 'standings'
   | 'notifications'
   | 'broadcast'
@@ -129,6 +131,7 @@ const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
     { id: 'submissions', label: 'Submissions' },
     { id: 'awards', label: 'HF Awards' },
     { id: 'games', label: 'Games' },
+    { id: 'items', label: 'Items' },
     { id: 'standings', label: 'Standings' },
     { id: 'notifications', label: 'Announcements' },
     { id: 'broadcast', label: 'Broadcast' },
@@ -175,6 +178,7 @@ const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
       {tab === 'submissions' && <SubmissionsSection />}
       {tab === 'awards' && <AwardsSection />}
       {tab === 'games' && <GamesSection />}
+      {tab === 'items' && <ItemsSection />}
       {tab === 'standings' && <StandingsSection />}
       {tab === 'notifications' && <BroadcastSection />}
       {tab === 'broadcast' && <BroadcastScreen />}

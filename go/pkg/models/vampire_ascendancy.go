@@ -9,6 +9,44 @@ import (
 
 // Vampire Ascendancy (The Crimson Toast) event app models.
 
+// VampireItem is an assignable inventory item (relic, clue, gameplay card).
+type VampireItem struct {
+	ID            uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt     time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt     time.Time `gorm:"not null" json:"updatedAt"`
+	Code          string    `gorm:"not null;default:''" json:"code"`
+	Name          string    `gorm:"not null" json:"name"`
+	Description   string    `gorm:"not null;default:''" json:"description"`
+	Effect        string    `gorm:"not null;default:''" json:"effect"`
+	TargetsPlayer bool      `gorm:"column:targets_player;not null;default:false" json:"targetsPlayer"`
+	HFEffect      int       `gorm:"column:hf_effect;not null;default:0" json:"hfEffect"` // HF applied to owner's house at reveal
+	// Structured Blood Token effects, resolved into the final tally at the reveal.
+	BTSelf         int  `gorm:"column:bt_self;not null;default:0" json:"btSelf"`                  // flat BT to owner
+	BTFromTarget   int  `gorm:"column:bt_from_target;not null;default:0" json:"btFromTarget"`     // steal N: +N owner, -N target
+	BTDeductTarget int  `gorm:"column:bt_deduct_target;not null;default:0" json:"btDeductTarget"` // deduct N from target
+	QuizBTPct      int  `gorm:"column:quiz_bt_pct;not null;default:0" json:"quizBtPct"`           // +pct% of owner's Part 1 BT
+	DoubleGameBT   bool `gorm:"column:double_game_bt;not null;default:false" json:"doubleGameBt"` // add a copy of owner's game BT
+	Immune         bool `gorm:"column:immune;not null;default:false" json:"immune"`               // cancel incoming steals/deducts
+	Reflect        bool `gorm:"column:reflect;not null;default:false" json:"reflect"`             // bounce incoming loss to attacker
+	StripResistance bool `gorm:"column:strip_resistance;not null;default:false" json:"stripResistance"` // ignore target immune/reflect
+}
+
+func (VampireItem) TableName() string { return "vampire_items" }
+
+// VampirePlayerItem is one item owned by a player, optionally aimed at a target.
+type VampirePlayerItem struct {
+	ID             uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt      time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt      time.Time  `gorm:"not null" json:"updatedAt"`
+	PlayerID       uuid.UUID  `gorm:"not null" json:"playerId"`
+	ItemID         uuid.UUID  `gorm:"not null" json:"itemId"`
+	TargetPlayerID *uuid.UUID `gorm:"column:target_player_id" json:"targetPlayerId"`
+
+	Item *VampireItem `gorm:"foreignKey:ItemID" json:"item,omitempty"`
+}
+
+func (VampirePlayerItem) TableName() string { return "vampire_player_items" }
+
 // VampireGame is one of the night's physical contests. Its top-three finishers
 // are recorded when the GM scores it; the Blood Token / House Favor awards live
 // in the ledgers, not here.

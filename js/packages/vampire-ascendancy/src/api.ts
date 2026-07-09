@@ -100,6 +100,37 @@ export function getGames(token: string): Promise<{ games: Game[] }> {
   return request('/games', token);
 }
 
+export interface InventoryItem {
+  id: string;
+  name: string;
+  description: string;
+  effect: string;
+  targetsPlayer: boolean;
+  targetPlayerId: string | null;
+}
+export interface InventoryTarget {
+  playerId: string;
+  name: string;
+}
+export interface InventoryResponse {
+  items: InventoryItem[];
+  targets: InventoryTarget[];
+  locked: boolean;
+}
+export function getInventory(token: string): Promise<InventoryResponse> {
+  return request<InventoryResponse>('/inventory', token);
+}
+export function setInventoryTarget(
+  token: string,
+  id: string,
+  targetPlayerId: string
+): Promise<{ ok: boolean }> {
+  return request(`/inventory/${id}/target`, token, {
+    method: 'POST',
+    body: JSON.stringify({ targetPlayerId }),
+  });
+}
+
 export function getHouseOverview(token: string, houseId: string): Promise<HouseOverview> {
   return request<HouseOverview>(`/houses/${houseId}/overview`, token);
 }

@@ -476,6 +476,21 @@ func (h *vampireHandler) BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodT
 	return totals, nil
 }
 
+// BloodTokenTotalsBySource sums each player's BT for a single source (e.g. "game"),
+// used by the tally engine to double game winnings.
+func (h *vampireHandler) BloodTokenTotalsBySource(ctx context.Context, source string) ([]BloodTokenTotal, error) {
+	var totals []BloodTokenTotal
+	if err := h.db.WithContext(ctx).
+		Table("vampire_blood_token_log").
+		Select("player_id, COALESCE(SUM(delta), 0) AS total").
+		Where("source = ?", source).
+		Group("player_id").
+		Scan(&totals).Error; err != nil {
+		return nil, err
+	}
+	return totals, nil
+}
+
 // ---- Game state ----
 
 func (h *vampireHandler) GetGameState(ctx context.Context) (*models.VampireGameState, error) {
@@ -918,6 +933,102 @@ func (h *vampireHandler) DeleteGameAwards(ctx context.Context, gameName string) 
 			"Game: "+gameName, "Game participation: "+gameName,
 		).Error
 	})
+}
+
+// ---- Inventory ----
+
+func (h *vampireHandler) ListItems(ctx context.Context) ([]models.VampireItem, error) {
+	var items []models.VampireItem
+	if err := h.db.WithContext(ctx).Order("name ASC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// UpsertItem creates or updates an item by name (idempotent seeding).
+func (h *vampireHandler) UpsertItem(ctx context.Context, item *models.VampireItem) error {
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"code", "description", "effect", "targets_player", "hf_effect",
+				"bt_self", "bt_from_target", "bt_deduct_target", "quiz_bt_pct",
+				"double_game_bt", "immune", "reflect", "strip_resistance", "updated_at",
+			}),
+		}).
+		Create(item).Error
+}
+
+// CreateItem inserts a new catalog item (GM-authored). Fails on duplicate name.
+func (h *vampireHandler) CreateItem(ctx context.Context, item *models.VampireItem) error {
+	return h.db.WithContext(ctx).Create(item).Error
+}
+
+// UpdateItem edits every mutable field of a catalog item by id. Uses a map so
+// booleans cleared to false are written (a struct update would skip zero values).
+func (h *vampireHandler) UpdateItem(ctx context.Context, id uuid.UUID, item *models.VampireItem) error {
+	return h.db.WithContext(ctx).Model(&models.VampireItem{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"code":             item.Code,
+			"name":             item.Name,
+			"description":      item.Description,
+			"effect":           item.Effect,
+			"targets_player":   item.TargetsPlayer,
+			"hf_effect":        item.HFEffect,
+			"bt_self":          item.BTSelf,
+			"bt_from_target":   item.BTFromTarget,
+			"bt_deduct_target": item.BTDeductTarget,
+			"quiz_bt_pct":      item.QuizBTPct,
+			"double_game_bt":   item.DoubleGameBT,
+			"immune":           item.Immune,
+			"reflect":          item.Reflect,
+			"strip_resistance": item.StripResistance,
+			"updated_at":       time.Now(),
+		}).Error
+}
+
+// DeleteItem removes a catalog item; its player assignments cascade away.
+func (h *vampireHandler) DeleteItem(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampireItem{}, "id = ?", id).Error
+}
+
+func (h *vampireHandler) ListPlayerItems(ctx context.Context, playerID uuid.UUID) ([]models.VampirePlayerItem, error) {
+	var pis []models.VampirePlayerItem
+	if err := h.db.WithContext(ctx).
+		Preload("Item").
+		Where("player_id = ?", playerID).
+		Order("created_at ASC").
+		Find(&pis).Error; err != nil {
+		return nil, err
+	}
+	return pis, nil
+}
+
+func (h *vampireHandler) ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error) {
+	var pis []models.VampirePlayerItem
+	if err := h.db.WithContext(ctx).Preload("Item").Find(&pis).Error; err != nil {
+		return nil, err
+	}
+	return pis, nil
+}
+
+func (h *vampireHandler) AssignItem(ctx context.Context, playerID, itemID uuid.UUID) (*models.VampirePlayerItem, error) {
+	pi := models.VampirePlayerItem{PlayerID: playerID, ItemID: itemID}
+	if err := h.db.WithContext(ctx).Create(&pi).Error; err != nil {
+		return nil, err
+	}
+	return &pi, nil
+}
+
+func (h *vampireHandler) DeletePlayerItem(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampirePlayerItem{}, "id = ?", id).Error
+}
+
+func (h *vampireHandler) SetPlayerItemTarget(ctx context.Context, id uuid.UUID, targetPlayerID *uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.VampirePlayerItem{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"target_player_id": targetPlayerID, "updated_at": time.Now()}).Error
 }
 
 // ---- GM audit log ----

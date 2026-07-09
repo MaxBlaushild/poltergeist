@@ -10,6 +10,7 @@ import {
 import type { GMPlayer, GMCharacter, GMCharacterFull, GMMissionEdit } from '../../gmApi';
 import type { House } from '../../types';
 import { Card } from './GameSection';
+import { DossierPreview, DossierPreviewLoader } from './DossierPreview';
 
 export const PlayersSection = () => {
   const [players, setPlayers] = useState<GMPlayer[]>([]);
@@ -74,6 +75,7 @@ const PlayerRow = ({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   const dirty =
     label !== player.guestLabel ||
@@ -137,6 +139,14 @@ const PlayerRow = ({
               {editing ? '▾ Close editor' : '▸ Edit character'}
             </button>
           )}
+          {player.character && (
+            <button
+              onClick={() => setPreviewing(true)}
+              className="text-xs text-gold/80 uppercase tracking-[0.15em]"
+            >
+              ↗ Preview dossier
+            </button>
+          )}
           <button onClick={copyLink} className="ml-auto text-xs text-blood-bright uppercase tracking-[0.15em]">
             {copied ? 'Copied!' : 'Copy link'}
           </button>
@@ -157,6 +167,14 @@ const PlayerRow = ({
           <CharacterEditor characterId={player.character.id} houses={houses} onSaved={onSaved} />
         </div>
       )}
+
+      {previewing && player.character && (
+        <DossierPreviewLoader
+          characterId={player.character.id}
+          houses={houses}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
     </Card>
   );
 };
@@ -175,6 +193,7 @@ const CharacterEditor = ({
   const [c, setC] = useState<GMCharacterFull | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
 
   useEffect(() => {
     gmGetCharacter(characterId).then(setC).catch(() => setNote('Could not load character.'));
@@ -332,8 +351,16 @@ const CharacterEditor = ({
         >
           {busy ? 'Saving…' : 'Save character'}
         </button>
+        <button
+          onClick={() => setPreview(true)}
+          className="py-2 px-5 rounded-md border border-gold/50 text-gold uppercase tracking-[0.15em] text-sm"
+        >
+          ↗ Preview dossier
+        </button>
         {note && <span className="text-bone/60 text-sm">{note}</span>}
       </div>
+
+      {preview && <DossierPreview character={c} houses={houses} onClose={() => setPreview(false)} />}
     </div>
   );
 };
