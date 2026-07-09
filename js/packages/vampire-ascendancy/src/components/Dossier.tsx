@@ -141,8 +141,10 @@ const SecretsView = ({ secrets }: { secrets: Secret[] }) => {
   );
 };
 
-// Slug used to locate a character's static portrait (matches the filenames in
-// public/portraits/). Must stay in sync with how those files are named.
+// Portraits are hosted in S3 (keeps the repo lean). The object key is the slug
+// below + ".png" — e.g. "Ambrose Cipher" → ambrose-cipher.png. Must stay in sync
+// with how those objects are named in the bucket.
+const PORTRAIT_BASE = 'https://vampire-portraits.s3.us-east-1.amazonaws.com';
 const portraitSlug = (name: string) =>
   name
     .toLowerCase()
@@ -151,7 +153,7 @@ const portraitSlug = (name: string) =>
     .replace(/^-+|-+$/g, '');
 
 // Character portrait. Uses an explicit imageUrl if set, else the conventional
-// /portraits/<slug>.png, and falls back to a house-tinted crest if the image is
+// S3 object <slug>.png, and falls back to a house-tinted crest if the image is
 // missing — so the header never looks broken.
 const Portrait = ({
   imageUrl,
@@ -164,7 +166,7 @@ const Portrait = ({
 }) => {
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
-  const src = imageUrl || `/portraits/${portraitSlug(name)}.png`;
+  const src = imageUrl || `${PORTRAIT_BASE}/${portraitSlug(name)}.png`;
   const hasImage = !!src && !failed;
 
   return (
