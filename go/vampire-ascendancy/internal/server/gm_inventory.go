@@ -174,6 +174,33 @@ func (s *server) gmAssignItem(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"id": pi.ID})
 }
 
+// PUT /gm/player-items/:id/owner — transfer an owned item to a different player.
+func (s *server) gmTransferPlayerItem(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		PlayerID string `json:"playerId"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	pid, err := uuid.Parse(body.PlayerID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid player id"})
+		return
+	}
+	if err := s.dbClient.Vampire().TransferPlayerItem(ctx, id, pid); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "transfer_player_item", map[string]interface{}{"id": id.String(), "toPlayerId": body.PlayerID})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // DELETE /gm/player-items/:id — remove an assignment.
 func (s *server) gmRemovePlayerItem(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))

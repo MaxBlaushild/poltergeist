@@ -315,3 +315,5 @@ export const gmAssignItem = (playerId: string, itemId: string) =>
   gm<{ id: string }>('/player-items', { method: 'POST', body: JSON.stringify({ playerId, itemId }) });
 export const gmRemovePlayerItem = (id: string) =>
   gm<{ ok: boolean }>(`/player-items/${id}`, { method: 'DELETE' });
+export const gmTransferPlayerItem = (id: string, playerId: string) =>
+  gm<{ ok: boolean }>(`/player-items/${id}/owner`, { method: 'PUT', body: JSON.stringify({ playerId }) });

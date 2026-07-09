@@ -296,6 +296,7 @@ type VampireHandle interface {
 	ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error)
 	AssignItem(ctx context.Context, playerID, itemID uuid.UUID) (*models.VampirePlayerItem, error)
 	DeletePlayerItem(ctx context.Context, id uuid.UUID) error
+	TransferPlayerItem(ctx context.Context, id, newPlayerID uuid.UUID) error
 	SetPlayerItemTarget(ctx context.Context, id uuid.UUID, targetPlayerID *uuid.UUID) error
 }
 

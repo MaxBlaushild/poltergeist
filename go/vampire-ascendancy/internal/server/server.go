@@ -97,6 +97,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.DELETE("/items/:id", s.gmDeleteItem)
 	gm.GET("/player-items", s.gmListPlayerItems)
 	gm.POST("/player-items", s.gmAssignItem)
+	gm.PUT("/player-items/:id/owner", s.gmTransferPlayerItem)
 	gm.DELETE("/player-items/:id", s.gmRemovePlayerItem)
 	gm.POST("/notifications", s.gmPushNotification)
 	gm.POST("/notifications/clear", s.gmClearNotifications)

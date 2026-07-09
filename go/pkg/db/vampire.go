@@ -1025,6 +1025,17 @@ func (h *vampireHandler) DeletePlayerItem(ctx context.Context, id uuid.UUID) err
 	return h.db.WithContext(ctx).Delete(&models.VampirePlayerItem{}, "id = ?", id).Error
 }
 
+// TransferPlayerItem moves an owned item to a different player, clearing any
+// target the previous owner had chosen (the new owner picks their own).
+func (h *vampireHandler) TransferPlayerItem(ctx context.Context, id, newPlayerID uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.VampirePlayerItem{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"player_id":        newPlayerID,
+			"target_player_id": nil,
+		}).Error
+}
+
 func (h *vampireHandler) SetPlayerItemTarget(ctx context.Context, id uuid.UUID, targetPlayerID *uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.VampirePlayerItem{}).
 		Where("id = ?", id).

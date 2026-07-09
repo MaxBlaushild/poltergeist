@@ -8,6 +8,7 @@ import {
   gmCreateItem,
   gmUpdateItem,
   gmDeleteItem,
+  gmTransferPlayerItem,
 } from '../../gmApi';
 import type { GMItem, GMItemDraft, GMPlayer, GMPlayerItem } from '../../gmApi';
 import { Card } from './GameSection';
@@ -40,6 +41,7 @@ export const ItemsSection = () => {
   const [playerId, setPlayerId] = useState('');
   const [itemId, setItemId] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -86,6 +88,16 @@ export const ItemsSection = () => {
     setBusy(true);
     try {
       await gmRemovePlayerItem(id);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const transfer = async (id: string, toPlayerId: string) => {
+    setBusy(true);
+    try {
+      await gmTransferPlayerItem(id, toPlayerId);
       load();
     } finally {
       setBusy(false);
@@ -160,7 +172,13 @@ export const ItemsSection = () => {
       </Card>
 
       <Card title={`Catalog (${sortedItems.length})`}>
-        {sortedItems.length === 0 ? (
+        <button
+          onClick={() => setCatalogOpen((o) => !o)}
+          className="text-xs text-gold uppercase tracking-[0.15em] mb-2"
+        >
+          {catalogOpen ? '▾ Hide catalog' : '▸ Show catalog'}
+        </button>
+        {!catalogOpen ? null : sortedItems.length === 0 ? (
           <p className="text-bone/50 text-sm">No items yet.</p>
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -213,30 +231,89 @@ export const ItemsSection = () => {
       ) : (
         owners.map(([owner, list]) => (
           <Card key={owner} title={owner}>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               {list.map((h) => (
-                <div key={h.id} className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-bone text-sm">{h.itemName}</p>
-                    {h.targetsPlayer && (
-                      <p className="text-xs text-bone/50">
-                        Target: {h.targetName || <span className="text-bone/30">none set</span>}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => remove(h.id)}
-                    disabled={busy}
-                    className="shrink-0 text-xs text-blood-bright uppercase tracking-[0.15em] disabled:opacity-40"
-                  >
-                    Remove
-                  </button>
-                </div>
+                <HoldingRow
+                  key={h.id}
+                  holding={h}
+                  players={assignablePlayers}
+                  busy={busy}
+                  onRemove={remove}
+                  onTransfer={transfer}
+                />
               ))}
             </div>
           </Card>
         ))
       )}
+    </div>
+  );
+};
+
+// One held item: shows the item + target, a Remove control, and a transfer
+// picker that hands the item to a different player (the current owner loses it).
+const HoldingRow = ({
+  holding,
+  players,
+  busy,
+  onRemove,
+  onTransfer,
+}: {
+  holding: GMPlayerItem;
+  players: GMPlayer[];
+  busy: boolean;
+  onRemove: (id: string) => void;
+  onTransfer: (id: string, toPlayerId: string) => void;
+}) => {
+  const [to, setTo] = useState('');
+  const others = players.filter((p) => p.id !== holding.playerId);
+
+  return (
+    <div className="border-b border-blood/15 last:border-0 pb-2">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-bone text-sm">{holding.itemName}</p>
+          {holding.targetsPlayer && (
+            <p className="text-xs text-bone/50">
+              Target: {holding.targetName || <span className="text-bone/30">none set</span>}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => onRemove(holding.id)}
+          disabled={busy}
+          className="shrink-0 text-xs text-blood-bright uppercase tracking-[0.15em] disabled:opacity-40"
+        >
+          Remove
+        </button>
+      </div>
+      <div className="flex items-center gap-2 mt-1.5">
+        <select
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          className="flex-1 min-w-0 rounded-md bg-black/60 border border-blood/40 p-1.5 text-bone text-xs"
+        >
+          <option value="">— Transfer to… —</option>
+          {others.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.character?.name}
+              {p.character?.house ? ` (${p.character.house})` : ''}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => {
+            if (to) {
+              onTransfer(holding.id, to);
+              setTo('');
+            }
+          }}
+          disabled={busy || !to}
+          className="shrink-0 text-xs text-gold uppercase tracking-[0.15em] disabled:opacity-40"
+        >
+          Move
+        </button>
+      </div>
     </div>
   );
 };
