@@ -10,6 +10,23 @@ export const BroadcastPage = () => {
   const [standings, setStandings] = useState<HouseStanding[] | null>(null);
   const [games, setGames] = useState<Game[] | null>(null);
 
+  // Sized for a big TV. Tune live on the screen via URL params, e.g.
+  // /broadcast?scale=1.7&perpage=4 — scale zooms everything, perpage sets how many
+  // games show per carousel page.
+  const params = new URLSearchParams(window.location.search);
+  const scale = Math.min(3, Math.max(1, Number(params.get('scale')) || 1.5));
+  const perPage = Math.max(1, Number(params.get('perpage')) || 5);
+
+  // Zoom the whole page by bumping the root font size (Tailwind sizes are rem-based,
+  // so text and spacing scale together). Reset when leaving the projector page.
+  useEffect(() => {
+    const prev = document.documentElement.style.fontSize;
+    document.documentElement.style.fontSize = `${Math.round(scale * 100)}%`;
+    return () => {
+      document.documentElement.style.fontSize = prev;
+    };
+  }, [scale]);
+
   useEffect(() => {
     let cancelled = false;
     const load = () => {
@@ -32,7 +49,7 @@ export const BroadcastPage = () => {
         <h1 className="mt-1 font-display text-4xl md:text-5xl font-bold text-bone">Favor of the Court</h1>
       </header>
       <div className="max-w-6xl mx-auto">
-        <BroadcastView standings={standings} games={games} />
+        <BroadcastView standings={standings} games={games} perPage={perPage} />
       </div>
     </div>
   );
