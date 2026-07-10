@@ -79,6 +79,9 @@ export interface QuizPart2Question {
 export interface QuizPart2 {
   open: boolean;
   submitted: boolean;
+  // Sequential flow: only the current (first-unanswered) question is sent.
+  total?: number;
+  answered?: number;
   questions: QuizPart2Question[];
 }
 
@@ -115,7 +118,8 @@ export interface HouseStanding {
   houseId: string;
   name: string;
   sortOrder: number;
-  favor: number;
+  favor: number; // ledger base (excludes item effects)
+  itemFavor?: number; // live "+X" overlay from owned items
 }
 
 export interface HouseMember {
@@ -134,7 +138,7 @@ export interface HouseFavorLogEntry {
 }
 
 export interface HouseOverview {
-  house: { id: string; name: string; favor: number };
+  house: { id: string; name: string; favor: number; itemFavor?: number };
   members: HouseMember[];
   log: HouseFavorLogEntry[];
 }

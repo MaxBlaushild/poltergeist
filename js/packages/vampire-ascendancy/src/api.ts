@@ -171,3 +171,16 @@ export function submitQuizPart2(
     body: JSON.stringify({ answers }),
   });
 }
+
+// Sequential Part 2: lock one answer and advance. The server rejects out-of-order
+// or already-answered questions.
+export function submitQuizPart2Answer(
+  token: string,
+  questionId: string,
+  answer: string
+): Promise<{ ok: boolean; done: boolean }> {
+  return request('/quiz/part2/answer', token, {
+    method: 'POST',
+    body: JSON.stringify({ questionId, answer }),
+  });
+}

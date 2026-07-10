@@ -88,7 +88,10 @@ const HouseFavorForm = () => {
           {standings.map((s) => (
             <div key={s.houseId} className="flex justify-between">
               <span>{s.name}</span>
-              <span className="text-bone">{formatHF(s.favor)}</span>
+              <span className="text-bone">
+                {formatHF(s.favor)}
+                {s.itemFavor ? <span className="text-gold"> (+{formatHF(s.itemFavor)})</span> : null}
+              </span>
             </div>
           ))}
         </div>

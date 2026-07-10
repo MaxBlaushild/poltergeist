@@ -70,18 +70,26 @@ func (s *server) getQuiz(ctx *gin.Context) {
 		part1["submitted"] = lockedByQ[p1q.ID.String()]
 	}
 
-	// ---- Part 2 ----
+	// ---- Part 2 (sequential) ----
+	// Reveal only the current question — the first one this player hasn't locked.
+	// Later questions progressively disclose details, so we never send them until
+	// the earlier ones are answered.
 	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	p2Out := make([]gin.H, 0, len(p2qs))
-	part2Submitted := false
+	total := len(p2qs)
+	answered := 0
 	for _, q := range p2qs {
-		if lockedByQ[q.ID.String()] {
-			part2Submitted = true
+		if !lockedByQ[q.ID.String()] {
+			break
 		}
+		answered++
+	}
+	p2Out := make([]gin.H, 0, 1)
+	if answered < total {
+		q := p2qs[answered]
 		p2Out = append(p2Out, gin.H{
 			"id":      q.ID,
 			"ordinal": q.Ordinal,
@@ -89,7 +97,6 @@ func (s *server) getQuiz(ctx *gin.Context) {
 			"tier":    q.Tier,
 			"type":    q.QuestionType,
 			"options": shuffledOptions(q.Options, player.ID, q.ID),
-			"answer":  subByQ[q.ID.String()],
 		})
 	}
 
@@ -97,7 +104,9 @@ func (s *server) getQuiz(ctx *gin.Context) {
 		"part1": part1,
 		"part2": gin.H{
 			"open":      state.QuizPart2Open,
-			"submitted": part2Submitted,
+			"submitted": total > 0 && answered >= total,
+			"total":     total,
+			"answered":  answered,
 			"questions": p2Out,
 		},
 	})
@@ -216,6 +225,76 @@ func (s *server) submitQuizPart2(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// POST /quiz/part2/answer — lock the player's answer to the CURRENT Part 2
+// question and advance. Sequential: the submitted questionId must be the next
+// unanswered question in order, so a player can't skip ahead to peek, and can't
+// change an answer they've already locked.
+func (s *server) submitQuizPart2Answer(ctx *gin.Context) {
+	player := playerFromContext(ctx)
+	v := s.dbClient.Vampire()
+
+	state, err := v.GetGameState(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !state.QuizPart2Open {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "part 2 is not open"})
+		return
+	}
+
+	var body struct {
+		QuestionID string `json:"questionId"`
+		Answer     string `json:"answer"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	subs, err := v.ListQuizSubmissionsForPlayer(ctx, player.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	lockedByQ := map[string]bool{}
+	for _, sub := range subs {
+		lockedByQ[sub.QuestionID.String()] = sub.Locked
+	}
+
+	// The current question is the first unanswered one, in order.
+	answered := 0
+	for _, q := range p2qs {
+		if !lockedByQ[q.ID.String()] {
+			break
+		}
+		answered++
+	}
+	if answered >= len(p2qs) {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "you have already answered every question"})
+		return
+	}
+	current := p2qs[answered]
+	if body.QuestionID != current.ID.String() {
+		// Out of order — trying to skip ahead or re-answer a locked question.
+		ctx.JSON(http.StatusConflict, gin.H{"error": "please answer the current question"})
+		return
+	}
+
+	isCorrect := current.CorrectAnswer != "" &&
+		strings.EqualFold(strings.TrimSpace(body.Answer), strings.TrimSpace(current.CorrectAnswer))
+	if _, err := v.UpsertQuizSubmission(ctx, player.ID, current.ID, body.Answer, &isCorrect, true); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"ok": true, "done": answered+1 >= len(p2qs)})
 }
 
 func (s *server) playerLockedQuestion(ctx *gin.Context, playerID, questionID uuid.UUID) bool {

@@ -61,6 +61,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/quiz", s.withPlayer, s.getQuiz)
 	r.POST("/vampire-ascendancy/quiz/part1/submit", s.withPlayer, s.submitQuizPart1)
 	r.POST("/vampire-ascendancy/quiz/part2/submit", s.withPlayer, s.submitQuizPart2)
+	r.POST("/vampire-ascendancy/quiz/part2/answer", s.withPlayer, s.submitQuizPart2Answer)
 	r.GET("/vampire-ascendancy/games", s.withPlayer, s.getGames)
 	r.GET("/vampire-ascendancy/inventory", s.withPlayer, s.getInventory)
 	r.POST("/vampire-ascendancy/inventory/:id/target", s.withPlayer, s.setInventoryTarget)

@@ -57,7 +57,10 @@ export const StandingsList = ({
               </p>
             )}
           </div>
-          <span className="text-2xl font-bold text-bone">{formatHF(h.favor)}</span>
+          <span className="text-2xl font-bold text-bone">
+            {formatHF(h.favor)}
+            {h.itemFavor ? <span className="ml-1 text-base text-gold">(+{formatHF(h.itemFavor)})</span> : null}
+          </span>
         </>
       );
       return linkHouses ? (

@@ -226,7 +226,9 @@ const QuizResults = ({
   // recomputing from submissions if the tally endpoint isn't available yet.
   const usingTally = tally.length > 0;
   const anyItems = tally.some((t) => t.itemBt !== 0);
-  const houses = [...standings].sort((a, b) => b.favor - a.favor);
+  // Rank by the combined total (ledger base + live item overlay).
+  const houseTotal = (h: HouseStanding) => h.favor + (h.itemFavor || 0);
+  const houses = [...standings].sort((a, b) => houseTotal(b) - houseTotal(a));
   const winningHouse = houses[0]?.name;
   const players = (usingTally ? tallyToRows(tally) : buildPlayerRows(subs)).sort(
     (a, b) => a.house.localeCompare(b.house) || b.total - a.total
@@ -244,7 +246,7 @@ const QuizResults = ({
             <span className="font-semibold" style={{ color: accentFor(winningHouse) }}>
               {houseLabel(winningHouse)}
             </span>{' '}
-            <span className="text-bone/50">({formatHF(houses[0].favor)} favor)</span>
+            <span className="text-bone/50">({formatHF(houseTotal(houses[0]))} favor)</span>
           </p>
           {winner && (
             <p className="text-bone mt-1">
@@ -265,7 +267,7 @@ const QuizResults = ({
           rows={houses.map((h, i) => [
             String(i + 1),
             houseLabel(h.name),
-            formatHF(h.favor),
+            h.itemFavor ? `${formatHF(h.favor)} (+${formatHF(h.itemFavor)})` : formatHF(h.favor),
             h.name === winningHouse ? 'win' : '',
           ])}
         />
@@ -602,7 +604,7 @@ const QuizEditor = () => {
               <span className="text-[11px] uppercase tracking-[0.15em] text-gold">Part 2 — multiple choice</span>
               <button
                 onClick={() =>
-                  setQ({ ...q, part2: [...q.part2, { prompt: '', options: ['', ''], correctAnswer: '', hfValue: 1, tier: 'medium' }] })
+                  setQ({ ...q, part2: [...q.part2, { prompt: '', options: ['', ''], correctAnswer: '', hfValue: 2, tier: 'medium' }] })
                 }
                 className="text-xs text-gold uppercase tracking-[0.15em]"
               >

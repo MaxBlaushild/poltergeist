@@ -26,6 +26,8 @@ THE PLAYER'S ANSWER:
 
 Score the answer from 0 to %d on how accurately and completely it captures the canonical truth, where %d means it captures essentially everything and 0 means nothing relevant.
 
+Apply any explicit scoring rules, minimum scores, or point allocations stated in the rubric above — they override your own judgment. When in doubt, grade generously.
+
 Reply in EXACTLY this format and nothing else:
 SCORE: <integer 0-%d>
 WHY: <one short sentence, ~15 words max, on what the answer got right or missed>`,

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { getQuiz, submitQuizPart1, submitQuizPart2, getToken } from '../api';
-import type { QuizResponse, QuizPart2Question } from '../types';
+import { getQuiz, submitQuizPart1, submitQuizPart2Answer, getToken } from '../api';
+import type { QuizResponse, QuizPart2 } from '../types';
 import { VampireMark } from './VampireMark';
 
 const PART1_SECONDS = 5 * 60; // ~5-minute window
 const P1_DRAFT = 'vampireQuizP1Draft';
-const P2_DRAFT = 'vampireQuizP2Draft';
 
 // Full-screen end-quiz takeover for the given part. Part 1 is a timed open-end
 // response; Part 2 is silent multiple choice. Answers lock on submit.
@@ -123,6 +122,8 @@ const Part1 = ({
   );
 };
 
+// Part 2 is answered one question at a time. The server sends only the current
+// question and locks each answer on submit — you can't peek ahead or go back.
 const Part2 = ({
   data,
   token,
@@ -132,35 +133,25 @@ const Part2 = ({
   token: string;
   onDone: () => void;
 }) => {
-  const questions = data.part2.questions;
-  const [answers, setAnswers] = useState<Record<string, string>>(() => {
-    let saved: Record<string, string> = {};
-    try {
-      saved = JSON.parse(localStorage.getItem(P2_DRAFT) || '{}');
-    } catch {
-      /* ignore */
-    }
-    const init: Record<string, string> = {};
-    questions.forEach((q) => (init[q.id] = saved[q.id] ?? q.answer ?? ''));
-    return init;
-  });
-  const [done, setDone] = useState(data.part2.submitted);
+  const [part2, setPart2] = useState<QuizPart2>(data.part2);
+  const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!done) localStorage.setItem(P2_DRAFT, JSON.stringify(answers));
-  }, [answers, done]);
+  const q = part2.questions[0]; // the current question, or undefined when done
+  const total = part2.total ?? part2.questions.length;
+  const answered = part2.answered ?? 0;
+  const done = part2.submitted || !q;
+  const isLast = answered + 1 >= total;
+  const ready = q ? (q.type === 'number' ? selected !== '' : selected !== '') : false;
 
   const submit = async () => {
-    if (busy) return;
+    if (!q || busy || !ready) return;
     setBusy(true);
     try {
-      await submitQuizPart2(
-        token,
-        Object.entries(answers).map(([questionId, answer]) => ({ questionId, answer }))
-      );
-      localStorage.removeItem(P2_DRAFT);
-      setDone(true);
+      await submitQuizPart2Answer(token, q.id, selected);
+      setSelected('');
+      const fresh = await getQuiz(token);
+      setPart2(fresh.part2);
     } finally {
       setBusy(false);
     }
@@ -171,57 +162,50 @@ const Part2 = ({
   return (
     <>
       <h1 className="font-display text-3xl font-bold text-bone mb-1">Part Two</h1>
-      <p className="text-bone/70 mb-6">Answer each on your own — your testimony locks once sent.</p>
-      <div className="flex flex-col gap-5 text-left">
-        {questions.map((q: QuizPart2Question, i) => (
-          <div key={q.id} className="rounded-lg border border-blood/40 bg-black/40 p-5">
-            <p className="text-bone mb-3">
-              <span className="text-gold mr-2">{i + 1}.</span>
-              {q.prompt}
-            </p>
-            {q.type === 'number' ? (
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={answers[q.id] ?? ''}
-                onChange={(e) =>
-                  setAnswers((a) => ({ ...a, [q.id]: e.target.value.replace(/[^0-9]/g, '') }))
-                }
-                placeholder="Number of Blood Tokens"
-                className="w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone text-lg"
-              />
-            ) : (
-              <div className="flex flex-col gap-2">
-                {q.options.map((opt) => (
-                  <label
-                    key={opt}
-                    className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
-                      answers[q.id] === opt
-                        ? 'border-blood-bright bg-blood/20 text-bone'
-                        : 'border-blood/30 text-bone/80 hover:text-bone'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name={q.id}
-                      checked={answers[q.id] === opt}
-                      onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            )}
+      <p className="text-bone/70 mb-6">
+        Question {answered + 1} of {total} · each answer locks as you go — no going back.
+      </p>
+      <div className="rounded-lg border border-blood/40 bg-black/40 p-5 text-left">
+        <p className="text-bone text-lg mb-4">{q.prompt}</p>
+        {q.type === 'number' ? (
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={selected}
+            onChange={(e) => setSelected(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="Number of Blood Tokens"
+            className="w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone text-lg"
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {q.options.map((opt) => (
+              <label
+                key={opt}
+                className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+                  selected === opt
+                    ? 'border-blood-bright bg-blood/20 text-bone'
+                    : 'border-blood/30 text-bone/80 hover:text-bone'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={q.id}
+                  checked={selected === opt}
+                  onChange={() => setSelected(opt)}
+                />
+                {opt}
+              </label>
+            ))}
           </div>
-        ))}
+        )}
       </div>
       <button
         onClick={submit}
-        disabled={busy}
+        disabled={busy || !ready}
         className="mt-6 w-full py-3 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright disabled:opacity-40"
       >
-        {busy ? 'Sealing…' : 'Seal my answers'}
+        {busy ? 'Sealing…' : isLast ? 'Lock final answer' : 'Lock & continue'}
       </button>
     </>
   );

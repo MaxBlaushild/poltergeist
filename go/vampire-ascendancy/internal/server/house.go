@@ -38,9 +38,14 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 		return
 	}
 
+	// Item House Favor is a live "+X" overlay (see houseItemFavor), not part of the
+	// ledger — so it's excluded from the base sum and log here too.
 	favor := 0.0
 	logOut := make([]gin.H, 0, len(log))
 	for _, e := range log {
+		if e.Source == "item" {
+			continue
+		}
 		favor += e.Delta
 		logOut = append(logOut, gin.H{
 			"id":        e.ID,
@@ -51,6 +56,7 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 			"createdAt": e.CreatedAt,
 		})
 	}
+	itemFavor := s.houseItemFavor(ctx)[id.String()]
 
 	memberOut := make([]gin.H, 0, len(members))
 	for _, m := range members {
@@ -62,7 +68,7 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"house":   gin.H{"id": house.ID, "name": house.Name, "favor": favor},
+		"house":   gin.H{"id": house.ID, "name": house.Name, "favor": favor, "itemFavor": itemFavor},
 		"members": memberOut,
 		"log":     logOut,
 	})

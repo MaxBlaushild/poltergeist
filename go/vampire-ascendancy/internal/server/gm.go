@@ -149,14 +149,8 @@ func (s *server) gmSetAct(ctx *gin.Context) {
 		return
 	}
 
-	// The Final Reveal is when item effects resolve — fold each owned item's
-	// House Favor into its owner's house (idempotent, so re-triggering is safe).
-	if body.Act == "resolved" {
-		if err := s.resolveItemEffects(ctx); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
+	// Item House Favor is now a live "+X" overlay on the standings (see
+	// houseItemFavor), so nothing needs to be folded into the ledger at reveal.
 
 	s.logGM(ctx, "set_act", map[string]interface{}{"act": body.Act})
 	ctx.JSON(http.StatusOK, gameStateResponse(state))

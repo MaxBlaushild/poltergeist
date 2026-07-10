@@ -15,7 +15,8 @@ type HouseFavorStanding struct {
 	HouseID   uuid.UUID `json:"houseId"`
 	Name      string    `json:"name"`
 	SortOrder int       `json:"sortOrder"`
-	Favor     float64   `json:"favor"`
+	Favor     float64   `json:"favor"`     // ledger total, excluding item effects
+	ItemFavor float64   `json:"itemFavor"` // live overlay from owned items (not in ledger)
 }
 
 // BloodTokenTotal is a player's summed blood tokens (for resolution / reference).
@@ -449,7 +450,9 @@ func (h *vampireHandler) Leaderboard(ctx context.Context) ([]HouseFavorStanding,
 	if err := h.db.WithContext(ctx).
 		Table("vampire_houses h").
 		Select("h.id AS house_id, h.name AS name, h.sort_order AS sort_order, COALESCE(SUM(l.delta), 0) AS favor").
-		Joins("LEFT JOIN vampire_house_favor_ledger l ON l.house_id = h.id").
+		// Item House Favor is shown as a live "+X" overlay (computed from current
+		// item ownership), so it is deliberately excluded from the ledger base.
+		Joins("LEFT JOIN vampire_house_favor_ledger l ON l.house_id = h.id AND l.source <> 'item'").
 		Group("h.id, h.name, h.sort_order").
 		Order("favor DESC, h.sort_order ASC").
 		Scan(&standings).Error; err != nil {

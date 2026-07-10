@@ -1,17 +1,73 @@
 package server
 
 import (
+	"context"
 	"net/http"
+	"sort"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
+// houseItemFavor computes, per house id, the live House Favor contributed by
+// items players currently hold. It is NOT written to the ledger, so it updates
+// the instant an HF item is assigned — shown as a "+X" overlay on the standings.
+func (s *server) houseItemFavor(ctx context.Context) map[string]float64 {
+	v := s.dbClient.Vampire()
+	out := map[string]float64{}
+	players, err := v.ListPlayers(ctx)
+	if err != nil {
+		return out
+	}
+	houseOf := map[string]*uuid.UUID{}
+	for _, p := range players {
+		if p.Character != nil {
+			houseOf[p.ID.String()] = p.Character.HouseID
+		}
+	}
+	pis, err := v.ListAllPlayerItems(ctx)
+	if err != nil {
+		return out
+	}
+	for _, pi := range pis {
+		if pi.Item == nil || pi.Item.HFEffect == 0 {
+			continue
+		}
+		if hid := houseOf[pi.PlayerID.String()]; hid != nil {
+			out[hid.String()] += float64(pi.Item.HFEffect)
+		}
+	}
+	return out
+}
+
+// leaderboardWithItems attaches the live item-HF overlay and ranks by the
+// combined total (base ledger + item overlay).
+func (s *server) leaderboardWithItems(ctx context.Context) ([]db.HouseFavorStanding, error) {
+	standings, err := s.dbClient.Vampire().Leaderboard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	itemFavor := s.houseItemFavor(ctx)
+	for i := range standings {
+		standings[i].ItemFavor = itemFavor[standings[i].HouseID.String()]
+	}
+	sort.SliceStable(standings, func(i, j int) bool {
+		ti := standings[i].Favor + standings[i].ItemFavor
+		tj := standings[j].Favor + standings[j].ItemFavor
+		if ti != tj {
+			return ti > tj
+		}
+		return standings[i].SortOrder < standings[j].SortOrder
+	})
+	return standings, nil
+}
+
 // getLeaderboard returns House Favor standings — always visible to players, even
 // before content is unlocked. It is the authoritative live standing.
 func (s *server) getLeaderboard(ctx *gin.Context) {
-	standings, err := s.dbClient.Vampire().Leaderboard(ctx)
+	standings, err := s.leaderboardWithItems(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -59,7 +115,7 @@ func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
 		"reason":  body.Reason,
 	})
 
-	standings, err := s.dbClient.Vampire().Leaderboard(ctx)
+	standings, err := s.leaderboardWithItems(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
