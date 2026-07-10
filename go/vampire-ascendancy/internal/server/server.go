@@ -52,6 +52,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/characters/:id", s.getCharacterPublic)
 	r.POST("/vampire-ascendancy/login", s.login)
 
+	// Public projector feed — standings + games are not secret (players already
+	// see them), so the /broadcast screen needs no auth to cast to a TV.
+	r.GET("/vampire-ascendancy/broadcast/standings", s.getLeaderboard)
+	r.GET("/vampire-ascendancy/broadcast/games", s.getGames)
+
 	// Player routes — authenticated by the per-character token.
 	r.GET("/vampire-ascendancy/me", s.withPlayer, s.getMe)
 	r.GET("/vampire-ascendancy/state", s.withPlayer, s.getState)

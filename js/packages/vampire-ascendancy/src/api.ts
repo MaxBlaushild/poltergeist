@@ -73,6 +73,14 @@ export function listCharacters(): Promise<{ characters: PublicCharacter[] }> {
   return publicGet<{ characters: PublicCharacter[] }>('/characters');
 }
 
+// ---- Public projector feed (no auth) ----
+export function getBroadcastStandings(): Promise<{ standings: HouseStanding[] }> {
+  return publicGet<{ standings: HouseStanding[] }>('/broadcast/standings');
+}
+export function getBroadcastGames(): Promise<{ games: Game[] }> {
+  return publicGet<{ games: Game[] }>('/broadcast/games');
+}
+
 export async function login(characterId: string, password: string): Promise<{ token: string }> {
   const res = await fetch(`${API_BASE}/vampire-ascendancy/login`, {
     method: 'POST',

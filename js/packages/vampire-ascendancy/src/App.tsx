@@ -3,10 +3,13 @@ import { PlayerShell } from './components/PlayerShell';
 import { ConfirmLogin, SelectLogin } from './components/Login';
 import { HousePage } from './components/HousePage';
 import { GMAdmin } from './components/gm/GMAdmin';
+import { BroadcastPage } from './components/BroadcastPage';
 
 const router = createBrowserRouter([
   // GM admin (passcode-gated) lives in the same app.
   { path: '/gm', element: <GMAdmin /> },
+  // Public projector screen — no auth, for casting to a TV.
+  { path: '/broadcast', element: <BroadcastPage /> },
   // A guest's QR/link pre-selects their character; they confirm with a sigil.
   { path: '/c/:characterId', element: <ConfirmLogin /> },
   // The general "select your name" login, for anyone who lost their link.
