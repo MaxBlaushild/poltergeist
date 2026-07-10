@@ -280,8 +280,9 @@ type VampireHandle interface {
 	ListGames(ctx context.Context) ([]models.VampireGame, error)
 	GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error)
 	UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error)
-	SetGameResult(ctx context.Context, id uuid.UUID, first, second, third *uuid.UUID) error
+	SetGameResult(ctx context.Context, id uuid.UUID, first, second, third []uuid.UUID) error
 	UpdateGame(ctx context.Context, id uuid.UUID, name string, ordinal int) error
+	SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location string) error
 	DeleteGame(ctx context.Context, id uuid.UUID) error
 	ClearGameResult(ctx context.Context, id uuid.UUID) error
 	// DeleteGameAwards reverses the Blood Token / House Favor ledger entries a game

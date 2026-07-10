@@ -10,6 +10,10 @@ import {
 } from '../../gmApi';
 import type { GMGame, GMCharacter } from '../../gmApi';
 import { Card } from './GameSection';
+import { Combobox } from './Combobox';
+import type { ComboOption } from './Combobox';
+import { ScheduleCalendar } from './ScheduleCalendar';
+import { formatClock } from '../../theme';
 
 // GM Games tab: pre-seed / add the night's contests, then record the top three
 // finishers as they emerge. The Blood Token / House Favor math is applied on the
@@ -67,6 +71,8 @@ export const GamesSection = () => {
         </button>
       </div>
 
+      {games.length > 0 && <ScheduleCalendar games={games} onChange={load} />}
+
       {games.length === 0 ? (
         <p className="text-bone/50 text-sm">No games yet — add the night's contests above.</p>
       ) : (
@@ -87,32 +93,40 @@ const GameCard = ({
   chars: GMCharacter[];
   onChange: () => void;
 }) => {
-  const [first, setFirst] = useState('');
-  const [second, setSecond] = useState('');
-  const [third, setThird] = useState('');
-  const [participants, setParticipants] = useState<string[]>([]);
+  const [first, setFirst] = useState<string[]>([]);
+  const [second, setSecond] = useState<string[]>([]);
+  const [third, setThird] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Sort options by house then name for easier scanning.
-  const options = useMemo(
+  const allOptions: ComboOption[] = useMemo(
     () =>
-      [...chars].sort((a, b) =>
-        (a.house || '').localeCompare(b.house || '') || a.name.localeCompare(b.name)
-      ),
+      [...chars]
+        .sort(
+          (a, b) => (a.house || '').localeCompare(b.house || '') || a.name.localeCompare(b.name)
+        )
+        .map((c) => ({ id: c.id, label: c.name, sub: c.house })),
     [chars]
   );
 
+  // Hide anyone already chosen in another field so nobody is double-selected.
+  const without = (...used: string[][]) => {
+    const ex = new Set(used.flat());
+    return allOptions.filter((o) => !ex.has(o.id));
+  };
+
+  const anyPlaced = first.length + second.length + third.length > 0;
+
   const record = async () => {
-    if (!first && !second && !third) return;
+    if (!anyPlaced) return;
     setBusy(true);
+    setError(null);
     try {
-      await gmRecordGameResult(game.id, {
-        firstId: first || undefined,
-        secondId: second || undefined,
-        thirdId: third || undefined,
-        participantIds: participants,
-      });
+      await gmRecordGameResult(game.id, { firstIds: first, secondIds: second, thirdIds: third });
       onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not record the result.');
     } finally {
       setBusy(false);
     }
@@ -124,14 +138,22 @@ const GameCard = ({
     const places = [game.first, game.second, game.third];
     return (
       <Card title={title}>
-        <div className="flex flex-col gap-1">
-          {places.map((p, i) =>
-            p ? (
-              <p key={i} className="text-bone">
-                <span className="mr-2">{medal[i]}</span>
-                {p.characterName}
-                {p.house && <span className="text-bone/50"> · {p.house}</span>}
-              </p>
+        <ScheduleLine game={game} />
+        <div className="flex flex-col gap-1.5">
+          {places.map((winners, i) =>
+            winners.length ? (
+              <div key={i} className="flex items-start gap-2 text-bone">
+                <span className="shrink-0">{medal[i]}</span>
+                <span className="flex flex-wrap gap-x-2">
+                  {winners.map((w, j) => (
+                    <span key={w.characterId}>
+                      {w.characterName}
+                      {w.house && <span className="text-bone/50"> · {w.house}</span>}
+                      {j < winners.length - 1 && <span className="text-bone/30">,</span>}
+                    </span>
+                  ))}
+                </span>
+              </div>
             ) : null
           )}
           <p className="mt-1 text-xs text-green-400 uppercase tracking-[0.15em]">Recorded · awards applied</p>
@@ -143,45 +165,66 @@ const GameCard = ({
 
   return (
     <Card title={title}>
-      <div className="flex flex-col gap-2">
-        <WinnerSelect label="🥇 1st" value={first} onChange={setFirst} options={options} />
-        <WinnerSelect label="🥈 2nd" value={second} onChange={setSecond} options={options} />
-        <WinnerSelect label="🥉 3rd" value={third} onChange={setThird} options={options} />
-
-        <label className="text-xs text-bone/50 mt-1">Other participants (+1 BT each)</label>
-        <select
-          multiple
-          size={5}
-          value={participants}
-          onChange={(e) =>
-            setParticipants(Array.from(e.target.selectedOptions, (o) => o.value))
-          }
-          className="rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
-        >
-          {options.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-              {c.house ? ` (${c.house})` : ''}
-            </option>
-          ))}
-        </select>
+      <ScheduleLine game={game} />
+      <div className="flex flex-col gap-3">
+        <Field label="🥇 1st place">
+          <Combobox
+            options={without(second, third)}
+            selected={first}
+            onChange={setFirst}
+            placeholder="Search a character…"
+          />
+        </Field>
+        <Field label="🥈 2nd place">
+          <Combobox
+            options={without(first, third)}
+            selected={second}
+            onChange={setSecond}
+            placeholder="Search a character…"
+          />
+        </Field>
+        <Field label="🥉 3rd place">
+          <Combobox
+            options={without(first, second)}
+            selected={third}
+            onChange={setThird}
+            placeholder="Search a character…"
+          />
+        </Field>
 
         <button
           onClick={record}
-          disabled={busy || (!first && !second && !third)}
-          className="mt-2 py-2 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
+          disabled={busy || !anyPlaced}
+          className="mt-1 py-2 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
         >
-          Record result &amp; award
+          Record result &amp; award House Favor
         </button>
+        {error && <p className="text-sm text-blood-bright">{error}</p>}
         <p className="text-[11px] text-bone/40">
-          BT/HF are applied automatically: 1st +5/+5, 2nd +3/+3, 3rd +1/+2. You can clear the result
-          afterward to undo the awards.
+          House Favor is applied automatically — once per place, to that place's house (everyone sharing
+          a place must be from the same house): 1st +5, 2nd +3, 3rd +2. Blood Tokens are handed out in
+          person: 1st +5, 2nd +3, 3rd +2, other participants +1. Clear the result afterward to undo.
         </p>
       </div>
       <ManageBar game={game} onChange={onChange} />
     </Card>
   );
 };
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="flex flex-col gap-1">
+    <label className="text-xs text-bone/60">{label}</label>
+    {children}
+  </div>
+);
+
+const ScheduleLine = ({ game }: { game: GMGame }) =>
+  game.startMinutes != null && game.endMinutes != null ? (
+    <p className="text-xs text-bone/60 mb-2">
+      🕒 {formatClock(game.startMinutes)}–{formatClock(game.endMinutes)}
+      {game.location && <span className="text-gold/80"> · 📍 {game.location}</span>}
+    </p>
+  ) : null;
 
 // Rename / delete / clear-result controls, collapsed by default. A recorded game
 // can't be renamed (awards are matched by name) — clear it first.
@@ -260,31 +303,3 @@ const ManageBar = ({ game, onChange }: { game: GMGame; onChange: () => void }) =
   );
 };
 
-const WinnerSelect = ({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: GMCharacter[];
-}) => (
-  <div className="flex items-center gap-2">
-    <span className="w-14 text-sm text-bone/70 shrink-0">{label}</span>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="flex-1 rounded-md bg-black/60 border border-blood/40 p-2 text-bone"
-    >
-      <option value="">— none —</option>
-      {options.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-          {c.house ? ` (${c.house})` : ''}
-        </option>
-      ))}
-    </select>
-  </div>
-);

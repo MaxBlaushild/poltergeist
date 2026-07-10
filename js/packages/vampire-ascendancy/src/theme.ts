@@ -35,6 +35,15 @@ export const houseLabel = (house?: string) => {
 // House Favor can be fractional (Part 2 quiz). Show e.g. "2.5", "10.5", "3".
 export const formatHF = (n: number) => String(Math.round(n * 100) / 100);
 
+// minutes-of-day (e.g. 1080) → "6:00 PM". Midnight (1440) → "12:00 AM".
+export const formatClock = (minOfDay: number): string => {
+  const h24 = Math.floor(minOfDay / 60) % 24;
+  const m = minOfDay % 60;
+  const period = h24 < 12 ? 'AM' : 'PM';
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}:${String(m).padStart(2, '0')} ${period}`;
+};
+
 export interface HouseInfo {
   sigil: string; // path under public/, e.g. /houses/spires.png
   blurb: string;

@@ -2,13 +2,25 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// jsonUUIDs marshals a slice of ids into a JSON array for the game placement columns.
+func jsonUUIDs(ids []uuid.UUID) datatypes.JSON {
+	strs := make([]string, 0, len(ids))
+	for _, x := range ids {
+		strs = append(strs, x.String())
+	}
+	b, _ := json.Marshal(strs)
+	return datatypes.JSON(b)
+}
 
 // HouseFavorStanding is a single row of the leaderboard (house + summed favor).
 type HouseFavorStanding struct {
@@ -918,15 +930,27 @@ func (h *vampireHandler) UpsertGame(ctx context.Context, ordinal int, name strin
 	return &out, nil
 }
 
-func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first, second, third *uuid.UUID) error {
+func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first, second, third []uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"status":              "played",
-			"first_character_id":  first,
-			"second_character_id": second,
-			"third_character_id":  third,
-			"updated_at":          time.Now(),
+			"status":               "played",
+			"first_character_ids":  jsonUUIDs(first),
+			"second_character_ids": jsonUUIDs(second),
+			"third_character_ids":  jsonUUIDs(third),
+			"updated_at":           time.Now(),
+		}).Error
+}
+
+// SetGameSchedule sets (or clears, with nil times) a game's slot and location.
+func (h *vampireHandler) SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"start_minutes": start,
+			"end_minutes":   end,
+			"location":      location,
+			"updated_at":    time.Now(),
 		}).Error
 }
 
@@ -942,14 +966,15 @@ func (h *vampireHandler) DeleteGame(ctx context.Context, id uuid.UUID) error {
 
 // ClearGameResult resets a game to pending and drops its recorded finishers.
 func (h *vampireHandler) ClearGameResult(ctx context.Context, id uuid.UUID) error {
+	empty := datatypes.JSON([]byte("[]"))
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"status":              "pending",
-			"first_character_id":  nil,
-			"second_character_id": nil,
-			"third_character_id":  nil,
-			"updated_at":          time.Now(),
+			"status":               "pending",
+			"first_character_ids":  empty,
+			"second_character_ids": empty,
+			"third_character_ids":  empty,
+			"updated_at":           time.Now(),
 		}).Error
 }
 

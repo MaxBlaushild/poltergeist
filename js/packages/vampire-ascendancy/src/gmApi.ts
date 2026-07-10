@@ -145,9 +145,12 @@ export interface GMGame {
   ordinal: number;
   name: string;
   status: 'pending' | 'played';
-  first: GameWinner | null;
-  second: GameWinner | null;
-  third: GameWinner | null;
+  first: GameWinner[];
+  second: GameWinner[];
+  third: GameWinner[];
+  startMinutes: number | null;
+  endMinutes: number | null;
+  location: string;
 }
 export const gmGetStandings = () => gm<{ standings: HouseStanding[] }>('/standings');
 export const gmListGames = () => gm<{ games: GMGame[] }>('/games');
@@ -155,11 +158,15 @@ export const gmCreateGame = (name: string, ordinal = 0) =>
   gm<{ id: string }>('/games', { method: 'POST', body: JSON.stringify({ name, ordinal }) });
 export const gmRecordGameResult = (
   id: string,
-  body: { firstId?: string; secondId?: string; thirdId?: string; participantIds?: string[] }
+  body: { firstIds: string[]; secondIds: string[]; thirdIds: string[] }
 ) => gm<{ ok: boolean }>(`/games/${id}/result`, { method: 'POST', body: JSON.stringify(body) });
 export const gmUpdateGame = (id: string, name: string, ordinal: number) =>
   gm<{ ok: boolean }>(`/games/${id}`, { method: 'PUT', body: JSON.stringify({ name, ordinal }) });
 export const gmDeleteGame = (id: string) => gm<{ ok: boolean }>(`/games/${id}`, { method: 'DELETE' });
+export const gmSetGameSchedule = (
+  id: string,
+  body: { startMinutes: number | null; endMinutes: number | null; location: string }
+) => gm<{ ok: boolean }>(`/games/${id}/schedule`, { method: 'PUT', body: JSON.stringify(body) });
 export const gmClearGameResult = (id: string) =>
   gm<{ ok: boolean }>(`/games/${id}/clear`, { method: 'POST' });
 

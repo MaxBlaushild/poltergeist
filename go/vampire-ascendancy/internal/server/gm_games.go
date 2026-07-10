@@ -1,19 +1,19 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
 
-// Placement rewards, from the player rules. 1st/2nd/3rd earn Blood Tokens for the
-// player and House Favor for their house; everyone else who played earns +1 BT.
-var gameBTByPlace = map[int]int{1: 5, 2: 3, 3: 1}
+// House Favor per place, applied automatically to the finishers' house. Blood
+// Tokens (1st +5, 2nd +3, 3rd +2, participants +1) are handed out in person by
+// the GM, so they are not awarded here.
 var gameHFByPlace = map[int]float64{1: 5, 2: 3, 3: 2}
-
-const gameParticipationBT = 1
 
 // characterLookup returns a map of character id -> character (with house), for
 // resolving winner names without an N+1 of per-game queries.
@@ -29,32 +29,45 @@ func (s *server) characterLookup(ctx *gin.Context) (map[string]models.VampireCha
 	return m, nil
 }
 
-func winnerJSON(charID *uuid.UUID, byID map[string]models.VampireCharacter) gin.H {
-	if charID == nil {
-		return nil
+// winnersJSON resolves a JSON array of character id strings into winner objects
+// (name + house), preserving order and skipping ids that no longer resolve.
+func winnersJSON(raw datatypes.JSON, byID map[string]models.VampireCharacter) []gin.H {
+	out := []gin.H{}
+	if len(raw) == 0 {
+		return out
 	}
-	c, ok := byID[charID.String()]
-	if !ok {
-		return nil
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return out
 	}
-	row := gin.H{"characterId": c.ID, "characterName": c.Name}
-	if c.House != nil {
-		row["house"] = c.House.Name
+	for _, id := range ids {
+		c, ok := byID[id]
+		if !ok {
+			continue
+		}
+		row := gin.H{"characterId": c.ID, "characterName": c.Name}
+		if c.House != nil {
+			row["house"] = c.House.Name
+		}
+		out = append(out, row)
 	}
-	return row
+	return out
 }
 
 func gamesResponse(games []models.VampireGame, byID map[string]models.VampireCharacter) []gin.H {
 	out := make([]gin.H, 0, len(games))
 	for _, g := range games {
 		out = append(out, gin.H{
-			"id":      g.ID,
-			"ordinal": g.Ordinal,
-			"name":    g.Name,
-			"status":  g.Status,
-			"first":   winnerJSON(g.FirstCharacterID, byID),
-			"second":  winnerJSON(g.SecondCharacterID, byID),
-			"third":   winnerJSON(g.ThirdCharacterID, byID),
+			"id":           g.ID,
+			"ordinal":      g.Ordinal,
+			"name":         g.Name,
+			"status":       g.Status,
+			"first":        winnersJSON(g.FirstCharacterIDs, byID),
+			"second":       winnersJSON(g.SecondCharacterIDs, byID),
+			"third":        winnersJSON(g.ThirdCharacterIDs, byID),
+			"startMinutes": g.StartMinutes,
+			"endMinutes":   g.EndMinutes,
+			"location":     g.Location,
 		})
 	}
 	return out
@@ -119,10 +132,9 @@ func (s *server) gmRecordGameResult(ctx *gin.Context) {
 	}
 
 	var body struct {
-		FirstID        string   `json:"firstId"`
-		SecondID       string   `json:"secondId"`
-		ThirdID        string   `json:"thirdId"`
-		ParticipantIDs []string `json:"participantIds"`
+		FirstIDs  []string `json:"firstIds"`
+		SecondIDs []string `json:"secondIds"`
+		ThirdIDs  []string `json:"thirdIds"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -133,64 +145,63 @@ func (s *server) gmRecordGameResult(ctx *gin.Context) {
 	gmName := gmNameFromContext(ctx)
 	placed := map[string]bool{}
 
-	// resolve resolves a character id and applies its placement award.
-	place := []struct {
-		id  string
+	places := []struct {
+		ids []string
 		pos int
-	}{{body.FirstID, 1}, {body.SecondID, 2}, {body.ThirdID, 3}}
-	placeIDs := [3]*uuid.UUID{}
+	}{{body.FirstIDs, 1}, {body.SecondIDs, 2}, {body.ThirdIDs, 3}}
+	placeIDs := [3][]uuid.UUID{}
+	placeHouse := [3]*uuid.UUID{} // the single house that shares each place
 
-	for i, p := range place {
-		if p.id == "" {
-			continue
-		}
-		cid, err := uuid.Parse(p.id)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
-			return
-		}
-		ch, err := v.GetCharacterByID(ctx, cid)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if ch == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown character in results"})
-			return
-		}
-		placed[cid.String()] = true
-		placeIDs[i] = &cid
-
-		// House Favor to the finisher's house.
-		if ch.HouseID != nil {
-			if err := v.AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-				HouseID: *ch.HouseID,
-				Delta:   gameHFByPlace[p.pos],
-				Reason:  "Game: " + game.Name,
-				GMName:  gmName,
-				Source:  "game",
-			}); err != nil {
+	// Validate each place first: everyone sharing a place must be from the same
+	// house (House Favor is awarded once, to that house). No Blood Tokens here —
+	// the GM hands those out in person.
+	for i, place := range places {
+		houseSet := false
+		for _, idStr := range place.ids {
+			if idStr == "" {
+				continue
+			}
+			cid, err := uuid.Parse(idStr)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+				return
+			}
+			if placed[cid.String()] {
+				continue // same character listed in two places — count once
+			}
+			ch, err := v.GetCharacterByID(ctx, cid)
+			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-		}
-		// Blood Tokens to the finishing player, if the character has an active slot.
-		if err := s.awardGameBT(ctx, cid, gameBTByPlace[p.pos], "Game: "+game.Name, gmName); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			if ch == nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown character in results"})
+				return
+			}
+			if !houseSet {
+				placeHouse[i] = ch.HouseID
+				houseSet = true
+			} else if !sameHouse(placeHouse[i], ch.HouseID) {
+				ctx.JSON(http.StatusConflict, gin.H{"error": "everyone sharing a place must be from the same house"})
+				return
+			}
+			placed[cid.String()] = true
+			placeIDs[i] = append(placeIDs[i], cid)
 		}
 	}
 
-	// Participation: every other listed player earns +1 BT.
-	for _, pid := range body.ParticipantIDs {
-		if pid == "" || placed[pid] {
+	// Award each place's House Favor once, to its house.
+	for i, place := range places {
+		if len(placeIDs[i]) == 0 || placeHouse[i] == nil {
 			continue
 		}
-		cid, err := uuid.Parse(pid)
-		if err != nil {
-			continue
-		}
-		if err := s.awardGameBT(ctx, cid, gameParticipationBT, "Game participation: "+game.Name, gmName); err != nil {
+		if err := v.AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
+			HouseID: *placeHouse[i],
+			Delta:   gameHFByPlace[place.pos],
+			Reason:  "Game: " + game.Name,
+			GMName:  gmName,
+			Source:  "game",
+		}); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -205,23 +216,48 @@ func (s *server) gmRecordGameResult(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// awardGameBT credits a character's active player, or no-ops if the character has
-// no active player slot (e.g. an NPC-run game entrant).
-func (s *server) awardGameBT(ctx *gin.Context, characterID uuid.UUID, delta int, reason, gmName string) error {
-	player, err := s.dbClient.Vampire().GetActivePlayerByCharacterID(ctx, characterID)
+// PUT /gm/games/:id/schedule — set (or clear) a game's time slot and location.
+// Times are minutes-of-day (6pm = 1080, midnight = 1440); nil = unscheduled.
+func (s *server) gmSetGameSchedule(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		return err
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid game id"})
+		return
 	}
-	if player == nil {
-		return nil
+	var body struct {
+		StartMinutes *int   `json:"startMinutes"`
+		EndMinutes   *int   `json:"endMinutes"`
+		Location     string `json:"location"`
 	}
-	return s.dbClient.Vampire().AddBloodTokens(ctx, &models.VampireBloodTokenLog{
-		PlayerID: player.ID,
-		Delta:    delta,
-		Reason:   reason,
-		Source:   "game",
-		GMName:   gmName,
-	})
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if (body.StartMinutes == nil) != (body.EndMinutes == nil) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "start and end must both be set or both cleared"})
+		return
+	}
+	if body.StartMinutes != nil {
+		if *body.StartMinutes < 0 || *body.EndMinutes > 1440 || *body.EndMinutes <= *body.StartMinutes {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid time range"})
+			return
+		}
+	}
+	if err := s.dbClient.Vampire().SetGameSchedule(ctx, id, body.StartMinutes, body.EndMinutes, body.Location); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "set_game_schedule", map[string]interface{}{"gameId": id.String()})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// sameHouse reports whether two (nullable) house ids refer to the same house.
+// Two "no house" finishers count as the same; a house and a no-house do not.
+func sameHouse(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // PUT /gm/games/:id — rename / reorder a game. A recorded game can't be renamed

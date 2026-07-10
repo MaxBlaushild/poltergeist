@@ -57,9 +57,14 @@ type VampireGame struct {
 	Ordinal           int        `gorm:"not null;default:0" json:"ordinal"`
 	Name              string     `gorm:"not null" json:"name"`
 	Status            string     `gorm:"not null;default:'pending'" json:"status"` // pending | played
-	FirstCharacterID  *uuid.UUID `gorm:"column:first_character_id" json:"firstCharacterId"`
-	SecondCharacterID *uuid.UUID `gorm:"column:second_character_id" json:"secondCharacterId"`
-	ThirdCharacterID  *uuid.UUID `gorm:"column:third_character_id" json:"thirdCharacterId"`
+	// Finishers per place, as JSON arrays of character id strings (multiple allowed).
+	FirstCharacterIDs  datatypes.JSON `gorm:"column:first_character_ids;type:jsonb;default:'[]'" json:"-"`
+	SecondCharacterIDs datatypes.JSON `gorm:"column:second_character_ids;type:jsonb;default:'[]'" json:"-"`
+	ThirdCharacterIDs  datatypes.JSON `gorm:"column:third_character_ids;type:jsonb;default:'[]'" json:"-"`
+	// Schedule within the evening: start/end as minutes-of-day (nil = unscheduled).
+	StartMinutes *int   `gorm:"column:start_minutes" json:"startMinutes"`
+	EndMinutes   *int   `gorm:"column:end_minutes" json:"endMinutes"`
+	Location     string `gorm:"not null;default:''" json:"location"`
 }
 
 func (VampireGame) TableName() string { return "vampire_games" }

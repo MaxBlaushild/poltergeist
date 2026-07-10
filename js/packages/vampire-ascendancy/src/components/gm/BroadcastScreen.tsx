@@ -3,7 +3,7 @@ import { gmGetStandings, gmListGames } from '../../gmApi';
 import type { GMGame } from '../../gmApi';
 import type { HouseStanding } from '../../types';
 import { StandingsList } from '../Leaderboard';
-import { accentFor } from '../../theme';
+import { accentFor, formatClock } from '../../theme';
 
 const medal = ['🥇', '🥈', '🥉'];
 
@@ -80,18 +80,29 @@ const GamesBoard = ({ games }: { games: GMGame[] }) => {
                 <span className="text-xs uppercase tracking-[0.15em] text-bone/40">Upcoming</span>
               )}
             </div>
-            {g.status === 'played' && places.some(Boolean) && (
+            {g.startMinutes != null && g.endMinutes != null && (
+              <p className="mt-0.5 text-xs text-bone/60">
+                🕒 {formatClock(g.startMinutes)}–{formatClock(g.endMinutes)}
+                {g.location && <span className="text-gold/80"> · 📍 {g.location}</span>}
+              </p>
+            )}
+            {g.status === 'played' && places.some((w) => w.length > 0) && (
               <div className="mt-1 flex flex-col gap-0.5">
-                {places.map((p, i) =>
-                  p ? (
+                {places.map((winners, i) =>
+                  winners.length ? (
                     <p key={i} className="text-sm text-bone/85">
                       <span className="mr-2">{medal[i]}</span>
-                      {p.characterName}
-                      {p.house && (
-                        <span className="ml-1" style={{ color: accentFor(p.house) }}>
-                          · {p.house}
+                      {winners.map((w, j) => (
+                        <span key={w.characterId}>
+                          {w.characterName}
+                          {w.house && (
+                            <span className="ml-1" style={{ color: accentFor(w.house) }}>
+                              · {w.house}
+                            </span>
+                          )}
+                          {j < winners.length - 1 && <span className="text-bone/40">, </span>}
                         </span>
-                      )}
+                      ))}
                     </p>
                   ) : null
                 )}

@@ -94,6 +94,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.DELETE("/games/:id", s.gmDeleteGame)
 	gm.POST("/games/:id/result", s.gmRecordGameResult)
 	gm.POST("/games/:id/clear", s.gmClearGameResult)
+	gm.PUT("/games/:id/schedule", s.gmSetGameSchedule)
 	gm.GET("/items", s.gmListItems)
 	gm.POST("/items", s.gmCreateItem)
 	gm.PUT("/items/:id", s.gmUpdateItem)

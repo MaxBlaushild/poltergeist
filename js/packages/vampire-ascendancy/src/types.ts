@@ -101,9 +101,12 @@ export interface Game {
   ordinal: number;
   name: string;
   status: 'pending' | 'played';
-  first: GameWinner | null;
-  second: GameWinner | null;
-  third: GameWinner | null;
+  first: GameWinner[];
+  second: GameWinner[];
+  third: GameWinner[];
+  startMinutes: number | null; // minutes-of-day (6pm = 1080), null = unscheduled
+  endMinutes: number | null;
+  location: string;
 }
 
 export interface MeResponse {
