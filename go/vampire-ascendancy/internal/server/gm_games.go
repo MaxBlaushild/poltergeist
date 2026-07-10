@@ -190,6 +190,20 @@ func (s *server) gmRecordGameResult(ctx *gin.Context) {
 		}
 	}
 
+	// Each place must be a different house from the others.
+	seenHouse := map[string]bool{}
+	for i := range places {
+		if len(placeIDs[i]) == 0 || placeHouse[i] == nil {
+			continue
+		}
+		h := placeHouse[i].String()
+		if seenHouse[h] {
+			ctx.JSON(http.StatusConflict, gin.H{"error": "each place must be won by a different house"})
+			return
+		}
+		seenHouse[h] = true
+	}
+
 	// Award each place's House Favor once, to its house.
 	for i, place := range places {
 		if len(placeIDs[i]) == 0 || placeHouse[i] == nil {

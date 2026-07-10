@@ -110,10 +110,34 @@ const GameCard = ({
     [chars]
   );
 
-  // Hide anyone already chosen in another field so nobody is double-selected.
-  const without = (...used: string[][]) => {
-    const ex = new Set(used.flat());
-    return allOptions.filter((o) => !ex.has(o.id));
+  const charHouse = useMemo(() => {
+    const m: Record<string, string | undefined> = {};
+    for (const c of chars) m[c.id] = c.house;
+    return m;
+  }, [chars]);
+  const houseOf = (ids: string[]): string | undefined => {
+    for (const id of ids) {
+      const h = charHouse[id];
+      if (h) return h;
+    }
+    return undefined;
+  };
+
+  // Options for a place, enforcing the house rules: everyone at a place must share
+  // a house, and each place must be a different house from the others. So we hide
+  // anyone already picked, anyone from a different house than this place's, and
+  // anyone whose house is already claimed by another place.
+  const optionsFor = (mine: string[], ...others: string[][]): ComboOption[] => {
+    const taken = new Set([mine, ...others].flat());
+    const myHouse = houseOf(mine);
+    const otherHouses = new Set(others.map(houseOf).filter(Boolean) as string[]);
+    return allOptions.filter((o) => {
+      if (taken.has(o.id)) return false;
+      const h = charHouse[o.id];
+      if (myHouse && h !== myHouse) return false;
+      if (h && otherHouses.has(h)) return false;
+      return true;
+    });
   };
 
   const anyPlaced = first.length + second.length + third.length > 0;
@@ -169,7 +193,7 @@ const GameCard = ({
       <div className="flex flex-col gap-3">
         <Field label="🥇 1st place">
           <Combobox
-            options={without(second, third)}
+            options={optionsFor(first, second, third)}
             selected={first}
             onChange={setFirst}
             placeholder="Search a character…"
@@ -177,7 +201,7 @@ const GameCard = ({
         </Field>
         <Field label="🥈 2nd place">
           <Combobox
-            options={without(first, third)}
+            options={optionsFor(second, first, third)}
             selected={second}
             onChange={setSecond}
             placeholder="Search a character…"
@@ -185,7 +209,7 @@ const GameCard = ({
         </Field>
         <Field label="🥉 3rd place">
           <Combobox
-            options={without(first, second)}
+            options={optionsFor(third, first, second)}
             selected={third}
             onChange={setThird}
             placeholder="Search a character…"
@@ -201,9 +225,10 @@ const GameCard = ({
         </button>
         {error && <p className="text-sm text-blood-bright">{error}</p>}
         <p className="text-[11px] text-bone/40">
-          House Favor is applied automatically — once per place, to that place's house (everyone sharing
-          a place must be from the same house): 1st +5, 2nd +3, 3rd +2. Blood Tokens are handed out in
-          person: 1st +5, 2nd +3, 3rd +2, other participants +1. Clear the result afterward to undo.
+          House Favor is applied automatically — once per place, to that place's house: 1st +5, 2nd +3,
+          3rd +2. Everyone sharing a place must be from the same house, and each place must be won by a
+          different house. Blood Tokens are handed out in person: 1st +5, 2nd +3, 3rd +2, participants
+          +1. Clear the result afterward to undo.
         </p>
       </div>
       <ManageBar game={game} onChange={onChange} />
