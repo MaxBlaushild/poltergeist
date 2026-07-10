@@ -1,0 +1,15 @@
+<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="vampire fangs">
+  <!-- Dark backing so the bone-coloured fangs read on light browser tabs. -->
+  <rect width="80" height="80" rx="18" fill="#0a0306"/>
+  <!-- upper lip / arch -->
+  <path d="M14 24 Q40 40 66 24" stroke="#f2ebdc" stroke-width="3" stroke-linecap="round" opacity="0.5" fill="none"/>
+  <!-- small teeth between the fangs -->
+  <path d="M33 27 l3 7 3-7" stroke="#f2ebdc" stroke-width="2" opacity="0.45" fill="none"/>
+  <path d="M41 27 l3 7 3-7" stroke="#f2ebdc" stroke-width="2" opacity="0.45" fill="none"/>
+  <!-- left fang -->
+  <path d="M24 26 L31 26 Q28 48 27.5 48 Q27 48 24 26 Z" fill="#f2ebdc"/>
+  <!-- right fang -->
+  <path d="M49 26 L56 26 Q53 48 52.5 48 Q52 48 49 26 Z" fill="#f2ebdc"/>
+  <!-- drop of blood from the left fang -->
+  <path d="M27.5 52 q4 5 0 9 q-4 -4 0 -9 Z" fill="#ef5350"/>
+</svg>
