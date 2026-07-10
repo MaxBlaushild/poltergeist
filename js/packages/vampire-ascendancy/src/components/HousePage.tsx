@@ -67,9 +67,9 @@ export const HousePage = () => {
         {info.blurb && <p className="mt-2 text-bone/85 leading-relaxed">{info.blurb}</p>}
         <div className="mt-4 inline-flex items-baseline gap-2">
           <span className="text-bone/60 uppercase tracking-[0.2em] text-xs">House Favor</span>
-          <span className="text-3xl font-bold text-bone">
+          <span className="inline-flex items-center gap-1 text-3xl font-bold text-bone">
             {formatHF(house.favor)}
-            {house.itemFavor ? <span className="ml-1 text-xl text-gold">(+{formatHF(house.itemFavor)})</span> : null}
+            {house.itemFavor ? <span className="text-xl text-gold">(+{formatHF(house.itemFavor)})</span> : null}
           </span>
         </div>
       </header>
