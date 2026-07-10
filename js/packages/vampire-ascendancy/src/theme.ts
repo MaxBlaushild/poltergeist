@@ -1,9 +1,9 @@
 export const HOUSE_ACCENT: Record<string, string> = {
-  Spires: '#ff3b3b', // truer, brighter red for contrast on black
-  Chains: '#c89b5a',
-  Cinders: '#f0822a',
-  Ashglass: '#7bb8b6',
-  "Marquess's Court": '#a97ad6',
+  Ashglass: '#a86fe0', // purple
+  Chains: '#c3c8d2', // silver
+  Cinders: '#ef4444', // red
+  Spires: '#5691f0', // blue
+  "Marquess's Court": '#e0b24c', // gold
 };
 
 export const TIER_LABEL: Record<string, string> = {
