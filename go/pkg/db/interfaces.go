@@ -259,6 +259,8 @@ type VampireHandle interface {
 	UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
 	UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error
 	SetQuizSubmissionRationale(ctx context.Context, id uuid.UUID, rationale string) error
+	SetQuizGradeStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error
+	MarkQuizGradeStarted(ctx context.Context, id uuid.UUID) error
 	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
 	ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error)
 	ListPart2Answers(ctx context.Context) ([]Part2Answer, error)

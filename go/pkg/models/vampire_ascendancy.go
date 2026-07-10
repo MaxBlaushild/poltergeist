@@ -250,9 +250,22 @@ type VampireQuizSubmission struct {
 	AIRationale string   `gorm:"column:ai_rationale;not null;default:''" json:"aiRationale"` // one-line AI note
 	AwardedBT   int      `gorm:"column:awarded_bt;not null;default:0" json:"awardedBt"`      // Part 1 BT
 	Locked      bool     `gorm:"not null;default:false" json:"locked"`
+	// Part 1 grading state machine (async job): '' → queued → grading → graded | failed.
+	GradeStatus    string     `gorm:"column:grade_status;not null;default:''" json:"gradeStatus"`
+	GradeError     string     `gorm:"column:grade_error;not null;default:''" json:"gradeError"`
+	GradeStartedAt *time.Time `gorm:"column:grade_started_at" json:"gradeStartedAt"`
+	GradeAttempts  int        `gorm:"column:grade_attempts;not null;default:0" json:"gradeAttempts"`
 }
 
 func (VampireQuizSubmission) TableName() string { return "vampire_quiz_submissions" }
+
+// Part 1 grading state machine states.
+const (
+	QuizGradeStatusQueued  = "queued"  // enqueued, awaiting a worker
+	QuizGradeStatusGrading = "grading" // a worker is grading it
+	QuizGradeStatusGraded  = "graded"  // graded successfully, BT applied
+	QuizGradeStatusFailed  = "failed"  // last attempt errored
+)
 
 type VampireGMActionLog struct {
 	ID        uuid.UUID      `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`

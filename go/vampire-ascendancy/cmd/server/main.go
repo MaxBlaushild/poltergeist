@@ -25,5 +25,5 @@ func main() {
 		panic(err)
 	}
 
-	server.NewServer(authClient, dbClient).ListenAndServe("8090")
+	server.NewServer(authClient, dbClient, config.Public.RedisUrl).ListenAndServe("8090")
 }

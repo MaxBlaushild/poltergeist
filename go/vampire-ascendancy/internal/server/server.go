@@ -2,22 +2,19 @@ package server
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 )
 
 type server struct {
-	authClient auth.Client
-	dbClient   db.DbClient
-	gmPasscode string
-	deepPriest deep_priest.DeepPriest // LLM oracle for Part 1 quiz grading
-
-	gradingMu sync.Mutex
-	grading   bool
+	authClient  auth.Client
+	dbClient    db.DbClient
+	gmPasscode  string
+	asyncClient *asynq.Client // enqueues Part 1 grading jobs onto the job-runner
 }
 
 type Server interface {
@@ -28,14 +25,19 @@ type Server interface {
 func NewServer(
 	authClient auth.Client,
 	dbClient db.DbClient,
+	redisUrl string,
 ) Server {
+	var asyncClient *asynq.Client
+	if redisUrl != "" {
+		asyncClient = asynq.NewClient(asynq.RedisClientOpt{Addr: util.NormalizeRedisAddr(redisUrl)})
+	}
 	return &server{
 		authClient: authClient,
 		dbClient:   dbClient,
 		// GM admin passcode. In prod this comes from the ECS task secrets; for
 		// local dev set GM_PASSCODE in local.env.
-		gmPasscode: "bloodmoon",
-		deepPriest: deep_priest.SummonDeepPriest(),
+		gmPasscode:  "bloodmoon",
+		asyncClient: asyncClient,
 	}
 }
 
@@ -103,6 +105,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/notifications/clear", s.gmClearNotifications)
 	gm.POST("/quiz/part1", s.gmSetPart1Open)
 	gm.POST("/quiz/part1/grade", s.gmGradePart1)
+	gm.POST("/quiz/part1/regrade", s.gmRegradePart1)
 	gm.POST("/quiz/part1/override", s.gmOverridePart1BT)
 	gm.POST("/quiz/part2", s.gmSetPart2Open)
 	gm.POST("/quiz/part2/rescore", s.gmRescorePart2)

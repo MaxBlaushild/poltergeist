@@ -3,6 +3,7 @@ import {
   gmSetPart1Open,
   gmSetPart2Open,
   gmGradePart1,
+  gmRegradePart1,
   gmOverridePart1BT,
   gmRescorePart2,
   gmListQuizSubmissions,
@@ -85,14 +86,15 @@ export const QuizSection = ({
               {part1Open ? 'Close' : 'Open'}
             </button>
             <button
-              onClick={() => wrap(() => gmGradePart1(), 'Grading started — scores will appear shortly.')}
+              onClick={() => wrap(() => gmGradePart1(), 'Grading queued — scores appear as jobs finish.')}
               disabled={busy}
               className="px-4 py-2 rounded-md text-sm uppercase tracking-[0.12em] border border-gold/50 text-gold disabled:opacity-40"
             >
-              Grade
+              Grade all
             </button>
           </div>
         </div>
+        <GradeSummary subs={part1Subs} onRetryAll={() => wrap(() => gmRegradePart1(), 'Re-queued incomplete grades.')} busy={busy} />
         {note && <p className="text-bone/60 text-sm mt-2">{note}</p>}
       </Card>
 
@@ -355,52 +357,145 @@ const Table = ({ head, rows }: { head: string[]; rows: string[][] }) => (
   </div>
 );
 
+// Grade state → pill styling. '' means never graded.
+const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  '': { label: 'not graded', cls: 'text-bone/40 border-bone/20' },
+  queued: { label: 'queued', cls: 'text-amber-300 border-amber-400/40' },
+  grading: { label: 'grading…', cls: 'text-sky-300 border-sky-400/40' },
+  graded: { label: 'graded', cls: 'text-green-400 border-green-500/40' },
+  failed: { label: 'failed', cls: 'text-blood-bright border-blood/50' },
+};
+
+const StatusPill = ({ status }: { status: string }) => {
+  const s = STATUS_STYLE[status] ?? STATUS_STYLE[''];
+  return (
+    <span className={`px-2 py-0.5 rounded-full border text-[10px] uppercase tracking-[0.15em] ${s.cls}`}>
+      {s.label}
+    </span>
+  );
+};
+
+// Roll-up of grading states across all Part 1 answers, with a one-click retry for
+// everything that isn't graded yet (queued / grading / failed / never).
+const GradeSummary = ({
+  subs,
+  onRetryAll,
+  busy,
+}: {
+  subs: GMQuizSubmission[];
+  onRetryAll: () => void;
+  busy: boolean;
+}) => {
+  if (subs.length === 0) return null;
+  const counts = subs.reduce<Record<string, number>>((acc, s) => {
+    const k = s.gradeStatus || '';
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const incomplete = subs.length - (counts['graded'] || 0);
+  const order: [string, string][] = [
+    ['graded', 'Graded'],
+    ['grading', 'Grading'],
+    ['queued', 'Queued'],
+    ['failed', 'Failed'],
+    ['', 'Not graded'],
+  ];
+  return (
+    <div className="flex items-center gap-3 flex-wrap mt-3 text-xs text-bone/60">
+      {order
+        .filter(([k]) => counts[k])
+        .map(([k, label]) => (
+          <span key={k}>
+            {label}: <span className="text-bone">{counts[k]}</span>
+          </span>
+        ))}
+      {incomplete > 0 && (
+        <button
+          onClick={onRetryAll}
+          disabled={busy}
+          className="ml-auto px-3 py-1 rounded-md border border-gold/50 text-gold uppercase tracking-[0.12em] disabled:opacity-40"
+        >
+          Retry {incomplete} incomplete
+        </button>
+      )}
+    </div>
+  );
+};
+
 const Part1Row = ({ sub, onSaved }: { sub: GMQuizSubmission; onSaved: () => void }) => {
   const [bt, setBt] = useState(String(sub.awardedBt));
   const [busy, setBusy] = useState(false);
+  const graded = sub.gradeStatus === 'graded' || sub.aiScore != null;
 
-  // Pre-fill the BT box with the AI's recommendation when grading lands, so the
-  // GM just confirms. Keyed on aiScore so a later poll doesn't clobber GM edits.
+  // Track the applied value. AI grades are applied automatically as they land;
+  // this box is only for the occasional manual override.
   useEffect(() => {
     setBt(String(sub.awardedBt));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sub.aiScore]);
+  }, [sub.awardedBt]);
 
-  const save = async () => {
+  // Optional override — applies immediately on blur (no confirmation step).
+  const commit = async () => {
+    const n = Number(bt) || 0;
+    if (n === sub.awardedBt) return;
     setBusy(true);
     try {
-      await gmOverridePart1BT(sub.id, Number(bt) || 0);
+      await gmOverridePart1BT(sub.id, n);
       onSaved();
     } finally {
       setBusy(false);
     }
   };
+
+  const retry = async () => {
+    setBusy(true);
+    try {
+      await gmRegradePart1(sub.id);
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card title={`${sub.characterName || '—'} · ${sub.houseName}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <StatusPill status={sub.gradeStatus} />
+        {sub.gradeStatus !== 'graded' && (
+          <button
+            onClick={retry}
+            disabled={busy}
+            className="text-xs text-gold uppercase tracking-[0.12em] disabled:opacity-40"
+          >
+            Retry
+          </button>
+        )}
+      </div>
       <p className="text-bone bg-black/50 rounded-md p-3 mb-2 whitespace-pre-wrap text-sm">
         {sub.answer || <span className="text-bone/40">— no answer —</span>}
       </p>
+      {sub.gradeStatus === 'failed' && sub.gradeError && (
+        <p className="text-xs text-blood-bright mb-2">Error: {sub.gradeError}</p>
+      )}
       {sub.aiRationale && (
         <p className="text-xs text-bone/60 italic mb-3">AI: “{sub.aiRationale}”</p>
       )}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-bone/50">
-          AI score: {sub.aiScore == null ? '—' : sub.aiScore}
+        <span className={`text-sm font-semibold ${graded ? 'text-green-400' : 'text-bone/40'}`}>
+          {graded ? `${sub.awardedBt} BT applied` : 'Awaiting grade…'}
         </span>
-        <label className="text-xs text-bone/50 ml-auto">BT</label>
+        <label className="text-xs text-bone/40 ml-auto">Override</label>
         <input
           value={bt}
           onChange={(e) => setBt(e.target.value.replace(/[^0-9]/g, ''))}
-          className="w-16 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-center"
-        />
-        <button
-          onClick={save}
+          onBlur={commit}
           disabled={busy}
-          className="px-4 py-2 rounded-md bg-blood text-bone uppercase tracking-[0.12em] text-sm disabled:opacity-40"
-        >
-          Confirm
-        </button>
+          className="w-16 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-center disabled:opacity-40"
+        />
       </div>
+      <p className="text-[11px] text-bone/40 mt-1.5">
+        AI grades apply automatically — edit the box only to override.
+      </p>
     </Card>
   );
 };
@@ -507,7 +602,7 @@ const QuizEditor = () => {
               <span className="text-[11px] uppercase tracking-[0.15em] text-gold">Part 2 — multiple choice</span>
               <button
                 onClick={() =>
-                  setQ({ ...q, part2: [...q.part2, { prompt: '', options: ['', ''], correctAnswer: '', hfValue: 3, tier: 'medium' }] })
+                  setQ({ ...q, part2: [...q.part2, { prompt: '', options: ['', ''], correctAnswer: '', hfValue: 1, tier: 'medium' }] })
                 }
                 className="text-xs text-gold uppercase tracking-[0.15em]"
               >

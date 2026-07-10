@@ -2,18 +2,17 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
 // POST /gm/quiz/part1 — open or close Part 1 (the open-end round). Opening it
@@ -193,115 +192,106 @@ func scorePart2Favor(questions []models.VampireQuizQuestion, answers []db.Part2A
 	return out
 }
 
-// POST /gm/quiz/part1/grade — kick off AI grading of every Part 1 response in
-// the background (each response → Blood Tokens). The GM list polls for results.
-func (s *server) gmGradePart1(ctx *gin.Context) {
-	s.gradingMu.Lock()
-	if s.grading {
-		s.gradingMu.Unlock()
-		ctx.JSON(http.StatusOK, gin.H{"status": "already grading"})
-		return
+// enqueueGrade queues one grading job for a submission and flips it to "queued".
+// asynq auto-retries are bounded (MaxRetry) so a persistent failure lands in the
+// "failed" state for the GM to retry manually, rather than retrying forever.
+func (s *server) enqueueGrade(ctx context.Context, p1q *models.VampireQuizQuestion, sub models.VampireQuizSubmission, maxBT int) error {
+	payload, err := json.Marshal(jobs.GradeQuizSubmissionTaskPayload{
+		SubmissionID: sub.ID,
+		PlayerID:     sub.PlayerID,
+		Prompt:       p1q.Prompt,
+		Rubric:       p1q.Rubric,
+		Answer:       sub.Answer,
+		MaxBT:        maxBT,
+	})
+	if err != nil {
+		return err
 	}
-	s.grading = true
-	s.gradingMu.Unlock()
-
-	s.logGM(ctx, "grade_quiz_part1", map[string]interface{}{})
-
-	// Run in the background so the request doesn't block on many LLM calls.
-	go func() {
-		defer func() {
-			s.gradingMu.Lock()
-			s.grading = false
-			s.gradingMu.Unlock()
-		}()
-		s.gradePart1(context.Background())
-	}()
-
-	ctx.JSON(http.StatusOK, gin.H{"status": "grading started"})
+	if _, err := s.asyncClient.Enqueue(
+		asynq.NewTask(jobs.GradeQuizSubmissionTaskType, payload),
+		asynq.Queue("grading"),
+		asynq.MaxRetry(3),
+	); err != nil {
+		return err
+	}
+	_ = s.dbClient.Vampire().SetQuizGradeStatus(ctx, sub.ID, models.QuizGradeStatusQueued, "")
+	return nil
 }
 
-func (s *server) gradePart1(ctx context.Context) {
+// POST /gm/quiz/part1/grade — enqueue one AI-grading job per Part 1 response.
+// The job-runner grades them in parallel and applies the Blood Tokens directly;
+// the GM list polls for results. Grades apply automatically (no confirmation).
+func (s *server) gmGradePart1(ctx *gin.Context) {
+	s.gradePart1(ctx, false, nil)
+}
+
+// POST /gm/quiz/part1/regrade — re-enqueue grading. With a submissionId, retries
+// just that one; otherwise retries every submission not already "graded" (i.e.
+// queued/grading/failed/never — the ones that could be stuck).
+func (s *server) gmRegradePart1(ctx *gin.Context) {
+	var body struct {
+		SubmissionID string `json:"submissionId"`
+	}
+	_ = ctx.ShouldBindJSON(&body)
+	var only *uuid.UUID
+	if body.SubmissionID != "" {
+		id, err := uuid.Parse(body.SubmissionID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission id"})
+			return
+		}
+		only = &id
+	}
+	s.gradePart1(ctx, true, only)
+}
+
+// gradePart1 enqueues grading jobs. incompleteOnly skips already-graded answers
+// (for retries); only, when set, restricts to a single submission.
+func (s *server) gradePart1(ctx *gin.Context, incompleteOnly bool, only *uuid.UUID) {
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "grading queue is not configured"})
+		return
+	}
 	v := s.dbClient.Vampire()
 	p1q, err := v.GetPart1Question(ctx)
-	if err != nil || p1q == nil {
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p1q == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "no Part 1 question configured"})
 		return
 	}
 	maxBT := p1q.MaxBT
 	if maxBT <= 0 {
 		maxBT = 6
 	}
-
 	subs, err := v.ListQuizSubmissions(ctx)
 	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	queued := 0
 	for _, sub := range subs {
 		if sub.QuestionID != p1q.ID {
 			continue
 		}
-		score, rationale := s.aiGradePart1(p1q, sub.Answer, maxBT)
-		sf := float64(score)
-		_ = v.UpdateQuizSubmissionGrade(ctx, sub.ID, &sf, score)
-		_ = v.SetQuizSubmissionRationale(ctx, sub.ID, rationale)
-		// Record the BT idempotently (one entry per player for Part 1).
-		_ = v.DeleteBloodTokensBySourceForPlayer(ctx, sub.PlayerID, "quiz_part1")
-		if score > 0 {
-			_ = v.AddBloodTokens(ctx, &models.VampireBloodTokenLog{
-				PlayerID: sub.PlayerID,
-				Delta:    score,
-				Reason:   "End quiz (Part 1)",
-				Source:   "quiz_part1",
-				GMName:   "quiz",
-			})
+		if only != nil && sub.ID != *only {
+			continue
 		}
-	}
-}
-
-func (s *server) aiGradePart1(q *models.VampireQuizQuestion, answer string, maxBT int) (int, string) {
-	if strings.TrimSpace(answer) == "" || s.deepPriest == nil {
-		return 0, ""
-	}
-	prompt := fmt.Sprintf(`You are grading a murder-mystery quiz answer for accuracy.
-
-CANONICAL TRUTH (rubric):
-%s
-
-THE QUESTION ASKED:
-%s
-
-THE PLAYER'S ANSWER:
-%s
-
-Score the answer from 0 to %d on how accurately and completely it captures the canonical truth, where %d means it captures essentially everything and 0 means nothing relevant.
-
-Reply in EXACTLY this format and nothing else:
-SCORE: <integer 0-%d>
-WHY: <one short sentence, ~15 words max, on what the answer got right or missed>`,
-		q.Rubric, q.Prompt, answer, maxBT, maxBT, maxBT)
-
-	ans, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
-	if err != nil || ans == nil {
-		return 0, "" // graceful: a GM can set the BT manually
-	}
-	return parseScoreAndWhy(ans.Answer, maxBT)
-}
-
-// parseScoreAndWhy pulls "SCORE: n" and "WHY: ..." out of the grader's reply.
-func parseScoreAndWhy(text string, maxBT int) (int, string) {
-	scoreText := text
-	if i := strings.Index(strings.ToUpper(text), "SCORE:"); i >= 0 {
-		scoreText = text[i+len("SCORE:"):]
-	}
-	score := clampInt(parseFirstInt(scoreText), 0, maxBT)
-
-	rationale := ""
-	if i := strings.Index(strings.ToUpper(text), "WHY:"); i >= 0 {
-		rationale = strings.TrimSpace(text[i+len("WHY:"):])
-		if nl := strings.IndexAny(rationale, "\r\n"); nl >= 0 {
-			rationale = strings.TrimSpace(rationale[:nl])
+		if incompleteOnly && sub.GradeStatus == models.QuizGradeStatusGraded {
+			continue
 		}
+		if err := s.enqueueGrade(ctx, p1q, sub, maxBT); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue grading: " + err.Error()})
+			return
+		}
+		queued++
 	}
-	return score, rationale
+
+	s.logGM(ctx, "grade_quiz_part1", map[string]interface{}{"queued": queued, "retry": incompleteOnly})
+	ctx.JSON(http.StatusOK, gin.H{"status": "grading queued", "queued": queued})
 }
 
 // POST /gm/quiz/part1/override — a GM adjusts the BT awarded for one response.
@@ -367,23 +357,3 @@ func (s *server) gmListQuizSubmissions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"submissions": details})
 }
 
-var intRe = regexp.MustCompile(`-?\d+`)
-
-func parseFirstInt(s string) int {
-	m := intRe.FindString(s)
-	if m == "" {
-		return 0
-	}
-	n, _ := strconv.Atoi(m)
-	return n
-}
-
-func clampInt(n, lo, hi int) int {
-	if n < lo {
-		return lo
-	}
-	if n > hi {
-		return hi
-	}
-	return n
-}

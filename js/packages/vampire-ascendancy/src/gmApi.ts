@@ -189,6 +189,9 @@ export interface GMQuizSubmission {
   aiRationale: string;
   awardedBt: number;
   locked: boolean;
+  gradeStatus: string; // '' | queued | grading | graded | failed
+  gradeError: string;
+  gradeAttempts: number;
   guestLabel: string;
   characterName: string;
   houseName: string;
@@ -202,6 +205,12 @@ export const gmSetPart1Open = (open: boolean) =>
 export const gmSetPart2Open = (open: boolean) =>
   gm<GameState>('/quiz/part2', { method: 'POST', body: JSON.stringify({ open }) });
 export const gmGradePart1 = () => gm<{ status: string }>('/quiz/part1/grade', { method: 'POST' });
+// Retry grading: omit submissionId to re-enqueue every not-yet-graded answer.
+export const gmRegradePart1 = (submissionId?: string) =>
+  gm<{ status: string; queued: number }>('/quiz/part1/regrade', {
+    method: 'POST',
+    body: JSON.stringify(submissionId ? { submissionId } : {}),
+  });
 export const gmOverridePart1BT = (submissionId: string, awardedBt: number) =>
   gm<{ ok: boolean }>('/quiz/part1/override', {
     method: 'POST',

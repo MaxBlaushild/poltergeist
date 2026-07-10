@@ -76,6 +76,7 @@ func main() {
 	locationSeederClient := locationseeder.NewClient(googlemapsClient, dbClient, deepPriestClient, awsClient)
 	dungeonmasterClient := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriestClient, locationSeederClient, awsClient, client)
 
+	gradeQuizSubmissionProcessor := processors.NewGradeQuizSubmissionProcessor(dbClient, deepPriestClient)
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	processRecurringQuestsProcessor := processors.NewProcessRecurringQuestsProcessor(dbClient)
@@ -159,8 +160,8 @@ func main() {
 
 	mux := asynq.NewServeMux()
 
-	// Add error logging middleware to each handler
-	mux.Use(func(h asynq.Handler) asynq.Handler {
+	// Error logging middleware, shared by the main and grading servers.
+	errLogging := func(h asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 			err := h.ProcessTask(ctx, t)
 			if err != nil {
@@ -168,7 +169,8 @@ func main() {
 			}
 			return err
 		})
-	})
+	}
+	mux.Use(errLogging)
 
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
@@ -237,6 +239,27 @@ func main() {
 		return nil
 	}))
 
+	// Quiz grading runs on its own dedicated queue + server with a hard
+	// concurrency cap, so a burst of submissions graded at the reveal can't
+	// exceed the LLM provider's rate limits. The main server does not process the
+	// "grading" queue, so these are the only workers that touch it.
+	gradingMux := asynq.NewServeMux()
+	gradingMux.Use(errLogging)
+	gradingMux.Handle(jobs.GradeQuizSubmissionTaskType, &gradeQuizSubmissionProcessor)
+	gradingSrv := asynq.NewServer(
+		redisConnOpt,
+		asynq.Config{
+			Concurrency:     4, // at most 4 concurrent LLM grading calls
+			Queues:          map[string]int{"grading": 1},
+			ShutdownTimeout: 5 * time.Minute,
+		},
+	)
+	go func() {
+		if err := gradingSrv.Run(gradingMux); err != nil {
+			log.Fatalf("could not run grading server: %v", err)
+		}
+	}()
+
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
 	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueQuestGenerationsTaskType, nil)); err != nil {
@@ -301,6 +324,7 @@ func main() {
 
 		// Stop accepting new tasks and wait for in-progress tasks to complete
 		srv.Shutdown()
+		gradingSrv.Shutdown()
 
 		// Stop the scheduler
 		scheduler.Shutdown()

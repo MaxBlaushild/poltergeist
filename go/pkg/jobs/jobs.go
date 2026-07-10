@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	GradeQuizSubmissionTaskType                        = "grade_quiz_submission"
 	GenerateQuestForZoneTaskType                       = "generate_quest_for_zone"
 	QueueQuestGenerationsTaskType                      = "queue_quest_generations"
 	CreateProfilePictureTaskType                       = "create_profile_picture"
@@ -139,6 +140,18 @@ const (
 	ThumbnailEntityStatic                    = "static"
 	ThumbnailBucket                          = "crew-profile-icons"
 )
+
+// GradeQuizSubmissionTaskPayload grades one Part 1 quiz answer. The enqueuer
+// packs everything the worker needs (question + rubric + answer) so the worker
+// only reads/writes the submission and the Blood Token ledger.
+type GradeQuizSubmissionTaskPayload struct {
+	SubmissionID uuid.UUID `json:"submissionId"`
+	PlayerID     uuid.UUID `json:"playerId"`
+	Prompt       string    `json:"prompt"`
+	Rubric       string    `json:"rubric"`
+	Answer       string    `json:"answer"`
+	MaxBT        int       `json:"maxBt"`
+}
 
 type GenerateQuestForZoneTaskPayload struct {
 	ZoneID                uuid.UUID  `json:"zone_id"`

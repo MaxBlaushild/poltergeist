@@ -603,6 +603,9 @@ type QuizSubmissionDetail struct {
 	AIRationale   string    `json:"aiRationale"`
 	AwardedBT     int       `json:"awardedBt"`
 	Locked        bool      `json:"locked"`
+	GradeStatus   string    `json:"gradeStatus"`
+	GradeError    string    `json:"gradeError"`
+	GradeAttempts int       `json:"gradeAttempts"`
 	GuestLabel    string    `json:"guestLabel"`
 	CharacterName string    `json:"characterName"`
 	HouseName     string    `json:"houseName"`
@@ -617,6 +620,7 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]Qui
 		Table("vampire_quiz_submissions s").
 		Select(`s.id, s.player_id, s.question_id, s.answer, s.is_correct, s.ai_score,
 			s.ai_rationale, s.awarded_bt, s.locked,
+			s.grade_status, s.grade_error, s.grade_attempts,
 			q.part AS part,
 			p.guest_label AS guest_label,
 			COALESCE(c.name, '') AS character_name,
@@ -674,6 +678,32 @@ func (h *vampireHandler) SetQuizSubmissionRationale(ctx context.Context, id uuid
 	return h.db.WithContext(ctx).Model(&models.VampireQuizSubmission{}).
 		Where("id = ?", id).
 		Update("ai_rationale", rationale).Error
+}
+
+// SetQuizGradeStatus records a grading state transition (queued / graded / failed)
+// along with any error message.
+func (h *vampireHandler) SetQuizGradeStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireQuizSubmission{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"grade_status": status,
+			"grade_error":  errMsg,
+			"updated_at":   time.Now(),
+		}).Error
+}
+
+// MarkQuizGradeStarted flips a submission into the "grading" state, stamping the
+// start time and bumping the attempt count (for stuck detection / diagnostics).
+func (h *vampireHandler) MarkQuizGradeStarted(ctx context.Context, id uuid.UUID) error {
+	now := time.Now()
+	return h.db.WithContext(ctx).Model(&models.VampireQuizSubmission{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"grade_status":     models.QuizGradeStatusGrading,
+			"grade_started_at": now,
+			"grade_attempts":   gorm.Expr("grade_attempts + 1"),
+			"updated_at":       now,
+		}).Error
 }
 
 // Part2Answer is one player's answer to a Part 2 question, with their house —
