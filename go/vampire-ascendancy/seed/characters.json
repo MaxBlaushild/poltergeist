@@ -2071,6 +2071,45 @@
       ],
       "image_url": "",
       "player_name": ""
+    },
+    {
+      "name": "Belladonna Motley",
+      "title": "The Licensed Fool",
+      "house": "Marquess's Court",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Bright-eyed, sharp-tongued, and far less harmless than your bells suggest. You are Belladonna Motley, the Court's licensed fool: the only person in the Crimson Court permitted to mock power to its face and live.\n\nEvery house has traditions. The Court has you.\n\nYou perform at ceremonies, interrupt speeches, sing filthy little verses about ancient bloodlines, and say aloud what everyone else is too frightened or too polite to mention. The nobles laugh because they are expected to. The Marquess laughs because it reminds everyone that she is powerful enough to be mocked without being threatened.\n\nThat is the official arrangement, anyway.\n\nThe truth is more useful. A joke can enter rooms where accusations cannot. A rhyme can test a guilty conscience. A cruel little song can make a liar flinch before they remember they are supposed to smile.\n\nYou are not a prophet, not a spy, and certainly not a statesman. You are something older and more dangerous: a sanctioned disruption. The Court has given you permission to tell the truth, provided everyone can pretend you did not mean it.\n\nYou mean almost all of it.\n\nAnd despite what people assume, mockery is not hatred. You have spent too many years watching the Court from the edge of every room to believe that tearing down power is the same thing as improving it. The Marquess is vain, ruthless, controlling, and far too pleased with herself.\n\nShe is also the reason this room has not eaten itself alive.\n\nYou are not blind to her sins. You are simply old enough to know that conspirators are rarely as noble as they sound before the knives come out.",
+      "post_act1_context": "Tonight, the jokes are landing strangely.\n\nBefore the ceremony, you did what you always do: wandered the room, needled the proud, flattered the foolish, and watched who laughed too quickly. But Valen Drear has been wrong all evening. You made a passing joke about heirs on strings and masters with bloody hands. Valen laughed once, then went still, as though the laugh had been pulled out of him and then punished.\n\nThe Marquess noticed too.\n\nThat is when you knew the joke had found a wound.\n\nNow Caspian has failed to appear, Valen has stepped forward, and the Court is pretending this is still a ceremony instead of a room full of knives. Everyone is suddenly speaking carefully. Everyone is suddenly listening.\n\nYou can feel the shape of conspiracy in the room: the little silences, the sudden glances, the people who look angry before they look afraid. You do not know who means to move against the Marquess tonight, but you are increasingly certain someone does.\n\nPerhaps they are right about her.\n\nPerhaps they are also fools.\n\nIf the Marquess falls tonight, it will not be into a neat legal succession and a polite round of applause. It will be blood, panic, opportunists, and every ambitious creature in the Court discovering that “liberation” is just another word for an empty chair.\n\nWhich means tonight, your license may be more useful than ever.\n\nYou can say what others cannot. You can mock treason before it becomes fashionable. You can make rebellion sound ridiculous, disloyal, premature, or dangerous. You can defend the Marquess in the only way the Court will accept from you: as a joke everyone slowly realizes was serious.",
+      "secrets": [
+        "Earlier tonight, I made a joke about heirs on strings and masters with bloody hands. Valen Drear laughed once, then went still in a way I did not like at all. The Marquess saw it happen. Her face did not change much, but I have spent years making powerful people laugh. I know the difference between amusement and damage control.",
+        "I mock the Marquess more than anyone in this Court, but I do not want her torn down by fools with daggers and slogans. A bad ruler is dangerous. A power vacuum is worse. If Gruber falls tonight without law, order, or a clear successor, the Court will not become free. It will become meat.",
+        "My license protects me only so long as the Court finds me useful. I can mock the Marquess, insult the houses, and say dangerous things in public, but the privilege has limits. If I press too hard tonight — against the Marquess or against those plotting against her — someone may decide the fool has stopped being funny."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "Publicly insult, tease, or mock three players from three different houses. Each insult must be delivered in character as a joke, rhyme, toast, title, or “official fool's observation.”",
+          "answer_format": "Write the three character names and the insult you gave each one."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "The Fool's Rumor Mill. Start one ridiculous but plausible rumor about tonight's events. Later, find out whether it returned to you changed, improved, distorted, or accidentally closer to the truth. The rumor may concern Caspian's absence, Valen's behavior, the Marquess, secret meetings, succession chaos, blood moving where it should not, or another danger tonight.",
+          "answer_format": "Write the rumor you started, who you told first, and how it changed when you heard it again."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 6,
+          "prompt": "Propaganda in Bells. Create and spread a pro-Marquess slogan, toast, rhyme, or talking point. It must defend her authority, undermine the conspirators, or make rebellion seem foolish, dangerous, premature, or likely to plunge the Court into chaos. Get at least five players to hear it, and at least two players to repeat it, agree with it, or use it in conversation with someone else.",
+          "answer_format": "Write the propaganda you created, the five players who heard it, and the two who repeated, agreed with, or supported it."
+        }
+      ],
+      "image_url": "",
+      "player_name": ""
     }
   ]
 }
