@@ -25,6 +25,17 @@ export const HOUSE_TAGLINE: Record<string, string> = {
 
 export const taglineFor = (house?: string) => (house && HOUSE_TAGLINE[house]) || '';
 
+// Each house's starting advantage, shown on the Dossier. Matched by house name.
+export const HOUSE_ADVANTAGE: Record<string, string> = {
+  Spires: 'Your house starts the game with three extra House Favor.',
+  Cinders: 'Each player in your house starts with one extra Blood Token.',
+  Chains: 'Clues from the Wall of Whispers cost one less Blood Token for members of your house.',
+  Ashglass: 'Relics from the Reliquary cost one less Blood Token each for members of your house.',
+  "Marquess's Court": 'Members of your house get one extra secret when the night begins.',
+};
+
+export const advantageFor = (house?: string) => (house && HOUSE_ADVANTAGE[house]) || '';
+
 // Display label for a house. Drops "of" for the named houses ("House Ashglass"),
 // but keeps it for the Marquess's Court ("House of Marquess's Court").
 export const houseLabel = (house?: string) => {

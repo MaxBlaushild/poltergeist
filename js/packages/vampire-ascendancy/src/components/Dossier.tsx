@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { MeResponse, Secret } from '../types';
-import { accentFor, houseLabel } from '../theme';
+import { accentFor, houseLabel, advantageFor } from '../theme';
 import { VampireMark } from './VampireMark';
 
 type Segment = 'bio' | 'postAct' | 'secrets';
@@ -54,6 +54,13 @@ export const Dossier = ({ me }: { me: MeResponse }) => {
           </>
         )}
       </header>
+
+      {character.house && advantageFor(character.house.name) && (
+        <div className="mb-5 rounded-lg border-2 bg-black/30 p-3 text-center" style={{ borderColor: accent }}>
+          <p className="text-[11px] uppercase tracking-[0.25em] text-gold mb-1">House Advantage</p>
+          <p className="text-bone/90 text-sm leading-relaxed">{advantageFor(character.house.name)}</p>
+        </div>
+      )}
 
       {/* Segmented control — fixed across all three panels. */}
       <div className="flex gap-1 p-1 rounded-lg bg-black/50 border border-blood/30 mb-5">
