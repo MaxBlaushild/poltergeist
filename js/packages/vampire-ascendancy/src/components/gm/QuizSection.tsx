@@ -8,11 +8,12 @@ import {
   gmRescorePart2,
   gmListQuizSubmissions,
   gmGetStandings,
+  gmGetStandingsBreakdown,
   gmGetTally,
   gmGetQuizQuestions,
   gmUpdateQuizQuestions,
 } from '../../gmApi';
-import type { GMQuizSubmission, GMQuizQuestions, GMTallyRow } from '../../gmApi';
+import type { GMQuizSubmission, GMQuizQuestions, GMTallyRow, HouseBreakdown } from '../../gmApi';
 import type { GameState, HouseStanding } from '../../types';
 import { accentFor, formatHF, houseLabel } from '../../theme';
 import { Card } from './GameSection';
@@ -27,6 +28,7 @@ export const QuizSection = ({
   const [subs, setSubs] = useState<GMQuizSubmission[]>([]);
   const [standings, setStandings] = useState<HouseStanding[]>([]);
   const [tally, setTally] = useState<GMTallyRow[]>([]);
+  const [breakdown, setBreakdown] = useState<HouseBreakdown[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -34,6 +36,7 @@ export const QuizSection = ({
     gmListQuizSubmissions().then((d) => setSubs(d.submissions || [])).catch(() => {});
     gmGetStandings().then((d) => setStandings(d.standings || [])).catch(() => {});
     gmGetTally().then((d) => setTally(d.players || [])).catch(() => {});
+    gmGetStandingsBreakdown().then((d) => setBreakdown(d.houses || [])).catch(() => {});
   };
   useEffect(() => {
     loadSubs();
@@ -137,7 +140,7 @@ export const QuizSection = ({
         )}
       </Card>
 
-      <QuizResults subs={subs} standings={standings} tally={tally} />
+      <QuizResults subs={subs} standings={standings} tally={tally} breakdown={breakdown} />
       <Part2Summary subs={part2Subs} />
     </div>
   );
@@ -212,14 +215,23 @@ const tallyToRows = (tally: GMTallyRow[]): PlayerRow[] =>
     notes: t.notes || [],
   }));
 
+const SOURCE_LABEL: Record<string, string> = {
+  quiz_part2: 'End quiz (Part 2)',
+  game: 'Tournament games',
+  mission: 'Missions',
+  manual: 'GM awards',
+};
+
 const QuizResults = ({
   subs,
   standings,
   tally,
+  breakdown,
 }: {
   subs: GMQuizSubmission[];
   standings: HouseStanding[];
   tally: GMTallyRow[];
+  breakdown: HouseBreakdown[];
 }) => {
   if (subs.length === 0) return null;
   // Prefer the authoritative backend tally (item effects resolved); fall back to
@@ -233,9 +245,12 @@ const QuizResults = ({
   const players = (usingTally ? tallyToRows(tally) : buildPlayerRows(subs)).sort(
     (a, b) => a.house.localeCompare(b.house) || b.total - a.total
   );
-  const winner = players
+  // Top three players within the winning house decide the throne (1st/2nd/3rd).
+  const throne = players
     .filter((p) => p.house === winningHouse)
-    .sort((a, b) => b.total - a.total || b.quizBt - a.quizBt || b.correct - a.correct)[0];
+    .sort((a, b) => b.total - a.total || b.quizBt - a.quizBt || b.correct - a.correct)
+    .slice(0, 3);
+  const winner = throne[0];
 
   return (
     <div className="flex flex-col gap-4">
@@ -248,15 +263,21 @@ const QuizResults = ({
             </span>{' '}
             <span className="text-bone/50">({formatHF(houseTotal(houses[0]))} favor)</span>
           </p>
-          {winner && (
-            <p className="text-bone mt-1">
-              Throne:{' '}
-              <span className="text-gold font-semibold">{winner.character}</span>{' '}
-              <span className="text-bone/50">
-                — {winner.total} BT ({winner.quizBt} quiz + {winner.physicalBt} on hand
-                {winner.itemBt !== 0 ? ` ${winner.itemBt > 0 ? '+' : '−'}${Math.abs(winner.itemBt)} items` : ''})
-              </span>
-            </p>
+          {throne.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1">
+              {throne.map((p, i) => (
+                <p key={p.character} className="text-bone">
+                  <span className="mr-2">{['🥇', '🥈', '🥉'][i]}</span>
+                  <span className={i === 0 ? 'text-gold font-semibold' : 'font-semibold'}>
+                    {p.character}
+                  </span>{' '}
+                  <span className="text-bone/50">
+                    — {p.total} BT ({p.quizBt} quiz + {p.physicalBt} on hand
+                    {p.itemBt !== 0 ? ` ${p.itemBt > 0 ? '+' : '−'}${Math.abs(p.itemBt)} items` : ''})
+                  </span>
+                </p>
+              ))}
+            </div>
           )}
         </Card>
       )}
@@ -272,6 +293,56 @@ const QuizResults = ({
           ])}
         />
       </Card>
+
+      {breakdown.length > 0 && (
+        <Card title="House Favor breakdown">
+          <div className="flex flex-col gap-3">
+            {breakdown.map((h) => {
+              const rows = Object.entries(h.sources)
+                .filter(([, amt]) => amt)
+                .sort((a, b) => b[1] - a[1]);
+              return (
+                <div key={h.houseId} className="border-b border-blood/15 last:border-0 pb-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-semibold" style={{ color: accentFor(h.name) }}>
+                      {houseLabel(h.name)}
+                    </span>
+                    <span className="text-bone font-semibold">{formatHF(h.total)}</span>
+                  </div>
+                  <div className="mt-1 flex flex-col gap-0.5 text-sm text-bone/70">
+                    {rows.map(([src, amt]) => (
+                      <div key={src} className="flex justify-between">
+                        <span>{SOURCE_LABEL[src] ?? src}</span>
+                        <span className="text-bone/85">+{formatHF(amt)}</span>
+                      </div>
+                    ))}
+                    {h.itemTotal > 0 && (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Items</span>
+                          <span className="text-gold">+{formatHF(h.itemTotal)}</span>
+                        </div>
+                        {h.items.map((it, i) => (
+                          <div key={i} className="flex justify-between pl-3 text-xs text-bone/45">
+                            <span>
+                              · {it.name}
+                              {it.holder && ` (${it.holder})`}
+                            </span>
+                            <span>+{formatHF(it.amount)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {rows.length === 0 && h.itemTotal === 0 && (
+                      <span className="text-bone/40 italic">No favor yet.</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card title="Player results">
         <Table

@@ -10,19 +10,102 @@ import (
 	"github.com/google/uuid"
 )
 
-// GET /gm/items — the item catalog, for the assign dropdown.
+type itemWithPhoto struct {
+	models.VampireItem
+	HasPhoto bool `json:"hasPhoto"`
+}
+
+// GET /gm/items — the item catalog, for the assign dropdown, with a hasPhoto flag.
 func (s *server) gmListItems(ctx *gin.Context) {
-	items, err := s.dbClient.Vampire().ListItems(ctx)
+	v := s.dbClient.Vampire()
+	items, err := v.ListItems(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"items": items})
+	photoIDs, _ := v.ItemPhotoIDs(ctx)
+	has := map[string]bool{}
+	for _, id := range photoIDs {
+		has[id.String()] = true
+	}
+	out := make([]itemWithPhoto, 0, len(items))
+	for _, it := range items {
+		out = append(out, itemWithPhoto{VampireItem: it, HasPhoto: has[it.ID.String()]})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"items": out})
+}
+
+// GET /items/:id/photo — serve a catalog item's reference photo (no auth; not
+// secret, and the catalog id isn't exposed to players — lets <img src> load it).
+func (s *server) getItemPhoto(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
+		return
+	}
+	photo, err := s.dbClient.Vampire().GetItemPhoto(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if photo == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "no photo"})
+		return
+	}
+	ctx.Header("Cache-Control", "private, max-age=3600")
+	ctx.Data(http.StatusOK, photo.ContentType, photo.Data)
+}
+
+// POST /gm/items/:id/photo — set a catalog item's reference photo from a data URL.
+func (s *server) gmSetItemPhoto(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
+		return
+	}
+	var body struct {
+		DataUrl string `json:"dataUrl"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ct, data, err := decodeDataURL(body.DataUrl)
+	if err != nil || len(data) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid image"})
+		return
+	}
+	if len(data) > maxPhotoBytes {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "image too large"})
+		return
+	}
+	if err := s.dbClient.Vampire().SetItemPhoto(ctx, id, ct, data); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "set_item_photo", map[string]interface{}{"id": id.String()})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// DELETE /gm/items/:id/photo — remove a catalog item's reference photo.
+func (s *server) gmDeleteItemPhoto(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
+		return
+	}
+	if err := s.dbClient.Vampire().DeleteItemPhoto(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logGM(ctx, "delete_item_photo", map[string]interface{}{"id": id.String()})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 type itemBody struct {
 	Code            string `json:"code"`
 	Name            string `json:"name"`
+	Category        string `json:"category"`
 	Description     string `json:"description"`
 	Effect          string `json:"effect"`
 	TargetsPlayer   bool   `json:"targetsPlayer"`
@@ -41,6 +124,7 @@ func (b itemBody) toModel() *models.VampireItem {
 	return &models.VampireItem{
 		Code:            b.Code,
 		Name:            strings.TrimSpace(b.Name),
+		Category:        b.Category,
 		Description:     b.Description,
 		Effect:          b.Effect,
 		TargetsPlayer:   b.TargetsPlayer,

@@ -155,6 +155,17 @@ export interface GMGame {
   runNotes: string;
 }
 export const gmGetStandings = () => gm<{ standings: HouseStanding[] }>('/standings');
+
+export interface HouseBreakdown {
+  houseId: string;
+  name: string;
+  sources: Record<string, number>; // e.g. { quiz_part2: 4.5, game: 8, manual: 2 }
+  items: { name: string; amount: number; holder: string }[];
+  itemTotal: number;
+  total: number;
+}
+export const gmGetStandingsBreakdown = () =>
+  gm<{ houses: HouseBreakdown[] }>('/standings/breakdown');
 export const gmListGames = () => gm<{ games: GMGame[] }>('/games');
 export const gmCreateGame = (name: string, ordinal = 0) =>
   gm<{ id: string }>('/games', { method: 'POST', body: JSON.stringify({ name, ordinal }) });
@@ -304,6 +315,7 @@ export interface GMItem {
   id: string;
   code: string;
   name: string;
+  category: string;
   description: string;
   effect: string;
   targetsPlayer: boolean;
@@ -316,8 +328,13 @@ export interface GMItem {
   immune: boolean;
   reflect: boolean;
   stripResistance: boolean;
+  hasPhoto: boolean;
 }
-export type GMItemDraft = Omit<GMItem, 'id'>;
+export type GMItemDraft = Omit<GMItem, 'id' | 'hasPhoto'>;
+
+// Public URL for a catalog item's reference photo (cache-busted by `v`).
+export const itemPhotoUrl = (id: string, v?: string | number) =>
+  `${API_BASE}/vampire-ascendancy/items/${id}/photo${v ? `?v=${v}` : ''}`;
 export interface GMPlayerItem {
   id: string;
   playerId: string;
@@ -334,6 +351,10 @@ export const gmUpdateItem = (id: string, draft: GMItemDraft) =>
   gm<{ ok: boolean }>(`/items/${id}`, { method: 'PUT', body: JSON.stringify(draft) });
 export const gmDeleteItem = (id: string) =>
   gm<{ ok: boolean }>(`/items/${id}`, { method: 'DELETE' });
+export const gmSetItemPhoto = (id: string, dataUrl: string) =>
+  gm<{ ok: boolean }>(`/items/${id}/photo`, { method: 'POST', body: JSON.stringify({ dataUrl }) });
+export const gmDeleteItemPhoto = (id: string) =>
+  gm<{ ok: boolean }>(`/items/${id}/photo`, { method: 'DELETE' });
 export const gmListPlayerItems = () => gm<{ playerItems: GMPlayerItem[] }>('/player-items');
 export const gmAssignItem = (playerId: string, itemId: string) =>
   gm<{ id: string }>('/player-items', { method: 'POST', body: JSON.stringify({ playerId, itemId }) });

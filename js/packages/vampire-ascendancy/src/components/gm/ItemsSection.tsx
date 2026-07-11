@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   gmListItems,
   gmListPlayers,
@@ -9,13 +9,109 @@ import {
   gmUpdateItem,
   gmDeleteItem,
   gmTransferPlayerItem,
+  gmSetItemPhoto,
+  gmDeleteItemPhoto,
+  itemPhotoUrl,
 } from '../../gmApi';
 import type { GMItem, GMItemDraft, GMPlayer, GMPlayerItem } from '../../gmApi';
 import { Card } from './GameSection';
 
+// Load a picked image, downscale it (phone photos are multi-MB), return a JPEG data URL.
+const resizeImage = (file: File, maxDim = 1200, quality = 0.8): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const cctx = canvas.getContext('2d');
+        if (!cctx) return reject(new Error('no canvas'));
+        cctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+// Item reference photo + camera-capture control. On a phone, the file input's
+// capture="environment" opens the rear camera directly.
+const ItemPhoto = ({ item, onChanged }: { item: GMItem; onChanged: () => void }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [ver, setVer] = useState(1);
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    try {
+      await gmSetItemPhoto(item.id, await resizeImage(file));
+      setVer(Date.now());
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await gmDeleteItemPhoto(item.id);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {item.hasPhoto ? (
+        <img
+          src={itemPhotoUrl(item.id, ver)}
+          alt={item.name}
+          className="w-12 h-12 rounded object-cover border border-blood/40"
+        />
+      ) : (
+        <div className="w-12 h-12 rounded border border-dashed border-blood/40 flex items-center justify-center text-bone/30">
+          📷
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={pick}
+        className="hidden"
+      />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="text-xs text-gold uppercase tracking-[0.15em] disabled:opacity-40"
+      >
+        {busy ? '…' : item.hasPhoto ? '📷 Change' : '📷 Add photo'}
+      </button>
+      {item.hasPhoto && !busy && (
+        <button onClick={remove} className="text-xs text-blood-bright uppercase tracking-[0.15em]">
+          Remove
+        </button>
+      )}
+    </div>
+  );
+};
+
 const emptyDraft: GMItemDraft = {
   code: '',
   name: '',
+  category: '',
   description: '',
   effect: '',
   targetsPlayer: false,
@@ -128,6 +224,7 @@ export const ItemsSection = () => {
     byPlayer.get(h.playerName)!.push(h);
   }
   const owners = [...byPlayer.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const itemByName = new Map(items.map((i) => [i.name, i]));
 
   return (
     <div className="flex flex-col gap-4">
@@ -161,6 +258,16 @@ export const ItemsSection = () => {
               </option>
             ))}
           </select>
+          {(() => {
+            const sel = items.find((i) => i.id === itemId);
+            return sel?.hasPhoto ? (
+              <img
+                src={itemPhotoUrl(sel.id)}
+                alt={sel.name}
+                className="w-24 h-24 rounded object-cover border border-blood/40"
+              />
+            ) : null;
+          })()}
           <button
             onClick={assign}
             disabled={busy || !playerId || !itemId}
@@ -188,9 +295,17 @@ export const ItemsSection = () => {
                   <div className="flex-1 min-w-0">
                     <p className="text-bone text-sm">
                       {it.name}
+                      {it.category && (
+                        <span className="ml-2 text-[10px] uppercase tracking-[0.15em] rounded-full border border-blood/40 px-1.5 py-0.5 text-bone/60">
+                          {it.category}
+                        </span>
+                      )}
                       {it.targetsPlayer && <span className="ml-2 text-[10px] uppercase tracking-[0.15em] text-blood-bright">targeted</span>}
                     </p>
                     {effectTag(it) && <p className="text-xs text-gold/80">{effectTag(it)}</p>}
+                    <div className="mt-1.5">
+                      <ItemPhoto item={it} onChanged={load} />
+                    </div>
                   </div>
                   <button
                     onClick={() => setEditingId((cur) => (cur === it.id ? null : it.id))}
@@ -236,6 +351,7 @@ export const ItemsSection = () => {
                 <HoldingRow
                   key={h.id}
                   holding={h}
+                  photoItem={itemByName.get(h.itemName)}
                   players={assignablePlayers}
                   busy={busy}
                   onRemove={remove}
@@ -254,12 +370,14 @@ export const ItemsSection = () => {
 // picker that hands the item to a different player (the current owner loses it).
 const HoldingRow = ({
   holding,
+  photoItem,
   players,
   busy,
   onRemove,
   onTransfer,
 }: {
   holding: GMPlayerItem;
+  photoItem?: GMItem;
   players: GMPlayer[];
   busy: boolean;
   onRemove: (id: string) => void;
@@ -271,6 +389,13 @@ const HoldingRow = ({
   return (
     <div className="border-b border-blood/15 last:border-0 pb-2">
       <div className="flex items-center gap-2">
+        {photoItem?.hasPhoto && (
+          <img
+            src={itemPhotoUrl(photoItem.id)}
+            alt={holding.itemName}
+            className="w-10 h-10 rounded object-cover border border-blood/40 shrink-0"
+          />
+        )}
         <div className="flex-1 min-w-0">
           <p className="text-bone text-sm">{holding.itemName}</p>
           {holding.targetsPlayer && (
@@ -345,7 +470,7 @@ const effectTag = (it: {
 };
 
 const toDraft = (it: GMItem): GMItemDraft => {
-  const { id: _id, ...rest } = it;
+  const { id: _id, hasPhoto: _p, ...rest } = it;
   return rest;
 };
 
@@ -423,6 +548,12 @@ const ItemForm = ({
         placeholder="Name (required)"
         value={draft.name}
         onChange={(e) => set('name', e.target.value)}
+      />
+      <input
+        className={field}
+        placeholder="Category (e.g. War, Glory, Protection)"
+        value={draft.category}
+        onChange={(e) => set('category', e.target.value)}
       />
       <textarea
         className={field}

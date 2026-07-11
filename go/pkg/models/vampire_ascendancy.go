@@ -16,6 +16,7 @@ type VampireItem struct {
 	UpdatedAt     time.Time `gorm:"not null" json:"updatedAt"`
 	Code          string    `gorm:"not null;default:''" json:"code"`
 	Name          string    `gorm:"not null" json:"name"`
+	Category      string    `gorm:"not null;default:''" json:"category"` // e.g. War / Glory / Protection
 	Description   string    `gorm:"not null;default:''" json:"description"`
 	Effect        string    `gorm:"not null;default:''" json:"effect"`
 	TargetsPlayer bool      `gorm:"column:targets_player;not null;default:false" json:"targetsPlayer"`
@@ -172,6 +173,16 @@ type VampireSubmissionPhoto struct {
 }
 
 func (VampireSubmissionPhoto) TableName() string { return "vampire_submission_photos" }
+
+// VampireItemPhoto is a single GM-facing reference photo for a catalog item.
+type VampireItemPhoto struct {
+	ItemID      uuid.UUID `gorm:"primary_key;column:item_id" json:"itemId"`
+	ContentType string    `gorm:"column:content_type;not null;default:'image/jpeg'" json:"contentType"`
+	Data        []byte    `gorm:"column:data;type:bytea" json:"-"`
+	UpdatedAt   time.Time `gorm:"not null" json:"updatedAt"`
+}
+
+func (VampireItemPhoto) TableName() string { return "vampire_item_photos" }
 
 type VampireHouseFavorLedger struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`

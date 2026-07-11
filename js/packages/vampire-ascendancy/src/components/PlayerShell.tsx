@@ -46,8 +46,6 @@ export const PlayerShell = () => {
   const [dismissedNotif, setDismissedNotif] = useState(() => localStorage.getItem(DISMISSED_KEY));
   const [quizDismissedPart, setQuizDismissedPart] = useState<number | null>(null);
   const [revealDismissed, setRevealDismissed] = useState(() => localStorage.getItem(REVEAL_KEY));
-  const [unlockToast, setUnlockToast] = useState(false);
-  const prevUnlocked = useRef<boolean | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -86,18 +84,6 @@ export const PlayerShell = () => {
       clearInterval(id);
     };
   }, [token]);
-
-  // Surface the content unlock as a story beat — a brief toast the first time the
-  // evening opens (post-act bio + secrets + missions all become available).
-  const unlocked = me?.gameState.contentUnlocked ?? false;
-  useEffect(() => {
-    if (prevUnlocked.current === false && unlocked) {
-      setUnlockToast(true);
-      const t = setTimeout(() => setUnlockToast(false), 6000);
-      return () => clearTimeout(t);
-    }
-    if (me) prevUnlocked.current = unlocked;
-  }, [unlocked, me]);
 
   const reload = useCallback(() => {
     if (token) getMe(token).then(setMe).catch(() => {});
@@ -160,14 +146,6 @@ export const PlayerShell = () => {
         <NotificationTakeover notification={me.notification} onDismiss={dismissTakeover} />
       )}
       <TopNav active={activeView} onSelect={selectView} onLogout={logout} />
-      {unlockToast && (
-        <div
-          className="fixed left-1/2 -translate-x-1/2 bottom-6 z-40 px-5 py-3 rounded-full bg-blood text-bone shadow-xl text-sm uppercase tracking-[0.15em] cursor-pointer"
-          onClick={() => setUnlockToast(false)}
-        >
-          The evening has begun — your story deepens
-        </div>
-      )}
       {activeView === 'summons' && <Summons />}
       {activeView === 'tournament' && <Tournament />}
       {activeView === 'dossier' && <Dossier me={me} />}

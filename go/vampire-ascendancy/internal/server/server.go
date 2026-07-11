@@ -46,6 +46,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 
 	// Submission photos are served by unguessable id (no token; not secret content).
 	r.GET("/vampire-ascendancy/photos/:id", s.getPhoto)
+	// Item reference photos (GM-facing, but not secret) — served like submission photos.
+	r.GET("/vampire-ascendancy/items/:id/photo", s.getItemPhoto)
 
 	// Public login routes — pick a character + enter its sigil to get a token.
 	r.GET("/vampire-ascendancy/characters", s.listCharactersPublic)
@@ -79,6 +81,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/reset", s.gmResetGame)
 	gm.GET("/export", s.gmExportStandings)
 	gm.GET("/standings", s.getLeaderboard) // same house standings as the player view
+	gm.GET("/standings/breakdown", s.gmStandingsBreakdown)
 	gm.GET("/houses", s.getHouses)
 	gm.POST("/hf", s.gmAwardHouseFavor)
 	gm.POST("/bt", s.gmAwardBloodTokens)
@@ -104,6 +107,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/items", s.gmCreateItem)
 	gm.PUT("/items/:id", s.gmUpdateItem)
 	gm.DELETE("/items/:id", s.gmDeleteItem)
+	gm.POST("/items/:id/photo", s.gmSetItemPhoto)
+	gm.DELETE("/items/:id/photo", s.gmDeleteItemPhoto)
 	gm.GET("/player-items", s.gmListPlayerItems)
 	gm.POST("/player-items", s.gmAssignItem)
 	gm.PUT("/player-items/:id/owner", s.gmTransferPlayerItem)

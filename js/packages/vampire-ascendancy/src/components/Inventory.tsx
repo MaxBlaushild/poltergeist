@@ -88,7 +88,14 @@ const ItemCard = ({
 
   return (
     <div className="rounded-lg border border-blood/40 bg-black/40 p-5">
-      <h2 className="font-display text-xl text-bone mb-1">{item.name}</h2>
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <h2 className="font-display text-xl text-bone">{item.name}</h2>
+        {item.category && (
+          <span className="text-[10px] uppercase tracking-[0.2em] rounded-full border border-blood/40 px-2 py-0.5 text-gold/80">
+            {item.category}
+          </span>
+        )}
+      </div>
       {item.description && <p className="text-bone/80 text-lg leading-relaxed mb-2">{item.description}</p>}
       {item.effect && (
         <p className="text-base text-gold/90 italic mb-1">{item.effect}</p>

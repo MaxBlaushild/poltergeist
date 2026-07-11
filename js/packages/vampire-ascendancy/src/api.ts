@@ -111,6 +111,7 @@ export function getGames(token: string): Promise<{ games: Game[] }> {
 export interface InventoryItem {
   id: string;
   name: string;
+  category: string;
   description: string;
   effect: string;
   targetsPlayer: boolean;

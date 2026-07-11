@@ -349,6 +349,7 @@ func main() {
 			Items []struct {
 				Code            string `json:"code"`
 				Name            string `json:"name"`
+				Category        string `json:"category"`
 				Description     string `json:"description"`
 				Effect          string `json:"effect"`
 				TargetsPlayer   bool   `json:"targets_player"`
@@ -370,6 +371,7 @@ func main() {
 			if err := v.UpsertItem(ctx, &models.VampireItem{
 				Code:            it.Code,
 				Name:            it.Name,
+				Category:        it.Category,
 				Description:     it.Description,
 				Effect:          it.Effect,
 				TargetsPlayer:   it.TargetsPlayer,

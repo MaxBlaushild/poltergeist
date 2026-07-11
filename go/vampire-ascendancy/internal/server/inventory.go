@@ -30,6 +30,7 @@ func (s *server) getInventory(ctx *gin.Context) {
 		row := gin.H{"id": pi.ID, "targetPlayerId": pi.TargetPlayerID}
 		if pi.Item != nil {
 			row["name"] = pi.Item.Name
+			row["category"] = pi.Item.Category
 			row["description"] = pi.Item.Description
 			row["effect"] = pi.Item.Effect
 			row["targetsPlayer"] = pi.Item.TargetsPlayer

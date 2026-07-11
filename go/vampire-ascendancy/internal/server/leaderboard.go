@@ -64,6 +64,82 @@ func (s *server) leaderboardWithItems(ctx context.Context) ([]db.HouseFavorStand
 	return standings, nil
 }
 
+// GET /gm/standings/breakdown — per-house House Favor, split by source (quiz,
+// games, missions, GM awards) plus the itemized item contributions. Used on the
+// final results screen so the GM can see exactly where each house's favor came from.
+func (s *server) gmStandingsBreakdown(ctx *gin.Context) {
+	v := s.dbClient.Vampire()
+	houses, err := v.ListHouses(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	bySource, err := v.HouseFavorBySource(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sources := map[string]map[string]float64{} // houseID -> source -> total
+	for _, r := range bySource {
+		if sources[r.HouseID.String()] == nil {
+			sources[r.HouseID.String()] = map[string]float64{}
+		}
+		sources[r.HouseID.String()][r.Source] += r.Total
+	}
+
+	// Itemize the live item HF per house (name + holder + amount).
+	players, _ := v.ListPlayers(ctx)
+	houseOf := map[string]*uuid.UUID{}
+	pName := map[string]string{}
+	for _, p := range players {
+		if p.Character != nil {
+			houseOf[p.ID.String()] = p.Character.HouseID
+			pName[p.ID.String()] = p.Character.Name
+		}
+	}
+	pis, _ := v.ListAllPlayerItems(ctx)
+	itemsByHouse := map[string][]gin.H{}
+	itemTotal := map[string]float64{}
+	for _, pi := range pis {
+		if pi.Item == nil || pi.Item.HFEffect == 0 {
+			continue
+		}
+		hid := houseOf[pi.PlayerID.String()]
+		if hid == nil {
+			continue
+		}
+		itemsByHouse[hid.String()] = append(itemsByHouse[hid.String()], gin.H{
+			"name":   pi.Item.Name,
+			"amount": pi.Item.HFEffect,
+			"holder": pName[pi.PlayerID.String()],
+		})
+		itemTotal[hid.String()] += float64(pi.Item.HFEffect)
+	}
+
+	out := make([]gin.H, 0, len(houses))
+	for _, hh := range houses {
+		hid := hh.ID.String()
+		src := sources[hid]
+		if src == nil {
+			src = map[string]float64{}
+		}
+		total := itemTotal[hid]
+		for _, amt := range src {
+			total += amt
+		}
+		out = append(out, gin.H{
+			"houseId":   hh.ID,
+			"name":      hh.Name,
+			"sources":   src,
+			"items":     itemsByHouse[hid],
+			"itemTotal": itemTotal[hid],
+			"total":     total,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i]["total"].(float64) > out[j]["total"].(float64) })
+	ctx.JSON(http.StatusOK, gin.H{"houses": out})
+}
+
 // getLeaderboard returns House Favor standings — always visible to players, even
 // before content is unlocked. It is the authoritative live standing.
 func (s *server) getLeaderboard(ctx *gin.Context) {

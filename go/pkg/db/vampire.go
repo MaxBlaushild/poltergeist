@@ -31,6 +31,28 @@ type HouseFavorStanding struct {
 	ItemFavor float64   `json:"itemFavor"` // live overlay from owned items (not in ledger)
 }
 
+// HouseFavorSourceTotal is one house's House Favor from a single ledger source.
+type HouseFavorSourceTotal struct {
+	HouseID uuid.UUID `json:"houseId"`
+	Source  string    `json:"source"`
+	Total   float64   `json:"total"`
+}
+
+// HouseFavorBySource sums each house's ledger House Favor grouped by source
+// (excluding "item", which is a live overlay computed from current ownership).
+func (h *vampireHandler) HouseFavorBySource(ctx context.Context) ([]HouseFavorSourceTotal, error) {
+	var out []HouseFavorSourceTotal
+	if err := h.db.WithContext(ctx).
+		Table("vampire_house_favor_ledger").
+		Select("house_id, source, COALESCE(SUM(delta), 0) AS total").
+		Where("source <> 'item'").
+		Group("house_id, source").
+		Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BloodTokenTotal is a player's summed blood tokens (for resolution / reference).
 type BloodTokenTotal struct {
 	PlayerID uuid.UUID `json:"playerId"`
@@ -1012,7 +1034,7 @@ func (h *vampireHandler) UpsertItem(ctx context.Context, item *models.VampireIte
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "name"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"code", "description", "effect", "targets_player", "hf_effect",
+				"code", "category", "description", "effect", "targets_player", "hf_effect",
 				"bt_self", "bt_from_target", "bt_deduct_target", "quiz_bt_pct",
 				"double_game_bt", "immune", "reflect", "strip_resistance", "updated_at",
 			}),
@@ -1052,6 +1074,45 @@ func (h *vampireHandler) UpdateItem(ctx context.Context, id uuid.UUID, item *mod
 // DeleteItem removes a catalog item; its player assignments cascade away.
 func (h *vampireHandler) DeleteItem(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.VampireItem{}, "id = ?", id).Error
+}
+
+// SetItemPhoto stores (or replaces) a catalog item's reference photo.
+func (h *vampireHandler) SetItemPhoto(ctx context.Context, itemID uuid.UUID, contentType string, data []byte) error {
+	photo := models.VampireItemPhoto{ItemID: itemID, ContentType: contentType, Data: data, UpdatedAt: time.Now()}
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "item_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"content_type", "data", "updated_at"}),
+		}).
+		Create(&photo).Error
+}
+
+// GetItemPhoto returns a catalog item's photo, or nil if none.
+func (h *vampireHandler) GetItemPhoto(ctx context.Context, itemID uuid.UUID) (*models.VampireItemPhoto, error) {
+	var photo models.VampireItemPhoto
+	if err := h.db.WithContext(ctx).First(&photo, "item_id = ?", itemID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &photo, nil
+}
+
+// DeleteItemPhoto removes a catalog item's photo.
+func (h *vampireHandler) DeleteItemPhoto(ctx context.Context, itemID uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampireItemPhoto{}, "item_id = ?", itemID).Error
+}
+
+// ItemPhotoIDs returns the item ids that currently have a photo (no bytes fetched).
+func (h *vampireHandler) ItemPhotoIDs(ctx context.Context) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := h.db.WithContext(ctx).
+		Model(&models.VampireItemPhoto{}).
+		Pluck("item_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (h *vampireHandler) ListPlayerItems(ctx context.Context, playerID uuid.UUID) ([]models.VampirePlayerItem, error) {

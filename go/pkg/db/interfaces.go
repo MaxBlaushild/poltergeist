@@ -238,6 +238,7 @@ type VampireHandle interface {
 	AddBloodTokens(ctx context.Context, entry *models.VampireBloodTokenLog) error
 	BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodTokenTotal, error)
 	BloodTokenTotalsBySource(ctx context.Context, source string) ([]BloodTokenTotal, error)
+	HouseFavorBySource(ctx context.Context) ([]HouseFavorSourceTotal, error)
 
 	// Game state
 	GetGameState(ctx context.Context) (*models.VampireGameState, error)
@@ -295,6 +296,10 @@ type VampireHandle interface {
 	CreateItem(ctx context.Context, item *models.VampireItem) error
 	UpdateItem(ctx context.Context, id uuid.UUID, item *models.VampireItem) error
 	DeleteItem(ctx context.Context, id uuid.UUID) error
+	SetItemPhoto(ctx context.Context, itemID uuid.UUID, contentType string, data []byte) error
+	GetItemPhoto(ctx context.Context, itemID uuid.UUID) (*models.VampireItemPhoto, error)
+	DeleteItemPhoto(ctx context.Context, itemID uuid.UUID) error
+	ItemPhotoIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListPlayerItems(ctx context.Context, playerID uuid.UUID) ([]models.VampirePlayerItem, error)
 	ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error)
 	AssignItem(ctx context.Context, playerID, itemID uuid.UUID) (*models.VampirePlayerItem, error)
