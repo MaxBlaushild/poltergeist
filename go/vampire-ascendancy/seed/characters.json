@@ -349,45 +349,6 @@
       "player_name": "Matt (Beki's)"
     },
     {
-      "name": "Rowan Mauve",
-      "title": "The Reluctant Co-Conspirator",
-      "house": "Spires",
-      "role_type": "player",
-      "is_optional": false,
-      "pre_event_info": "Practical, organized, and deeply uncomfortable with rocking the boat, you are a minor bureaucrat in the administrative machinery of House Spires. You process petitions, verify seals, route permissions, record ceremonial exemptions, and make sure the proper forms exist before anyone important pretends decisions happen by instinct. Several months ago, Brother Aldric Voss approached you privately and asked whether you believed the Court would survive another century under the Marquess. You laughed at the question. Then you were invited to attend a meeting on the subject, and you were too afraid to decline. So you went. Then you went to another. Then another. Before long, you found yourself part of a masked circle of vampires who believed Gruber’s reign had become dangerous. You never considered yourself a revolutionary. Even now, you are not sure you are one. But you are also too afraid of what might happen if you leave the circle now. You do not know whether you are brave, compromised, or merely very bad at saying no. But you do know this: when rot reaches the records office, it has already reached the bones.",
-      "post_act1_context": "Aldric's disappearance has transformed an uncomfortable political concern into something much worse. He was the only member of the masked circle whose identity everyone knew. The rest of you met anonymously. Faces hidden, names withheld. Several days ago he told you he had discovered evidence that someone had altered an ancient ritual text in the Ashglass archives. He seemed more disturbed than excited by the discovery. Then he vanished. Tonight, with Caspian missing, Aldric gone, and succession suddenly uncertain, you have begun wondering whether the conspiracy group was investigating the wrong threat all along.",
-      "secrets": [
-        "I attended several of Brother Aldric's meetings. We wore masks and never revealed our identities to one another. Aldric was the only person whose name we knew. If other members of the conspiracy are present tonight, I do not know who they are.",
-        "Three days before the ceremony, Aldric told me he had discovered evidence that someone had tampered with an ancient ritual text. He did not tell me what text it was or who altered it. What struck me was his demeanor. Aldric was not triumphant. He was frightened. He told me, \"If I'm right, then someone is about to die.\" It was the last meaningful conversation I had with him."
-      ],
-      "missions": [
-        {
-          "ordinal": 1,
-          "tier": "easy",
-          "reward_bt": 2,
-          "prompt": "Ask three players from different houses whether they have heard of any unusual paperwork, permissions, archive requests, cellar approvals, or ceremonial exemptions connected to tonight’s Toast.",
-          "answer_format": "Enter the names of the characters you asked."
-        },
-        {
-          "ordinal": 2,
-          "tier": "medium",
-          "reward_bt": 4,
-          "prompt": "Investigate whether any other members of Brother Aldric’s masked circle are present tonight. Identify at least two people who attended the meetings or know details only a member would know.",
-          "answer_format": "Enter the names of the players you believe are part of Brother Aldric’s conspiracy."
-        },
-        {
-          "ordinal": 3,
-          "tier": "hard",
-          "reward_bt": 6,
-          "prompt": "Decide whether Aldric truly uncovered something dangerous. To complete this mission, identify the altered ritual or suspicious record and explain how it connects to someone’s death, disappearance, or planned death.",
-          "answer_format": "Enter your conclusion, the evidence, and who you warned."
-        }
-      ],
-      "image_url": "",
-      "player_name": "",
-      "active": false
-    },
-    {
       "name": "Magnus Holt",
       "title": "The General",
       "house": "Spires",
@@ -2072,6 +2033,44 @@
       ],
       "image_url": "",
       "player_name": "Ellen"
+    },
+    {
+      "name": "Rowan Mauve",
+      "title": "The Kingmaker",
+      "house": "Spires",
+      "role_type": "player",
+      "is_optional": false,
+      "pre_event_info": "Polished, patient, and always three favors ahead, you are a career politician of House Spires. You have spent decades climbing the Court's councils, brokering votes, trading permissions, and authoring resolutions that praise whoever happens to be winning. You have never held the top of anything, and you have never fallen from anything either. Your rival on that climb, for longer than either of you will admit, is Aurel Voss. Both of you hungry, both of you Spires, both of you reaching for the same rungs. He climbs loudly. You climb quietly, and you keep a ledger of everything you learn on the way up. Several months ago, Brother Aldric Voss asked you privately whether you believed the Court would survive another century under the Marquess. You gave him a smile and a question in return. Then he invited you to a meeting, and you went, because you have never once declined a room where power might change hands. You attended the masked circle the way you attend everything: listening, cataloguing, committing to nothing. If Gruber falls, you were there early. If the circle falls, no one knows your face. You do not consider yourself a revolutionary. Revolutions are for people without better options. You are simply a woman who likes to hold tickets to every outcome.",
+      "post_act1_context": "Aldric's disappearance has turned your hedge into a live wire. He was the only member of the masked circle whose identity everyone knew; the rest of you met anonymously, faces hidden, names withheld. Days before he vanished, he told you he had found evidence that someone had altered an ancient text in the Ashglass archives, and he seemed frightened rather than triumphant. Now Caspian is missing, and Aldric is gone, and Mara Voss sits third in the line of succession. Which means the other item in your ledger, the one concerning Mara, has appreciated considerably in value. Tonight you are doing what you always do: watching the board, and deciding when to spend what you hold.",
+      "secrets": [
+        "I attended several of Brother Aldric's masked meetings. We never revealed our identities to one another; Aldric was the only name any of us knew. Three days before the ceremony, he told me he had discovered evidence that someone had tampered with an ancient text. He was not triumphant. He was frightened. He told me, \"If I'm right, then someone is about to die.\" Then he vanished. If my presence in that circle ever surfaces, my career ends with it.",
+        "I keep an informant in the Ashglass infirmary, as any sensible politician does. Weeks ago she told me that Mara Voss, Aurel's niece, has changed. Quiet, distracted, deferential in the way of someone waiting for an instruction. I believe the girl is bound to someone, and I believe Aurel knows. I have spent decades losing rungs to that man, and this is the kind of leverage that ends a rivalry. I have not yet decided when to spend it."
+      ],
+      "missions": [
+        {
+          "ordinal": 1,
+          "tier": "easy",
+          "reward_bt": 2,
+          "prompt": "A politician is nothing without visible supporters. Adorn a temporary tattoo as the mark of your political faction, then convince three other members of the Court to wear one as well, in a show of support and alliance. Note: the tattoos do not need to match, everyone just needs to wear one.",
+          "answer_format": "Enter the names of the three characters sporting a tattoo as a symbol of allegiance."
+        },
+        {
+          "ordinal": 2,
+          "tier": "medium",
+          "reward_bt": 4,
+          "prompt": "Find Mara Voss and speak with her privately before Act 2 ends. Then talk to other players or purchase clues to assemble a theory about what is happening with Mara. Present your theory to at least two players from different houses.",
+          "answer_format": "Write both character names and the theory you presented."
+        },
+        {
+          "ordinal": 3,
+          "tier": "hard",
+          "reward_bt": 7,
+          "prompt": "Decide whether Aldric truly uncovered something dangerous. To complete this mission, identify the altered ritual or suspicious record and explain how it connects to someone's death, disappearance, or planned death.",
+          "answer_format": "Enter your conclusion, the evidence, and who you warned."
+        }
+      ],
+      "image_url": "",
+      "player_name": ""
     }
   ]
 }
