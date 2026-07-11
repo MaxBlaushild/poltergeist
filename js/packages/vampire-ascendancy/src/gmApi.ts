@@ -151,6 +151,8 @@ export interface GMGame {
   startMinutes: number | null;
   endMinutes: number | null;
   location: string;
+  assignedGm: string;
+  runNotes: string;
 }
 export const gmGetStandings = () => gm<{ standings: HouseStanding[] }>('/standings');
 export const gmListGames = () => gm<{ games: GMGame[] }>('/games');
@@ -165,7 +167,13 @@ export const gmUpdateGame = (id: string, name: string, ordinal: number) =>
 export const gmDeleteGame = (id: string) => gm<{ ok: boolean }>(`/games/${id}`, { method: 'DELETE' });
 export const gmSetGameSchedule = (
   id: string,
-  body: { startMinutes: number | null; endMinutes: number | null; location: string }
+  body: {
+    startMinutes: number | null;
+    endMinutes: number | null;
+    location: string;
+    assignedGm: string;
+    runNotes: string;
+  }
 ) => gm<{ ok: boolean }>(`/games/${id}/schedule`, { method: 'PUT', body: JSON.stringify(body) });
 export const gmClearGameResult = (id: string) =>
   gm<{ ok: boolean }>(`/games/${id}/clear`, { method: 'POST' });

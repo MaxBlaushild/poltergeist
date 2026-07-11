@@ -942,14 +942,17 @@ func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first,
 		}).Error
 }
 
-// SetGameSchedule sets (or clears, with nil times) a game's slot and location.
-func (h *vampireHandler) SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location string) error {
+// SetGameSchedule sets (or clears, with nil times) a game's slot, location,
+// assigned GM, and GM-only run notes.
+func (h *vampireHandler) SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location, assignedGM, runNotes string) error {
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"start_minutes": start,
 			"end_minutes":   end,
 			"location":      location,
+			"assigned_gm":   assignedGM,
+			"run_notes":     runNotes,
 			"updated_at":    time.Now(),
 		}).Error
 }

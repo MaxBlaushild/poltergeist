@@ -3,6 +3,7 @@ import { gmSetGameSchedule } from '../../gmApi';
 import type { GMGame } from '../../gmApi';
 import { formatClock } from '../../theme';
 import { Card } from './GameSection';
+import { GM_NAMES } from './GMAdmin';
 
 const DAY_START = 18 * 60; // 6 PM
 const DAY_END = 24 * 60; // midnight
@@ -65,7 +66,13 @@ export const ScheduleCalendar = ({ games, onChange }: { games: GMGame[]; onChang
     setDrag(null);
     if (d.moved && d.curStart !== d.origStart) {
       const dur = g.endMinutes! - g.startMinutes!;
-      await gmSetGameSchedule(g.id, { startMinutes: d.curStart, endMinutes: d.curStart + dur, location: g.location });
+      await gmSetGameSchedule(g.id, {
+        startMinutes: d.curStart,
+        endMinutes: d.curStart + dur,
+        location: g.location,
+        assignedGm: g.assignedGm,
+        runNotes: g.runNotes,
+      });
       onChange();
     } else if (!d.moved) {
       setEditingId(g.id);
@@ -83,7 +90,13 @@ export const ScheduleCalendar = ({ games, onChange }: { games: GMGame[]; onChang
 
   const scheduleUnscheduled = async (g: GMGame) => {
     const s = firstFreeSlot();
-    await gmSetGameSchedule(g.id, { startMinutes: s, endMinutes: s + DEFAULT_DUR, location: g.location });
+    await gmSetGameSchedule(g.id, {
+      startMinutes: s,
+      endMinutes: s + DEFAULT_DUR,
+      location: g.location,
+      assignedGm: g.assignedGm,
+      runNotes: g.runNotes,
+    });
     onChange();
     setEditingId(g.id);
   };
@@ -144,6 +157,7 @@ export const ScheduleCalendar = ({ games, onChange }: { games: GMGame[]; onChang
                   {formatClock(start)}–{formatClock(start + dur)}
                 </p>
                 {g.location && <p className="text-[10px] text-gold/80 leading-tight truncate">📍 {g.location}</p>}
+                {g.assignedGm && <p className="text-[10px] text-bone/50 leading-tight truncate">👤 {g.assignedGm}</p>}
               </div>
             );
           })}
@@ -187,6 +201,8 @@ const SlotEditor = ({ game, onClose, onChange }: { game: GMGame; onClose: () => 
   const [start, setStart] = useState(game.startMinutes!);
   const [dur, setDur] = useState(clamp(game.endMinutes! - game.startMinutes!, SNAP, DAY_END - DAY_START));
   const [location, setLocation] = useState(game.location);
+  const [assignedGm, setAssignedGm] = useState(game.assignedGm);
+  const [runNotes, setRunNotes] = useState(game.runNotes);
   const [busy, setBusy] = useState(false);
 
   const end = Math.min(start + dur, DAY_END);
@@ -195,7 +211,13 @@ const SlotEditor = ({ game, onClose, onChange }: { game: GMGame; onClose: () => 
   const save = async () => {
     setBusy(true);
     try {
-      await gmSetGameSchedule(game.id, { startMinutes: start, endMinutes: end, location: location.trim() });
+      await gmSetGameSchedule(game.id, {
+        startMinutes: start,
+        endMinutes: end,
+        location: location.trim(),
+        assignedGm,
+        runNotes,
+      });
       onChange();
       onClose();
     } finally {
@@ -205,7 +227,13 @@ const SlotEditor = ({ game, onClose, onChange }: { game: GMGame; onClose: () => 
   const unschedule = async () => {
     setBusy(true);
     try {
-      await gmSetGameSchedule(game.id, { startMinutes: null, endMinutes: null, location: location.trim() });
+      await gmSetGameSchedule(game.id, {
+        startMinutes: null,
+        endMinutes: null,
+        location: location.trim(),
+        assignedGm,
+        runNotes,
+      });
       onChange();
       onClose();
     } finally {
@@ -238,13 +266,36 @@ const SlotEditor = ({ game, onClose, onChange }: { game: GMGame; onClose: () => 
           </select>
         </label>
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1 text-[11px] text-bone/60">
+          Location
+          <input
+            className={field}
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="e.g. The Ballroom"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[11px] text-bone/60">
+          Run by (GM)
+          <select className={field} value={assignedGm} onChange={(e) => setAssignedGm(e.target.value)}>
+            <option value="">— unassigned —</option>
+            {GM_NAMES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <label className="flex flex-col gap-1 text-[11px] text-bone/60">
-        Location
-        <input
+        How to run (GM-only notes)
+        <textarea
           className={field}
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="e.g. The Ballroom"
+          rows={3}
+          value={runNotes}
+          onChange={(e) => setRunNotes(e.target.value)}
+          placeholder="Setup, rules, materials, scoring — only GMs see this."
         />
       </label>
       <p className="text-[11px] text-bone/40">{formatClock(start)} – {formatClock(end)}</p>

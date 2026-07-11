@@ -54,10 +54,12 @@ func winnersJSON(raw datatypes.JSON, byID map[string]models.VampireCharacter) []
 	return out
 }
 
-func gamesResponse(games []models.VampireGame, byID map[string]models.VampireCharacter) []gin.H {
+// gamesResponse serializes games. gm=true adds the GM-only fields (assigned GM
+// and how-to-run notes), which are never sent to players or the public feed.
+func gamesResponse(games []models.VampireGame, byID map[string]models.VampireCharacter, gm bool) []gin.H {
 	out := make([]gin.H, 0, len(games))
 	for _, g := range games {
-		out = append(out, gin.H{
+		row := gin.H{
 			"id":           g.ID,
 			"ordinal":      g.Ordinal,
 			"name":         g.Name,
@@ -68,7 +70,12 @@ func gamesResponse(games []models.VampireGame, byID map[string]models.VampireCha
 			"startMinutes": g.StartMinutes,
 			"endMinutes":   g.EndMinutes,
 			"location":     g.Location,
-		})
+		}
+		if gm {
+			row["assignedGm"] = g.AssignedGM
+			row["runNotes"] = g.RunNotes
+		}
+		out = append(out, row)
 	}
 	return out
 }
@@ -85,7 +92,7 @@ func (s *server) gmListGames(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"games": gamesResponse(games, byID)})
+	ctx.JSON(http.StatusOK, gin.H{"games": gamesResponse(games, byID, true)})
 }
 
 // POST /gm/games — add a game to the list.
@@ -242,6 +249,8 @@ func (s *server) gmSetGameSchedule(ctx *gin.Context) {
 		StartMinutes *int   `json:"startMinutes"`
 		EndMinutes   *int   `json:"endMinutes"`
 		Location     string `json:"location"`
+		AssignedGm   string `json:"assignedGm"`
+		RunNotes     string `json:"runNotes"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -257,7 +266,7 @@ func (s *server) gmSetGameSchedule(ctx *gin.Context) {
 			return
 		}
 	}
-	if err := s.dbClient.Vampire().SetGameSchedule(ctx, id, body.StartMinutes, body.EndMinutes, body.Location); err != nil {
+	if err := s.dbClient.Vampire().SetGameSchedule(ctx, id, body.StartMinutes, body.EndMinutes, body.Location, body.AssignedGm, body.RunNotes); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -387,5 +396,5 @@ func (s *server) getGames(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"games": gamesResponse(games, byID)})
+	ctx.JSON(http.StatusOK, gin.H{"games": gamesResponse(games, byID, false)})
 }

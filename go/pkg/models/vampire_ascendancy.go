@@ -65,6 +65,8 @@ type VampireGame struct {
 	StartMinutes *int   `gorm:"column:start_minutes" json:"startMinutes"`
 	EndMinutes   *int   `gorm:"column:end_minutes" json:"endMinutes"`
 	Location     string `gorm:"not null;default:''" json:"location"`
+	AssignedGM   string `gorm:"column:assigned_gm;not null;default:''" json:"assignedGm"` // GM running it
+	RunNotes     string `gorm:"column:run_notes;not null;default:''" json:"-"`           // GM-only how-to
 }
 
 func (VampireGame) TableName() string { return "vampire_games" }

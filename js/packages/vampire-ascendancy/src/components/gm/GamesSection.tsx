@@ -243,13 +243,33 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </div>
 );
 
-const ScheduleLine = ({ game }: { game: GMGame }) =>
-  game.startMinutes != null && game.endMinutes != null ? (
-    <p className="text-xs text-bone/60 mb-2">
-      🕒 {formatClock(game.startMinutes)}–{formatClock(game.endMinutes)}
-      {game.location && <span className="text-gold/80"> · 📍 {game.location}</span>}
-    </p>
-  ) : null;
+const ScheduleLine = ({ game }: { game: GMGame }) => {
+  const scheduled = game.startMinutes != null && game.endMinutes != null;
+  if (!scheduled && !game.assignedGm && !game.runNotes) return null;
+  return (
+    <div className="mb-2">
+      {(scheduled || game.location || game.assignedGm) && (
+        <p className="text-xs text-bone/60">
+          {scheduled && (
+            <span>
+              🕒 {formatClock(game.startMinutes!)}–{formatClock(game.endMinutes!)}{' '}
+            </span>
+          )}
+          {game.location && <span className="text-gold/80">· 📍 {game.location} </span>}
+          {game.assignedGm && <span className="text-bone/50">· 👤 {game.assignedGm}</span>}
+        </p>
+      )}
+      {game.runNotes && (
+        <details className="mt-1">
+          <summary className="text-xs text-gold/80 cursor-pointer">▸ How to run</summary>
+          <p className="mt-1 text-sm text-bone/80 whitespace-pre-wrap rounded-md bg-black/30 p-2">
+            {game.runNotes}
+          </p>
+        </details>
+      )}
+    </div>
+  );
+};
 
 // Rename / delete / clear-result controls, collapsed by default. A recorded game
 // can't be renamed (awards are matched by name) — clear it first.

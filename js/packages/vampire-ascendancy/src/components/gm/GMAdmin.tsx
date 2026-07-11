@@ -16,8 +16,9 @@ import { GamesSection } from './GamesSection';
 import { StandingsSection } from './StandingsSection';
 import { BroadcastScreen } from './BroadcastScreen';
 import { ItemsSection } from './ItemsSection';
+import { GMReminder } from './GMReminder';
 
-const GM_NAMES = ['Ali', 'Max', 'Ngozi', 'Jon'];
+export const GM_NAMES = ['Ali', 'Max', 'Ngozi', 'Jon'];
 type Tab =
   | 'controls'
   | 'submissions'
@@ -149,6 +150,8 @@ const GMConsole = ({ onLogout }: { onLogout: () => void }) => {
           Leave
         </button>
       </header>
+
+      <GMReminder />
 
       <nav className="flex gap-2 mb-6 flex-wrap">
         {tabs.map((t) => (
