@@ -228,6 +228,10 @@ export const ItemsSection = () => {
 
   return (
     <div className="flex flex-col gap-4">
+      <p className="rounded-md border border-gold/50 bg-gold/10 p-3 text-sm text-bone/90">
+        ⚠️ Trading items is allowed, but must be recorded by a GM (use “Transfer” on a holding).
+      </p>
+
       <NewItemForm busy={busy} onCreated={load} />
 
       <Card title="Assign an item">

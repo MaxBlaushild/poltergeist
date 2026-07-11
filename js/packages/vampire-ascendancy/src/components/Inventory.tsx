@@ -36,6 +36,10 @@ export const Inventory = () => {
         )}
       </header>
 
+      <p className="mb-6 rounded-md border border-gold/50 bg-gold/10 p-3 text-sm text-bone/90">
+        ⚠️ Trading items is allowed, but must be recorded by a GM.
+      </p>
+
       {items === null ? (
         <p className="text-center text-bone/50">Opening your satchel…</p>
       ) : items.length === 0 ? (
