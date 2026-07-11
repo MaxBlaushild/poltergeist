@@ -41,6 +41,36 @@ const resizeImage = (file: File, maxDim = 1200, quality = 0.8): Promise<string> 
     reader.readAsDataURL(file);
   });
 
+// A thumbnail that opens a full-size modal on click.
+const PhotoThumb = ({ src, alt, className }: { src: string; alt: string; className?: string }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <img
+        src={src}
+        alt={alt}
+        onClick={() => setOpen(true)}
+        className={`cursor-zoom-in ${className ?? ''}`}
+      />
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-6"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-label={`${alt} photo`}
+        >
+          <img
+            src={src}
+            alt={alt}
+            className="max-h-[85vh] max-w-[92vw] rounded-lg border-2 border-blood/40 object-contain"
+          />
+          <p className="mt-3 font-display text-xl text-bone">{alt}</p>
+        </div>
+      )}
+    </>
+  );
+};
+
 // Item reference photo + camera-capture control. On a phone, the file input's
 // capture="environment" opens the rear camera directly.
 const ItemPhoto = ({ item, onChanged }: { item: GMItem; onChanged: () => void }) => {
@@ -74,7 +104,7 @@ const ItemPhoto = ({ item, onChanged }: { item: GMItem; onChanged: () => void })
   return (
     <div className="flex items-center gap-2">
       {item.hasPhoto ? (
-        <img
+        <PhotoThumb
           src={itemPhotoUrl(item.id, ver)}
           alt={item.name}
           className="w-12 h-12 rounded object-cover border border-blood/40"
@@ -138,6 +168,7 @@ export const ItemsSection = () => {
   const [itemId, setItemId] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -167,6 +198,13 @@ export const ItemsSection = () => {
     () => [...items].sort((a, b) => a.name.localeCompare(b.name)),
     [items]
   );
+  const catalogFiltered = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    if (!q) return sortedItems;
+    return sortedItems.filter(
+      (i) => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
+    );
+  }, [sortedItems, catalogQuery]);
 
   const assign = async () => {
     if (!playerId || !itemId) return;
@@ -265,7 +303,7 @@ export const ItemsSection = () => {
           {(() => {
             const sel = items.find((i) => i.id === itemId);
             return sel?.hasPhoto ? (
-              <img
+              <PhotoThumb
                 src={itemPhotoUrl(sel.id)}
                 alt={sel.name}
                 className="w-24 h-24 rounded object-cover border border-blood/40"
@@ -289,11 +327,21 @@ export const ItemsSection = () => {
         >
           {catalogOpen ? '▾ Hide catalog' : '▸ Show catalog'}
         </button>
+        {catalogOpen && (
+          <input
+            value={catalogQuery}
+            onChange={(e) => setCatalogQuery(e.target.value)}
+            placeholder="Search items by name or category…"
+            className="w-full mb-2 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+          />
+        )}
         {!catalogOpen ? null : sortedItems.length === 0 ? (
           <p className="text-bone/50 text-sm">No items yet.</p>
+        ) : catalogFiltered.length === 0 ? (
+          <p className="text-bone/50 text-sm">No items match “{catalogQuery}”.</p>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {sortedItems.map((it) => (
+            {catalogFiltered.map((it) => (
               <div key={it.id} className="border-b border-blood/15 last:border-0 pb-1.5">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 min-w-0">
@@ -394,7 +442,7 @@ const HoldingRow = ({
     <div className="border-b border-blood/15 last:border-0 pb-2">
       <div className="flex items-center gap-2">
         {photoItem?.hasPhoto && (
-          <img
+          <PhotoThumb
             src={itemPhotoUrl(photoItem.id)}
             alt={holding.itemName}
             className="w-10 h-10 rounded object-cover border border-blood/40 shrink-0"
