@@ -54,8 +54,28 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	group.GET("/operator/metrics", s.getOperatorMetrics)
 }
 
+// permissiveCORS mirrors go/core's own CORS config (gin-contrib/cors would
+// pull in a gin-gonic/gin major bump requiring Go 1.25, ahead of this
+// repo's go.work toolchain — not worth it for a dev-only convenience path,
+// so this is the same handful of lines written directly).
+func permissiveCORS(c *gin.Context) {
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+	if c.Request.Method == http.MethodOptions {
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	c.Next()
+}
+
+// ListenAndServe is only used by go/reef-site's own standalone cmd/server
+// (local dev / a future dedicated ECS service — see INVENTORY.md). When
+// mounted into go/core, core's own top-level CORS config already covers
+// these routes, so it isn't duplicated in SetupRoutes.
 func (s *server) ListenAndServe(port string) {
 	router := gin.Default()
+	router.Use(permissiveCORS)
 	s.SetupRoutes(router)
 	router.Run(":" + port)
 }

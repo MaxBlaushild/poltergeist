@@ -105,6 +105,7 @@ SELECT id, 1, $frag$
     "plugHoleDiameterMm": {
       "type": "integer",
       "enum": [15, 20],
+      "default": 20,
       "x-unit": "mm",
       "x-label": "Frag plug hole diameter",
       "x-helpText": "Standard frag plug stems are 15mm or 20mm. Measure your plug stem diameter, not the plug head.",

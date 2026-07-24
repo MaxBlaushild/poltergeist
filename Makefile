@@ -14,9 +14,9 @@ deploy-all:
 .PHONY: deploy-webapps webapps/deploy
 deploy-webapps: webapps/deploy
 
-webapps/deploy: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+webapps/deploy: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy reef-site/web-deploy
 
-.PHONY: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+.PHONY: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy reef-site/web-deploy
 boltsight/deploy:
 	$(MAKE) -C js/packages/boltsight deploy
 
@@ -31,6 +31,9 @@ ucs-admin-ui/deploy:
 
 vampire-ascendancy/deploy:
 	$(MAKE) -C js/packages/vampire-ascendancy deploy
+
+reef-site/web-deploy:
+	$(MAKE) -C js/packages/reef-site deploy
 
 # Bring a Vampire Ascendancy database up to date: run all migrations, then load
 # the seed — houses, characters (bios/secrets/missions), quiz, and one player

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -124,8 +125,15 @@ func (s *server) postCheckout(c *gin.Context) {
 		})
 	}
 
+	// The client can't know the order token before the order exists
+	// server-side, so it sends successUrl with a ":orderToken:" placeholder
+	// (e.g. "https://reef.example.com/orders/:orderToken:") and this fills
+	// it in — R-8.2's /orders/[token] is exactly where a customer should
+	// land after paying.
+	successURL := strings.ReplaceAll(req.SuccessURL, ":orderToken:", order.OrderToken)
+
 	session, err := s.deps.BillingClient.NewPaymentCheckoutSession(ctx, &billing.PaymentCheckoutSessionParams{
-		SessionSuccessRedirectUrl:  req.SuccessURL,
+		SessionSuccessRedirectUrl:  successURL,
 		SessionCancelRedirectUrl:   req.CancelURL,
 		LineItems:                  lineItems,
 		AutomaticTax:               true,
