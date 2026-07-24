@@ -28,6 +28,7 @@ use (
 	./go/pkg/polymarket
 	./go/pkg/quizgrade
 	./go/pkg/slack
+	./go/reef-site
 	./go/pkg/texter
 	./go/pkg/twilio
 	./go/pkg/util

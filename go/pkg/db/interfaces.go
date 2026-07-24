@@ -178,7 +178,76 @@ type DbClient interface {
 	FeedbackItem() FeedbackItemHandle
 	Vampire() VampireHandle
 	TradesARGlassesLead() TradesARGlassesLeadHandle
+
+	// reef-site (go/reef-site) — see go/reef-site/INVENTORY.md for why these
+	// live here rather than in the reef module's own internal package.
+	ReefProduct() ReefProductHandle
+	ReefProductVariant() ReefProductVariantHandle
+	ReefParameterSchema() ReefParameterSchemaHandle
+	ReefTankProfile() ReefTankProfileHandle
+	ReefConfiguration() ReefConfigurationHandle
+	ReefSliceResult() ReefSliceResultHandle
+	ReefGenerationJob() ReefGenerationJobHandle
+	ReefOrder() ReefOrderHandle
+	ReefEvent() ReefEventHandle
+
 	Exec(ctx context.Context, q string) error
+}
+
+type ReefProductHandle interface {
+	FindBySlug(ctx context.Context, slug string) (*models.ReefProduct, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ReefProduct, error)
+	FindActive(ctx context.Context) ([]models.ReefProduct, error)
+}
+
+type ReefProductVariantHandle interface {
+	FindByProductID(ctx context.Context, productID uuid.UUID) ([]models.ReefProductVariant, error)
+	FindByProductAndKey(ctx context.Context, productID uuid.UUID, variantKey string) (*models.ReefProductVariant, error)
+}
+
+type ReefParameterSchemaHandle interface {
+	FindActiveByProductID(ctx context.Context, productID uuid.UUID) (*models.ReefParameterSchema, error)
+}
+
+type ReefTankProfileHandle interface {
+	FindVerified(ctx context.Context) ([]models.ReefTankProfile, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ReefTankProfile, error)
+	FindByManufacturerAndModel(ctx context.Context, manufacturer, model string) (*models.ReefTankProfile, error)
+}
+
+type ReefConfigurationHandle interface {
+	Create(ctx context.Context, cfg *models.ReefConfiguration) (*models.ReefConfiguration, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ReefConfiguration, error)
+	Update(ctx context.Context, cfg *models.ReefConfiguration) error
+	CountByStatusSince(ctx context.Context, status string, since time.Time) (int64, error)
+}
+
+type ReefSliceResultHandle interface {
+	FindByGeometryHash(ctx context.Context, geometryHash string) (*models.ReefSliceResult, error)
+	Create(ctx context.Context, result *models.ReefSliceResult) error
+	Update(ctx context.Context, result *models.ReefSliceResult) error
+}
+
+type ReefGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ReefGenerationJob) (*models.ReefGenerationJob, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ReefGenerationJob, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status string, errMsg string) error
+	IncrementAttempts(ctx context.Context, id uuid.UUID) error
+}
+
+type ReefOrderHandle interface {
+	Create(ctx context.Context, order *models.ReefOrder) (*models.ReefOrder, error)
+	FindByToken(ctx context.Context, token string) (*models.ReefOrder, error)
+	FindByStripeSessionID(ctx context.Context, sessionID string) (*models.ReefOrder, error)
+	Update(ctx context.Context, order *models.ReefOrder) error
+	FindPaid(ctx context.Context) ([]models.ReefOrder, error)
+	CogsStatsSince(ctx context.Context, since time.Time) (*OperatorCogsStats, error)
+}
+
+type ReefEventHandle interface {
+	Create(ctx context.Context, event *models.ReefEvent) error
+	CountByType(ctx context.Context, eventType string, since time.Time) (int64, error)
+	CountRejectionsByRule(ctx context.Context, since time.Time) ([]RuleRejectionCount, error)
 }
 
 type TradesARGlassesLeadHandle interface {

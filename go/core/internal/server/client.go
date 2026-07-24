@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
+	reefsite "github.com/MaxBlaushild/poltergeist/reef-site/pkg"
 	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
 	tradesarglasses "github.com/MaxBlaushild/poltergeist/trades-ar-glasses/pkg"
 	travelangels "github.com/MaxBlaushild/poltergeist/travel-angels/pkg"
@@ -24,11 +25,12 @@ type server struct {
 	verifiableSnServer      verifiablesn.Server
 	vampireAscendancyServer vampireascendancy.Server
 	tradesARGlassesServer   tradesarglasses.Server
+	reefServer              reefsite.Server
 	texterClient            texter.Client
 }
 
 // NewServer creates a new server instance
-func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, vampireAscendancyServer vampireascendancy.Server, tradesARGlassesServer tradesarglasses.Server, texterClient texter.Client) *server {
+func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, vampireAscendancyServer vampireascendancy.Server, tradesARGlassesServer tradesarglasses.Server, reefServer reefsite.Server, texterClient texter.Client) *server {
 	return &server{
 		// finalFeteServer:    finalFeteServer,
 		sonarServer:             sonarServer,
@@ -36,6 +38,7 @@ func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server,
 		verifiableSnServer:      verifiableSnServer,
 		vampireAscendancyServer: vampireAscendancyServer,
 		tradesARGlassesServer:   tradesARGlassesServer,
+		reefServer:              reefServer,
 		texterClient:            texterClient,
 	}
 }
@@ -92,6 +95,9 @@ func (s *server) ListenAndServe(port string) {
 	s.verifiableSnServer.SetupRoutes(router)
 	s.vampireAscendancyServer.SetupRoutes(router)
 	s.tradesARGlassesServer.SetupRoutes(router)
+	if s.reefServer != nil {
+		s.reefServer.SetupRoutes(router)
+	}
 
 	// Champagne endpoint - sends celebratory text
 	router.POST("/champagne", func(c *gin.Context) {
