@@ -22,7 +22,6 @@ type Job struct {
 
 func NewClient(redisUrl string) Client {
 	async := asynq.NewClient(asynq.RedisClientOpt{Addr: util.NormalizeRedisAddr(redisUrl)})
-	defer async.Close()
 	return &client{async: async}
 }
 

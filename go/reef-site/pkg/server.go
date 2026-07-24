@@ -3,7 +3,10 @@ package pkg
 import (
 	"log"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/email"
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/reef-site/internal/config"
 	"github.com/MaxBlaushild/poltergeist/reef-site/internal/server"
 	"github.com/gin-gonic/gin"
@@ -30,8 +33,20 @@ func NewServerFromDependencies(dbClient db.DbClient) Server {
 		log.Printf("[reef-site] failed to load config from env: %v", err)
 		cfg = &config.Config{}
 	}
+
+	awsClient := aws.NewAWSClient(cfg.Public.AwsRegion)
+	jobsClient := jobs.NewClient(cfg.Public.RedisUrl)
+	emailClient := email.NewClient(email.ClientConfig{
+		ApiKey:      cfg.Secret.EmailApiKey,
+		FromAddress: cfg.Public.EmailFromAddress,
+		WebHost:     cfg.Public.BaseURL,
+	})
+
 	return server.NewServer(server.Deps{
-		DbClient: dbClient,
-		Config:   cfg,
+		DbClient:    dbClient,
+		Config:      cfg,
+		AwsClient:   awsClient,
+		JobsClient:  jobsClient,
+		EmailClient: emailClient,
 	})
 }
