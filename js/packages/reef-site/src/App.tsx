@@ -8,6 +8,7 @@ import Cart from './pages/Cart';
 import OrderStatus from './pages/OrderStatus';
 import HowToMeasure from './pages/HowToMeasure';
 import MaterialsAndCare from './pages/MaterialsAndCare';
+import Operator from './pages/Operator';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { items } = useCart();
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="/orders/:token" element={<OrderStatus />} />
           <Route path="/how-to-measure" element={<HowToMeasure />} />
           <Route path="/materials-and-care" element={<MaterialsAndCare />} />
+          <Route path="/operator" element={<Operator />} />
         </Routes>
       </Layout>
     </BrowserRouter>
