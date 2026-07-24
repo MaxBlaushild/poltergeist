@@ -27,6 +27,7 @@ use (
 	./go/pkg/models
 	./go/pkg/polymarket
 	./go/pkg/quizgrade
+	./go/pkg/reef
 	./go/pkg/slack
 	./go/reef-site
 	./go/pkg/texter

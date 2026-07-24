@@ -176,9 +176,10 @@ func (f FragRack) Analyze(params map[string]interface{}) (Analysis, error) {
 	minWall = math.Min(minWall, fragRackThicknessMm-l.magnetPocketDepthMm)
 
 	return Analysis{
-		MinWallMm:   minWall,
-		SealedVoid:  false, // every magnet pocket is vented to the top edge, by construction
-		DrainPathMm: fragVentLengthMm,
+		MinWallMm:         minWall,
+		HasInternalCavity: true,  // magnet pockets are blind-hole cavities
+		SealedVoid:        false, // every magnet pocket is vented to the top edge, by construction
+		DrainPathMm:       fragVentLengthMm,
 	}, nil
 }
 

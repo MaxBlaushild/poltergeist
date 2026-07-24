@@ -66,6 +66,14 @@ const (
 	ApplyZoneSeedDraftTaskType                         = "apply_zone_seed_draft"
 	ShuffleZoneSeedChallengeTaskType                   = "shuffle_zone_seed_challenge"
 	BackfillContentZoneKindsTaskType                   = "backfill_content_zone_kinds"
+
+	// reef-site (R-2.10). Preview generation is synchronous in the reef-site
+	// HTTP handler itself (R-2.10's explicit carve-out: "must not block an
+	// HTTP request beyond the preview path"), so only "full" is actually
+	// enqueued in v1 — GenerateReefPreviewTaskType exists for schema
+	// completeness / a future async-preview path, unused for now.
+	GenerateReefPreviewTaskType = "generate_reef_preview"
+	GenerateReefFullTaskType    = "generate_reef_full"
 )
 
 const (
@@ -571,4 +579,20 @@ func SpellProgressionPromptStatusKey(jobID uuid.UUID) string {
 
 func SpellDamageRebalanceStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:spells:damage-rebalance:%s", jobID.String())
+}
+
+// GenerateReefFullTaskPayload drives R-5.1's add-to-cart pipeline: generate
+// full-resolution geometry, slice it, run the six R-5.2 rejection rules, and
+// price it if it passes. ConfigurationID and JobID both point at rows the
+// reef-site API already created synchronously before enqueueing, so the
+// processor has somewhere to write its result and something for the client
+// to poll.
+type GenerateReefFullTaskPayload struct {
+	ConfigurationID uuid.UUID `json:"configurationId"`
+	JobID           uuid.UUID `json:"jobId"`
+}
+
+type GenerateReefPreviewTaskPayload struct {
+	ConfigurationID uuid.UUID `json:"configurationId"`
+	JobID           uuid.UUID `json:"jobId"`
 }

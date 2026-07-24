@@ -39,9 +39,10 @@ type Module interface {
 // Analysis is a generator's self-report of structural facts about its own
 // output for a given set of params.
 type Analysis struct {
-	MinWallMm   float64
-	SealedVoid  bool
-	DrainPathMm float64 // meaningful only when the generator has any internal cavities at all
+	MinWallMm         float64
+	HasInternalCavity bool // false means SealedVoid/DrainPathMm are not applicable (R-5.3 never fires)
+	SealedVoid        bool
+	DrainPathMm       float64
 }
 
 type Detail int

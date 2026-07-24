@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/reef/procexec"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/procexec"
 )
 
 type Config struct {

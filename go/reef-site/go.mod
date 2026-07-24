@@ -13,11 +13,13 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/jobs => ../pkg/jobs
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
+	github.com/MaxBlaushild/poltergeist/pkg/reef => ../pkg/reef
 	github.com/MaxBlaushild/poltergeist/pkg/util => ../pkg/util
 )
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/reef v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
 	github.com/spf13/viper v1.21.0
 )

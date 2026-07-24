@@ -74,11 +74,27 @@ shared `go/pkg/db` client that every domain extends. Per the CONFORM rule ("if
 this document conflicts with established practice, the repo is right"), reef's
 gorm models (`go/pkg/models/reef_*.go`) and DB handlers
 (`go/pkg/db/reef_*.go`, registered on the shared `DbClient`) live in the shared
-packages, matching how vampire-ascendancy/spells/quests/etc. all do it. What
-stays inside `go/reef-site/internal/reef` is the actual reef-specific *logic*:
-geometry generation, slicing, validation rules, pricing, the subprocess
-sandbox, and HTTP handlers — i.e. the module boundary is drawn around behavior,
-not around Go package paths for storage.
+packages, matching how vampire-ascendancy/spells/quests/etc. all do it.
+
+**Second correction, found while wiring R-2.10's async jobs:** the domain
+logic itself (geometry generation, slicing, validation, pricing, the
+subprocess sandbox) was originally placed under
+`go/reef-site/internal/reef/*`, on the theory that only reef-site's own HTTP
+handlers would ever call it. That's wrong — R-2.10's job queue means
+`go/job-runner` (a *separate* Go module) is the process that actually
+executes generation and slicing, and every existing job-runner processor
+only ever depends on shared `go/pkg/*` packages (Go's own visibility rules
+make this non-optional: a directory named `internal/` is only importable
+from within the module rooted at its parent, so job-runner literally cannot
+import anything under `go/reef-site/internal/...`). This logic now lives in
+`go/pkg/reef/{procexec,geomhash,generate,stlbbox,slice,validate,pricing}` —
+its own small module with zero external dependencies — imported by both
+`go/reef-site` (HTTP handlers, preview path) and `go/job-runner` (the full
+generate→slice→validate→price pipeline, R-5.1). What's left under
+`go/reef-site/internal/` is exactly the reef-site HTTP process's own
+concerns: config and route handlers. The module boundary that actually holds
+up is drawn around *deployability* (what needs its own go.mod to be
+importable from a second process), not around a single "internal/" folder.
 
 ## Configuration and secrets
 

@@ -37,6 +37,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -92,6 +93,19 @@ type Result struct {
 // binary can't exhaust memory through output volume alone.
 const maxCapturedOutput = 10 * 1024 * 1024
 
+// invocations counts every Run call process-wide. Exists so tests (and
+// production metrics, if wired up later) can assert on subprocess call
+// volume directly rather than inferring it — this is what R-10's "identical
+// configuration performs exactly one generation and one slice" acceptance
+// test asserts against.
+var invocations int64
+
+// Invocations returns the number of times Run has been called in this
+// process since start.
+func Invocations() int64 {
+	return atomic.LoadInt64(&invocations)
+}
+
 // NewWorkDir allocates a fresh per-invocation temp dir under baseTempDir.
 // Callers that need to place input files before running (e.g. writing a
 // .scad source file) create it with this first and pass it to Run; callers
@@ -120,6 +134,7 @@ func Run(ctx context.Context, workDir, bin string, args []string, limits Limits)
 	if workDir == "" {
 		return nil, fmt.Errorf("procexec: workDir must be set (see NewWorkDir)")
 	}
+	atomic.AddInt64(&invocations, 1)
 
 	runCtx, cancel := context.WithTimeout(ctx, limits.Timeout)
 	defer cancel()

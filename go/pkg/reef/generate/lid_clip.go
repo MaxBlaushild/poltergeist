@@ -90,8 +90,9 @@ func (c LidClip) SCAD(params map[string]interface{}, detail Detail) (string, err
 // this part.
 func (c LidClip) Analyze(params map[string]interface{}) (Analysis, error) {
 	return Analysis{
-		MinWallMm:  clipWallMm,
-		SealedVoid: false,
+		MinWallMm:         clipWallMm,
+		HasInternalCavity: false, // the C-mouth is open on the front face — no cavity at all
+		SealedVoid:        false,
 	}, nil
 }
 

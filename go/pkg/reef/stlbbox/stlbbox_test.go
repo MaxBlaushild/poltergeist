@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/reef/generate"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/generate"
 )
 
 func TestFromFile_SyntheticCube(t *testing.T) {
@@ -37,12 +37,17 @@ func TestFromFile_SyntheticCube(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := generate.Render(context.Background(), generate.RenderConfig{
+	renderCfg := generate.RenderConfig{
 		OpenSCADBin: bin,
 		BaseTempDir: t.TempDir(),
 		Timeout:     30 * time.Second,
 		MemoryMB:    1024,
-	}, scad)
+	}
+	version, err := generate.Version(context.Background(), renderCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := generate.Render(context.Background(), renderCfg, scad, version)
 	if err != nil {
 		t.Fatal(err)
 	}

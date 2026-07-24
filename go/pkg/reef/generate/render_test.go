@@ -26,6 +26,15 @@ func renderCfg(t *testing.T) RenderConfig {
 	}
 }
 
+func mustVersion(t *testing.T, cfg RenderConfig) string {
+	t.Helper()
+	v, err := Version(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	return v
+}
+
 func TestFragRack_RendersValidSTL(t *testing.T) {
 	cfg := renderCfg(t)
 	m, err := Get("frag_rack")
@@ -46,7 +55,7 @@ func TestFragRack_RendersValidSTL(t *testing.T) {
 		t.Fatalf("SCAD: %v", err)
 	}
 
-	result, err := Render(context.Background(), cfg, scad)
+	result, err := Render(context.Background(), cfg, scad, mustVersion(t, cfg))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -81,7 +90,7 @@ func TestFragRack_FullDetailAlsoRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SCAD: %v", err)
 	}
-	result, err := Render(context.Background(), cfg, scad)
+	result, err := Render(context.Background(), cfg, scad, mustVersion(t, cfg))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -106,7 +115,7 @@ func TestLidClip_RendersValidSTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SCAD: %v", err)
 	}
-	result, err := Render(context.Background(), cfg, scad)
+	result, err := Render(context.Background(), cfg, scad, mustVersion(t, cfg))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -128,7 +137,7 @@ func TestLidClip_EuroBraceVariantRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SCAD: %v", err)
 	}
-	result, err := Render(context.Background(), cfg, scad)
+	result, err := Render(context.Background(), cfg, scad, mustVersion(t, cfg))
 	if err != nil {
 		t.Fatalf("Render (euro brace): %v", err)
 	}

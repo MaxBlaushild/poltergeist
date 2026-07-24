@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/reef/procexec"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/procexec"
 )
 
 type RenderConfig struct {
@@ -30,7 +30,13 @@ type RenderResult struct {
 // STLLoader consumes this directly for the preview viewer, so no separate
 // GLB conversion step is needed). detail controls preview vs full-res via
 // the $fn baked into scad by the caller (see Module.SCAD).
-func Render(ctx context.Context, cfg RenderConfig, scad string) (*RenderResult, error) {
+//
+// openscadVersion is a caller-resolved value (see Version), not re-resolved
+// here: R-3.3's geometry_hash formula already requires every caller to know
+// the version *before* it can even check the cache, so re-querying it again
+// inside Render would just be a second, redundant subprocess call on every
+// single generation.
+func Render(ctx context.Context, cfg RenderConfig, scad string, openscadVersion string) (*RenderResult, error) {
 	workDir, err := procexec.NewWorkDir(cfg.BaseTempDir)
 	if err != nil {
 		return nil, err
@@ -55,15 +61,7 @@ func Render(ctx context.Context, cfg RenderConfig, scad string) (*RenderResult, 
 		return nil, fmt.Errorf("generate: openscad reported success but %s was not produced: %w", outPath, statErr)
 	}
 
-	version, err := Version(ctx, cfg)
-	if err != nil {
-		// Version metadata failing to resolve shouldn't fail an otherwise
-		// successful render — it's recorded for provenance (R-2.5), not
-		// correctness of the geometry itself.
-		version = "unknown"
-	}
-
-	return &RenderResult{STLPath: outPath, WorkDir: workDir, OpenSCADVersion: version}, nil
+	return &RenderResult{STLPath: outPath, WorkDir: workDir, OpenSCADVersion: openscadVersion}, nil
 }
 
 var versionPattern = regexp.MustCompile(`OpenSCAD version ([0-9][0-9A-Za-z.\-]*)`)
