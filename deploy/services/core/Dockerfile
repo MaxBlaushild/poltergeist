@@ -16,6 +16,7 @@ COPY ./go/trades-ar-glasses/go.mod ./go/trades-ar-glasses/go.sum ./trades-ar-gla
 COPY ./go/travel-angels/go.mod ./go/travel-angels/go.sum ./travel-angels/
 COPY ./go/vampire-ascendancy/go.mod ./go/vampire-ascendancy/go.sum ./vampire-ascendancy/
 COPY ./go/verifiable-sn/go.mod ./go/verifiable-sn/go.sum ./verifiable-sn/
+COPY ./go/reef-site/go.mod ./go/reef-site/go.sum ./reef-site/
 
 WORKDIR /usr/home/app/core
 RUN --mount=type=cache,target=/go/pkg/mod \

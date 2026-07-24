@@ -21,6 +21,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
 	github.com/MaxBlaushild/poltergeist/pkg/polymarket => ../pkg/polymarket
 	github.com/MaxBlaushild/poltergeist/pkg/quizgrade => ../pkg/quizgrade
+	github.com/MaxBlaushild/poltergeist/pkg/reef => ../pkg/reef
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter
 	github.com/MaxBlaushild/poltergeist/pkg/twilio => ../pkg/twilio
@@ -40,6 +41,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/polymarket v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/quizgrade v0.0.0
+	github.com/MaxBlaushild/poltergeist/pkg/reef v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0
 	github.com/disintegration/imaging v1.6.2

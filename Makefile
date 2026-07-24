@@ -14,9 +14,9 @@ deploy-all:
 .PHONY: deploy-webapps webapps/deploy
 deploy-webapps: webapps/deploy
 
-webapps/deploy: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+webapps/deploy: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy reef-site/web-deploy
 
-.PHONY: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy
+.PHONY: boltsight/deploy final-fete/web-deploy guess-how-many/deploy ucs-admin-ui/deploy vampire-ascendancy/deploy reef-site/web-deploy
 boltsight/deploy:
 	$(MAKE) -C js/packages/boltsight deploy
 
@@ -31,6 +31,9 @@ ucs-admin-ui/deploy:
 
 vampire-ascendancy/deploy:
 	$(MAKE) -C js/packages/vampire-ascendancy deploy
+
+reef-site/web-deploy:
+	$(MAKE) -C js/packages/reef-site deploy
 
 # Bring a Vampire Ascendancy database up to date: run all migrations, then load
 # the seed — houses, characters (bios/secrets/missions), quiz, and one player
@@ -151,6 +154,22 @@ sonar/ecr-push:
 PHONY: sonar/ecs-update
 sonar/ecs-update:
 	aws ecs update-service --cluster poltergeist --service sonar_core --force-new-deployment
+
+# reef-site is folded into the composed core image today (see
+# go/reef-site/INVENTORY.md), so `core/ecr-push` + `sonar/ecs-update` already
+# ship it. reef-site/build exists for local iteration and for the day it gets
+# split into its own ECS service.
+PHONY: reef-site/build
+reef-site/build:
+	docker build -f ./deploy/services/reef-site/Dockerfile --platform linux/amd64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/reef-site:latest .
+
+PHONY: reef-site/dev
+reef-site/dev:
+	cd go/reef-site && go run ./cmd/server --config-name local
+
+PHONY: reef-site/db
+reef-site/db:
+	cd go/migrate && go run ./cmd/migrate --config-name local --direction up
 
 PHONY: job-runner/build
 job-runner/build:

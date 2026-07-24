@@ -75,6 +75,21 @@ func forwardPaymentComplete(ctx *gin.Context, session *stripe.CheckoutSession, u
 		SessionID:     session.ID,
 		AmountInCents: amountInCents,
 	}
+	if session.CustomerDetails != nil {
+		onPaymentComplete.CustomerEmail = session.CustomerDetails.Email
+	}
+	if session.ShippingDetails != nil && session.ShippingDetails.Address != nil {
+		addr := session.ShippingDetails.Address
+		onPaymentComplete.ShippingAddress = &billing.ShippingAddress{
+			Name:       session.ShippingDetails.Name,
+			Line1:      addr.Line1,
+			Line2:      addr.Line2,
+			City:       addr.City,
+			State:      addr.State,
+			PostalCode: addr.PostalCode,
+			Country:    addr.Country,
+		}
+	}
 	jsonBody, err := json.Marshal(onPaymentComplete)
 	if err != nil {
 		fmt.Printf("[forwardPaymentComplete] ERROR marshaling JSON: %v\n", err)
@@ -185,11 +200,25 @@ func main() {
 		}
 		params.Metadata["payment_complete_callback_url"] = params.PaymentCompleteCallbackUrl
 
-		session, err := session.New(&stripe.CheckoutSessionParams{
-			SuccessURL: &params.SessionSuccessRedirectUrl,
-			CancelURL:  &params.SessionCancelRedirectUrl,
-			Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
-			LineItems: []*stripe.CheckoutSessionLineItemParams{
+		var lineItems []*stripe.CheckoutSessionLineItemParams
+		if len(params.LineItems) > 0 {
+			// Itemized session (R-2.8/R-6.2) — the customer sees each line,
+			// not one lump sum.
+			for _, item := range params.LineItems {
+				lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+					PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+						Currency: stripe.String("usd"),
+						ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+							Name: stripe.String(item.Name),
+						},
+						UnitAmount: stripe.Int64(item.AmountInCents),
+					},
+					Quantity: stripe.Int64(item.Quantity),
+				})
+			}
+		} else {
+			// Original single-line-item shape, unchanged for existing callers.
+			lineItems = []*stripe.CheckoutSessionLineItemParams{
 				{
 					PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
 						Currency: stripe.String("usd"),
@@ -200,9 +229,29 @@ func main() {
 					},
 					Quantity: stripe.Int64(1),
 				},
-			},
-			Metadata: params.Metadata,
-		})
+			}
+		}
+
+		sessionParams := &stripe.CheckoutSessionParams{
+			SuccessURL: &params.SessionSuccessRedirectUrl,
+			CancelURL:  &params.SessionCancelRedirectUrl,
+			Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+			LineItems:  lineItems,
+			Metadata:   params.Metadata,
+		}
+		if params.AutomaticTax {
+			sessionParams.AutomaticTax = &stripe.CheckoutSessionAutomaticTaxParams{
+				Enabled: stripe.Bool(true),
+			}
+		}
+		if params.CollectShippingAddress {
+			// v1 is US-only (R-1.2: no international shipping).
+			sessionParams.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
+				AllowedCountries: stripe.StringSlice([]string{"US"}),
+			}
+		}
+
+		session, err := session.New(sessionParams)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),

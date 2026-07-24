@@ -185,6 +185,16 @@ type client struct {
 	feedbackItemHandle                        *feedbackItemHandle
 	vampireHandle                             *vampireHandler
 	tradesARGlassesLeadHandle                 *tradesARGlassesLeadHandle
+
+	reefProductHandle         *reefProductHandle
+	reefProductVariantHandle  *reefProductVariantHandle
+	reefParameterSchemaHandle *reefParameterSchemaHandle
+	reefTankProfileHandle     *reefTankProfileHandle
+	reefConfigurationHandle   *reefConfigurationHandle
+	reefSliceResultHandle     *reefSliceResultHandle
+	reefGenerationJobHandle   *reefGenerationJobHandle
+	reefOrderHandle           *reefOrderHandle
+	reefEventHandle           *reefEventHandle
 }
 
 type ClientConfig struct {
@@ -453,6 +463,16 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		feedbackItemHandle:                        &feedbackItemHandle{db: db},
 		vampireHandle:                             &vampireHandler{db: db},
 		tradesARGlassesLeadHandle:                 &tradesARGlassesLeadHandle{db: db},
+
+		reefProductHandle:         &reefProductHandle{db: db},
+		reefProductVariantHandle:  &reefProductVariantHandle{db: db},
+		reefParameterSchemaHandle: &reefParameterSchemaHandle{db: db},
+		reefTankProfileHandle:     &reefTankProfileHandle{db: db},
+		reefConfigurationHandle:   &reefConfigurationHandle{db: db},
+		reefSliceResultHandle:     &reefSliceResultHandle{db: db},
+		reefGenerationJobHandle:   &reefGenerationJobHandle{db: db},
+		reefOrderHandle:           &reefOrderHandle{db: db},
+		reefEventHandle:           &reefEventHandle{db: db},
 	}, nil
 }
 
@@ -1130,4 +1150,40 @@ func (c *client) Vampire() VampireHandle {
 
 func (c *client) TradesARGlassesLead() TradesARGlassesLeadHandle {
 	return c.tradesARGlassesLeadHandle
+}
+
+func (c *client) ReefProduct() ReefProductHandle {
+	return c.reefProductHandle
+}
+
+func (c *client) ReefProductVariant() ReefProductVariantHandle {
+	return c.reefProductVariantHandle
+}
+
+func (c *client) ReefParameterSchema() ReefParameterSchemaHandle {
+	return c.reefParameterSchemaHandle
+}
+
+func (c *client) ReefTankProfile() ReefTankProfileHandle {
+	return c.reefTankProfileHandle
+}
+
+func (c *client) ReefConfiguration() ReefConfigurationHandle {
+	return c.reefConfigurationHandle
+}
+
+func (c *client) ReefSliceResult() ReefSliceResultHandle {
+	return c.reefSliceResultHandle
+}
+
+func (c *client) ReefGenerationJob() ReefGenerationJobHandle {
+	return c.reefGenerationJobHandle
+}
+
+func (c *client) ReefOrder() ReefOrderHandle {
+	return c.reefOrderHandle
+}
+
+func (c *client) ReefEvent() ReefEventHandle {
+	return c.reefEventHandle
 }
