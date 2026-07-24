@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -43,10 +44,11 @@ func NewServerFromDependencies(dbClient db.DbClient) Server {
 	})
 
 	return server.NewServer(server.Deps{
-		DbClient:    dbClient,
-		Config:      cfg,
-		AwsClient:   awsClient,
-		JobsClient:  jobsClient,
-		EmailClient: emailClient,
+		DbClient:      dbClient,
+		Config:        cfg,
+		AwsClient:     awsClient,
+		JobsClient:    jobsClient,
+		EmailClient:   emailClient,
+		BillingClient: billing.NewClient(),
 	})
 }

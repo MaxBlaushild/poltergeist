@@ -238,6 +238,7 @@ type ReefGenerationJobHandle interface {
 type ReefOrderHandle interface {
 	Create(ctx context.Context, order *models.ReefOrder) (*models.ReefOrder, error)
 	FindByToken(ctx context.Context, token string) (*models.ReefOrder, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ReefOrder, error)
 	FindByStripeSessionID(ctx context.Context, sessionID string) (*models.ReefOrder, error)
 	Update(ctx context.Context, order *models.ReefOrder) error
 	FindPaid(ctx context.Context) ([]models.ReefOrder, error)

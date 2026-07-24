@@ -44,18 +44,48 @@ type OnSubscriptionDelete struct {
 	SubscriptionID string            `json:"subscriptionId"`
 }
 
+// PaymentLineItem is one itemized Stripe Checkout line (R-2.8/R-6.2: the
+// customer sees what they're paying for, not one lump sum).
+type PaymentLineItem struct {
+	Name          string `json:"name" binding:"required"`
+	AmountInCents int64  `json:"amountInCents" binding:"required"`
+	Quantity      int64  `json:"quantity" binding:"required"`
+}
+
 type PaymentCheckoutSessionParams struct {
-	SessionSuccessRedirectUrl  string            `json:"successUrl" binding:"required"`
-	SessionCancelRedirectUrl   string            `json:"cancelUrl" binding:"required"`
-	AmountInCents              int64             `json:"amountInCents" binding:"required"`
+	SessionSuccessRedirectUrl string `json:"successUrl" binding:"required"`
+	SessionCancelRedirectUrl  string `json:"cancelUrl" binding:"required"`
+	// AmountInCents is the original single-line-item shape, kept for
+	// existing callers. Set LineItems instead for an itemized session; if
+	// both are set, LineItems wins. Exactly one must be set.
+	AmountInCents int64             `json:"amountInCents"`
+	LineItems     []PaymentLineItem `json:"lineItems"`
+	// AutomaticTax enables Stripe Tax on the session (R-2.8). Off by
+	// default so existing callers see no behavior change.
+	AutomaticTax bool `json:"automaticTax"`
+	// CollectShippingAddress adds Stripe's shipping address collection step
+	// (US-only, matching R-1.2's no-international-shipping scope for v1).
+	CollectShippingAddress     bool              `json:"collectShippingAddress"`
 	PaymentCompleteCallbackUrl string            `json:"paymentCompleteCallbackUrl" binding:"required"`
 	Metadata                   map[string]string `json:"metadata"`
 }
 
+type ShippingAddress struct {
+	Name       string `json:"name"`
+	Line1      string `json:"line1"`
+	Line2      string `json:"line2"`
+	City       string `json:"city"`
+	State      string `json:"state"`
+	PostalCode string `json:"postalCode"`
+	Country    string `json:"country"`
+}
+
 type OnPaymentComplete struct {
-	Metadata      map[string]string `json:"metadata"`
-	SessionID     string            `json:"sessionId"`
-	AmountInCents int64             `json:"amountInCents"`
+	Metadata        map[string]string `json:"metadata"`
+	SessionID       string            `json:"sessionId"`
+	AmountInCents   int64             `json:"amountInCents"`
+	CustomerEmail   string            `json:"customerEmail"`
+	ShippingAddress *ShippingAddress  `json:"shippingAddress,omitempty"`
 }
 
 type CheckoutSessionResponse struct {

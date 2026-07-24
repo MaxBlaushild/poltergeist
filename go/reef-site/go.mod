@@ -19,6 +19,7 @@ replace (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/email v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0
@@ -34,6 +35,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect

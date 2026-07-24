@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -38,10 +39,11 @@ func main() {
 
 	log.Println("reef-site listening on :8091")
 	server.NewServer(server.Deps{
-		DbClient:    dbClient,
-		Config:      cfg,
-		AwsClient:   awsClient,
-		JobsClient:  jobsClient,
-		EmailClient: emailClient,
+		DbClient:      dbClient,
+		Config:        cfg,
+		AwsClient:     awsClient,
+		JobsClient:    jobsClient,
+		EmailClient:   emailClient,
+		BillingClient: billing.NewClient(),
 	}).ListenAndServe("8091")
 }

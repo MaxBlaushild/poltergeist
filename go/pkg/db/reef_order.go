@@ -54,6 +54,14 @@ func (h *reefOrderHandle) FindByToken(ctx context.Context, token string) (*model
 	return &order, nil
 }
 
+func (h *reefOrderHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.ReefOrder, error) {
+	var order models.ReefOrder
+	if err := h.db.WithContext(ctx).Preload("Items").Where("id = ?", id).First(&order).Error; err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
 func (h *reefOrderHandle) FindByStripeSessionID(ctx context.Context, sessionID string) (*models.ReefOrder, error) {
 	var order models.ReefOrder
 	err := h.db.WithContext(ctx).Preload("Items").Where("stripe_session_id = ?", sessionID).First(&order).Error

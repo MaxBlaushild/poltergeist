@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -12,11 +13,12 @@ import (
 )
 
 type Deps struct {
-	DbClient    db.DbClient
-	Config      *config.Config
-	AwsClient   aws.AWSClient
-	JobsClient  jobs.Client
-	EmailClient email.EmailClient
+	DbClient      db.DbClient
+	Config        *config.Config
+	AwsClient     aws.AWSClient
+	JobsClient    jobs.Client
+	EmailClient   email.EmailClient
+	BillingClient billing.Client
 }
 
 type server struct {
