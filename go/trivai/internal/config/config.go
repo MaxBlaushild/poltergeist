@@ -10,7 +10,8 @@ import (
 type SecretConfig struct {
 	OpenAIKey               string
 	DbPassword              string
-	SendgridApiKey          string
+	TwilioAccountSid        string
+	TwilioAuthToken         string
 	GuessHowManyPhoneNumber string
 }
 
@@ -64,7 +65,8 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 	return &Config{
 		Secret: SecretConfig{
 			DbPassword:              os.Getenv("DB_PASSWORD"),
-			SendgridApiKey:          os.Getenv("SENDGRID_API_KEY"),
+			TwilioAccountSid:        os.Getenv("TWILIO_ACCOUNT_SID"),
+			TwilioAuthToken:         os.Getenv("TWILIO_AUTH_TOKEN"),
 			GuessHowManyPhoneNumber: os.Getenv("GUESS_HOW_MANY_PHONE_NUMBER"),
 		},
 		Public: publicCfg,

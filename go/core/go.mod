@@ -64,6 +64,10 @@ replace github.com/MaxBlaushild/poltergeist/pkg/cert => ../pkg/cert
 
 replace github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor => ../pkg/ethereum_transactor
 
+replace github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
+
+replace github.com/MaxBlaushild/poltergeist/pkg/reef => ../pkg/reef
+
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
@@ -101,6 +105,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/email v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googledrive v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0 // indirect
@@ -112,6 +117,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/mapbox v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/reef v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0 // indirect
 	github.com/MicahParks/keyfunc v1.9.0 // indirect
@@ -175,6 +181,8 @@ require (
 	github.com/redis/go-redis/v9 v9.14.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
+	github.com/sendgrid/rest v2.6.9+incompatible // indirect
+	github.com/sendgrid/sendgrid-go v3.13.0+incompatible // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect

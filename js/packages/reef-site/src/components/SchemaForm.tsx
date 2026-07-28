@@ -28,7 +28,7 @@ export default function SchemaForm({ schema, values, onChange, tanks, errors, de
         if (derivedValue !== undefined) {
           return (
             <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
-              <div className="rounded border border-reef-teal/20 bg-reef-sand px-3 py-2 text-reef-ink/70">
+              <div className="rounded-xl border border-reef-teal/20 bg-reef-foam px-3 py-2 text-reef-ink/70">
                 {derivedValue} <span className="text-xs">(derived)</span>
               </div>
             </Field>
@@ -39,7 +39,7 @@ export default function SchemaForm({ schema, values, onChange, tanks, errors, de
           return (
             <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
               <select
-                className="w-full border border-reef-teal/30 rounded px-3 py-2"
+                className="input-field"
                 value={(values[name] as string) ?? ''}
                 onChange={(e) => onChange(name, e.target.value || null)}
               >
@@ -73,13 +73,13 @@ export default function SchemaForm({ schema, values, onChange, tanks, errors, de
           return (
             <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
               <select
-                className="w-full border border-reef-teal/30 rounded px-3 py-2"
+                className="input-field"
                 value={String(values[name] ?? prop.default ?? '')}
                 onChange={(e) => onChange(name, coerceEnumValue(prop.enum!, e.target.value))}
               >
                 {prop.enum.map((option) => (
                   <option key={String(option)} value={String(option)}>
-                    {String(option)}
+                    {displayEnumOption(option)}
                     {prop['x-unit'] ? prop['x-unit'] : ''}
                   </option>
                 ))}
@@ -146,10 +146,15 @@ function Field({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-sm font-medium">{label}</label>
+      <div className="mb-1 flex items-center justify-between">
+        <label className="text-sm font-medium text-reef-ink">{label}</label>
         {diagram && (
-          <a href={diagram} target="_blank" rel="noreferrer" className="text-xs text-reef-teal underline">
+          <a
+            href={diagram}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-medium text-reef-teal underline decoration-reef-teal/40 underline-offset-2 hover:text-reef-coral"
+          >
             where to measure
           </a>
         )}
@@ -173,4 +178,11 @@ function normalizeType(t: string | (string | null)[]): string {
 function coerceEnumValue(enumValues: (string | number)[], raw: string): string | number {
   const numeric = enumValues.find((v) => typeof v === 'number' && String(v) === raw);
   return numeric !== undefined ? numeric : raw;
+}
+
+// Enum values are stored/submitted lowercase (e.g. color: "black") — this
+// only affects the label shown in the dropdown, never the value.
+function displayEnumOption(option: string | number): string {
+  const s = String(option);
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

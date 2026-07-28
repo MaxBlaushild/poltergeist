@@ -103,3 +103,25 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "verifiable_sn_pos
 # Note: Since the bucket is now open for public writes, we don't need IAM policies
 # for the ECS task role. Anyone can write to the bucket via the bucket policy.
 
+# reef-site-artifacts holds the STL preview meshes reef-site generates
+# (go/reef-site/internal/server/configure.go) — StlViewer.tsx fetches these
+# directly from the browser via three.js's STLLoader, so the bucket needs
+# CORS allowing GET from the storefront's origin(s). The bucket itself was
+# created out-of-band (see go/reef-site/INVENTORY.md — it isn't an
+# aws_s3_bucket resource here), so this is addressed by name.
+resource "aws_s3_bucket_cors_configuration" "reef_site_artifacts" {
+  bucket = "reef-site-artifacts"
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "HEAD"]
+    allowed_origins = [
+      "https://reef.forteus.tech",
+      "http://localhost:5181",
+      "http://localhost:5173",
+    ]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+

@@ -35,31 +35,50 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # are the first task types that need to shell out to external binaries, so
 # this image now carries OpenSCAD and a pinned PrusaSlicer build. Both
 # versions are pinned here and recorded on every generated artifact per R-2.5.
-#
-# NOTE: not exercised with `docker build` in the environment that authored
-# this — verify the PrusaSlicer AppImage URL/checksum on a real build before
-# relying on it.
 FROM debian:bookworm-slim
 
 ARG PRUSASLICER_VERSION=2.7.4
-ARG PRUSASLICER_URL=https://github.com/prusa3d/PrusaSlicer/releases/download/version_${PRUSASLICER_VERSION}/PrusaSlicer-${PRUSASLICER_VERSION}+linux-x64-GTK3-202312191501.AppImage
+ARG PRUSASLICER_URL=https://github.com/prusa3d/PrusaSlicer/releases/download/version_${PRUSASLICER_VERSION}/PrusaSlicer-${PRUSASLICER_VERSION}+linux-x64-GTK3-202404050928.AppImage
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       openscad \
       ca-certificates \
       wget \
-      libfuse2 \
+      libgtk-3-0 \
+      libglu1-mesa \
+      libgl1 \
+      libegl1 \
+      libwayland-client0 \
+      libwayland-egl1 \
+      libdbus-1-3 \
+      liblzma5 \
+      libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Extract the PrusaSlicer AppImage so it runs directly (no FUSE mount needed
-# inside a container) at a fixed, version-pinned path.
-RUN wget -q -O /tmp/prusaslicer.AppImage "$PRUSASLICER_URL" && \
-    chmod +x /tmp/prusaslicer.AppImage && \
-    cd /opt && /tmp/prusaslicer.AppImage --appimage-extract > /dev/null && \
-    mv squashfs-root prusaslicer && \
+# Extract the PrusaSlicer AppImage's embedded squashfs directly instead of
+# running the AppImage's own self-extraction (`--appimage-extract`) — that
+# stub reliably fails with "Exec format error" when this image is
+# cross-built for linux/amd64 under QEMU emulation (e.g. from Apple Silicon;
+# see `make job-runner/build`), even though plain ELF binaries emulate fine.
+# The squashfs magic ("hsqs") can appear more than once as an incidental
+# byte match earlier in the file, so every candidate offset is tried until
+# one actually unpacks.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends squashfs-tools python3 && \
+    rm -rf /var/lib/apt/lists/* && \
+    wget -q -O /tmp/prusaslicer.AppImage "$PRUSASLICER_URL" && \
+    python3 -c "import re; data = open('/tmp/prusaslicer.AppImage', 'rb').read(); [print(m.start()) for m in re.finditer(b'hsqs', data)]" > /tmp/prusaslicer-offsets.txt && \
+    cd /opt && \
+    while read -r offset; do \
+      rm -rf /opt/squashfs-root; \
+      unsquashfs -o "$offset" -d /opt/squashfs-root /tmp/prusaslicer.AppImage > /dev/null 2>&1 && break; \
+    done < /tmp/prusaslicer-offsets.txt && \
+    test -x /opt/squashfs-root/AppRun && \
+    mv /opt/squashfs-root /opt/prusaslicer && \
     ln -s /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer && \
-    rm /tmp/prusaslicer.AppImage
+    rm /tmp/prusaslicer.AppImage /tmp/prusaslicer-offsets.txt && \
+    apt-get purge -y --auto-remove squashfs-tools python3
 
 ENV REEF_OPENSCAD_BIN=/usr/bin/openscad
 ENV REEF_SLICER_BIN=/usr/local/bin/prusa-slicer

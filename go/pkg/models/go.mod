@@ -8,7 +8,7 @@ require gorm.io/gorm v1.30.0 // direct
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/paulmach/orb v0.12.0
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96

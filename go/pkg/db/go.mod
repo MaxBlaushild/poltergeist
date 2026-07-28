@@ -20,6 +20,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0
 	github.com/google/uuid v1.6.0
+	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.5.2
 	gorm.io/gorm v1.30.0
 )
@@ -51,6 +52,5 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gorm.io/datatypes v1.2.7 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 )

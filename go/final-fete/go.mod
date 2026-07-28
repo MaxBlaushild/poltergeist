@@ -2,6 +2,8 @@ module github.com/MaxBlaushild/poltergeist/final-fete
 
 go 1.24.0
 
+replace github.com/MaxBlaushild/poltergeist/pkg/logger => ../pkg/logger
+
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
@@ -46,8 +48,10 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000 // indirect
-	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/logger v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0 // indirect
 	github.com/amimof/huego v1.2.1 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
@@ -64,6 +68,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
+	github.com/hibiken/asynq v0.25.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
 	github.com/jackc/pgx/v5 v5.5.5 // indirect
@@ -73,7 +78,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/lib/pq v1.11.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -82,7 +86,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/redis/go-redis/v9 v9.14.0 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
@@ -102,6 +106,7 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gorm.io/datatypes v1.2.7 // indirect

@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "js/packages/vampire-ascendancy", "--", "--port", "5180"],
       "port": 5180
+    },
+    {
+      "name": "reef-site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "js/packages/reef-site", "--", "--port", "5181"],
+      "port": 5181
     }
   ]
 }

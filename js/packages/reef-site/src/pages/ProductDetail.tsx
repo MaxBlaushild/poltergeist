@@ -20,19 +20,19 @@ export default function ProductDetail() {
     });
   }, [slug]);
 
-  if (!product) return <p>Loading…</p>;
+  if (!product) return <p className="text-reef-ink/60">Loading…</p>;
 
   return (
-    <div className="max-w-lg space-y-4">
-      <h1 className="text-2xl font-bold">{product.name}</h1>
+    <div className="card max-w-lg space-y-4 p-6">
+      <h1 className="font-display text-2xl font-bold text-reef-ink">{product.name}</h1>
       <p className="text-reef-ink/80">{product.description}</p>
-      <p className="text-sm text-reef-ink/60">Material: {product.material}</p>
+      <p className="pill bg-reef-teal/10 text-reef-teal">Material: {product.material}</p>
 
       {product.variants && product.variants.length > 0 && (
         <div>
-          <label className="block text-sm font-medium mb-1">Size</label>
+          <label className="mb-1 block text-sm font-medium">Size</label>
           <select
-            className="border border-reef-teal/30 rounded px-3 py-2"
+            className="input-field"
             value={selectedVariant?.variantKey ?? ''}
             onChange={(e) => setSelectedVariant(product.variants!.find((v) => v.variantKey === e.target.value) ?? null)}
           >
@@ -46,7 +46,7 @@ export default function ProductDetail() {
       )}
 
       <button
-        className="rounded bg-reef-coral px-5 py-3 font-semibold text-reef-ink hover:opacity-90 disabled:opacity-50"
+        className="btn-primary w-full"
         disabled={!selectedVariant}
         onClick={() => {
           if (!selectedVariant) return;
@@ -57,7 +57,7 @@ export default function ProductDetail() {
       >
         Add to cart
       </button>
-      {added && <p className="text-sm text-reef-teal">Added to cart.</p>}
+      {added && <p className="text-sm font-medium text-reef-teal">✓ Added to cart.</p>}
     </div>
   );
 }

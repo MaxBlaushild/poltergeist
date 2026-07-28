@@ -231,25 +231,32 @@ module inner_rack() {
     difference() {
         cube([width_mm, rack_height_mm, rack_thickness_mm]);
 
-        // Frag-plug holes, evenly spaced per tier, drilled straight through.
-        for (t = [0 : tier_count - 1]) {
-            tier_y = top_margin_mm + t * tier_spacing_mm;
-            hole_spacing = holes_per_tier > 1
-                ? (width_mm - 2 * plug_edge_margin_mm) / (holes_per_tier - 1)
-                : 0;
-            for (h = [0 : holes_per_tier - 1]) {
-                hole_x = holes_per_tier > 1
-                    ? plug_edge_margin_mm + h * hole_spacing
-                    : width_mm / 2;
-                translate([hole_x, tier_y, -0.5])
-                    cylinder(d = plug_hole_d, h = rack_thickness_mm + 1);
+        // Every cutout below is unioned into one shape before the single
+        // subtraction against the solid plate, rather than subtracted one at
+        // a time — CGAL's boolean cost grows with each sequential
+        // difference, so batching first meaningfully cuts render time on
+        // high hole/tier counts.
+        union() {
+            // Frag-plug holes, evenly spaced per tier, drilled straight through.
+            for (t = [0 : tier_count - 1]) {
+                tier_y = top_margin_mm + t * tier_spacing_mm;
+                hole_spacing = holes_per_tier > 1
+                    ? (width_mm - 2 * plug_edge_margin_mm) / (holes_per_tier - 1)
+                    : 0;
+                for (h = [0 : holes_per_tier - 1]) {
+                    hole_x = holes_per_tier > 1
+                        ? plug_edge_margin_mm + h * hole_spacing
+                        : width_mm / 2;
+                    translate([hole_x, tier_y, -0.5])
+                        cylinder(d = plug_hole_d, h = rack_thickness_mm + 1);
+                }
             }
-        }
 
-        // Magnet pockets on the back face (away from the tank interior),
-        // vented to the top edge.
-        translate([0, 0, rack_thickness_mm - magnet_h])
-            magnet_row(rack_height_mm - top_margin_mm / 2, 0, true);
+            // Magnet pockets on the back face (away from the tank interior),
+            // vented to the top edge.
+            translate([0, 0, rack_thickness_mm - magnet_h])
+                magnet_row(rack_height_mm - top_margin_mm / 2, 0, true);
+        }
     }
 }
 
@@ -259,7 +266,9 @@ module outer_plate() {
 
         // Matching magnet pockets on the front face (facing the glass /
         // inner rack), vented to the top edge.
-        magnet_row(outer_plate_depth_mm - outer_plate_depth_mm / 2, -0.01, true);
+        union() {
+            magnet_row(outer_plate_depth_mm - outer_plate_depth_mm / 2, -0.01, true);
+        }
     }
 }
 

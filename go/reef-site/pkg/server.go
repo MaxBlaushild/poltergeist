@@ -38,7 +38,8 @@ func NewServerFromDependencies(dbClient db.DbClient) Server {
 	awsClient := aws.NewAWSClient(cfg.Public.AwsRegion)
 	jobsClient := jobs.NewClient(cfg.Public.RedisUrl)
 	emailClient := email.NewClient(email.ClientConfig{
-		ApiKey:      cfg.Secret.EmailApiKey,
+		AccountSid:  cfg.Secret.TwilioAccountSid,
+		AuthToken:   cfg.Secret.TwilioAuthToken,
 		FromAddress: cfg.Public.EmailFromAddress,
 		WebHost:     cfg.Public.BaseURL,
 	})

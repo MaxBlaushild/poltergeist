@@ -33,6 +33,7 @@ COPY ./go/trades-ar-glasses ./trades-ar-glasses
 COPY ./go/travel-angels ./travel-angels
 COPY ./go/vampire-ascendancy ./vampire-ascendancy
 COPY ./go/verifiable-sn ./verifiable-sn
+COPY ./go/reef-site ./reef-site
 
 # RUN cd ./trivai
 # RUN go mod download
@@ -43,12 +44,26 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -installsuffix 'static' -o /usr/local/bin/core
 
-FROM scratch
+# core used to ship on `scratch` (every existing domain here is pure
+# Go/HTTP/DB work). reef-site's /configure/preview handler is synchronous by
+# design (R-2.10's carve-out — see go/reef-site/internal/server/configure.go)
+# and shells out to OpenSCAD directly on every request, so `scratch` can't
+# host it: there's no OS, no shared libraries, nothing for that subprocess to
+# run against. Mirrors the same fix already applied to job-runner's
+# Dockerfile for the same reason.
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      openscad \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV REEF_OPENSCAD_BIN=/usr/bin/openscad
 
 COPY --from=builder /usr/home/app/core/*.env /etc/core/
 COPY --from=builder /usr/home/app/core/fcm-service-account.json /etc/core/fcm-service-account.json
 COPY --from=builder /usr/home/app/verifiable-sn/vera-firebase.json /etc/core/vera-firebase.json
-COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 COPY --from=builder /usr/local/bin/core /usr/local/bin/core
 
 WORKDIR /etc/core

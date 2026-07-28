@@ -6,6 +6,12 @@ module "sonar_alb" {
 
   load_balancer_type = "application"
 
+  # Default (60s) is shorter than reef-site's worst-case synchronous preview
+  # render (measured ~65s for max holes/tiers, REEF_PREVIEW_TIMEOUT_SEC now
+  # 90s) — without raising this too, the ALB would cut the connection before
+  # the app-level timeout ever got a chance to.
+  idle_timeout = 120
+
   vpc_id          = module.vpc.vpc_id
   subnets         = module.vpc.public_subnets
   security_groups = [module.sonar_alb_sg.security_group_id]

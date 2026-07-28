@@ -6,6 +6,7 @@ use (
 	./go/authenticator
 	./go/billing
 	./go/core
+	./go/ethereum-transactor
 	./go/final-fete
 	./go/fount-of-erebos
 	./go/job-runner
@@ -29,11 +30,11 @@ use (
 	./go/pkg/quizgrade
 	./go/pkg/reef
 	./go/pkg/slack
-	./go/reef-site
 	./go/pkg/texter
 	./go/pkg/twilio
 	./go/pkg/util
 	./go/proteus
+	./go/reef-site
 	./go/scorekeeper
 	./go/sonar
 	./go/texter

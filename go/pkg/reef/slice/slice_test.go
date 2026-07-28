@@ -1,6 +1,13 @@
 package slice
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
 
 // Realistic PrusaSlicer G-code footer format (comment block PrusaSlicer
 // appends after slicing). This is what ParseGCodeStats is written against.
@@ -34,6 +41,22 @@ G1 X30 Y30 E3 F1500
 ; estimated printing time (normal mode) = 3h 45m 10s
 `
 
+// Same shape as sampleGCodeWithSupport but with a much larger support
+// section relative to the rest of the print, for the "extensive support"
+// side of the threshold tests.
+const sampleGCodeWithExtensiveSupport = `
+;TYPE:Perimeter
+G1 X20 Y20 E1 F1500
+;TYPE:Support material
+G1 X25 Y25 E10 F1500
+G1 X26 Y26 E19 F1500
+;TYPE:Internal infill
+G1 X30 Y30 E20 F1500
+
+; total filament used [g] = 42.10
+; estimated printing time (normal mode) = 3h 45m 10s
+`
+
 const sampleGCodeShortDuration = `
 ; total filament used [g] = 1.50
 ; estimated printing time (normal mode) = 45m 2s
@@ -51,8 +74,8 @@ func TestParseGCodeStats_NoSupport(t *testing.T) {
 	if result.PrintTimeS != wantSeconds {
 		t.Errorf("PrintTimeS = %d, want %d", result.PrintTimeS, wantSeconds)
 	}
-	if result.SupportRequired {
-		t.Error("SupportRequired = true, want false (no ;TYPE:Support material in sample)")
+	if result.SupportMaterialPercent != 0 {
+		t.Errorf("SupportMaterialPercent = %v, want 0 (no ;TYPE:Support material in sample)", result.SupportMaterialPercent)
 	}
 }
 
@@ -68,8 +91,24 @@ func TestParseGCodeStats_WithSupport(t *testing.T) {
 	if result.PrintTimeS != wantSeconds {
 		t.Errorf("PrintTimeS = %d, want %d", result.PrintTimeS, wantSeconds)
 	}
-	if !result.SupportRequired {
-		t.Error("SupportRequired = false, want true (sample has ;TYPE:Support material extrusions)")
+	// 0.5 support out of 3.0 total extrusion (E1->E2 perimeter, E2->E2.5
+	// support, E2.5->E3 infill) = 16.67%.
+	wantPercent := 0.5 / 3.0 * 100
+	if diff := result.SupportMaterialPercent - wantPercent; diff > 0.01 || diff < -0.01 {
+		t.Errorf("SupportMaterialPercent = %.4f, want %.4f", result.SupportMaterialPercent, wantPercent)
+	}
+}
+
+func TestParseGCodeStats_ExtensiveSupportIsMostOfExtrusion(t *testing.T) {
+	result, err := ParseGCodeStats(sampleGCodeWithExtensiveSupport)
+	if err != nil {
+		t.Fatalf("ParseGCodeStats: %v", err)
+	}
+	// 18 support out of 20 total extrusion (E0->E1 perimeter, E1->E10->E19
+	// support, E19->E20 infill) = 90%.
+	wantPercent := 18.0 / 20.0 * 100
+	if diff := result.SupportMaterialPercent - wantPercent; diff > 0.01 || diff < -0.01 {
+		t.Errorf("SupportMaterialPercent = %.4f, want %.4f", result.SupportMaterialPercent, wantPercent)
 	}
 }
 
@@ -116,4 +155,86 @@ func TestParseSlicerDuration(t *testing.T) {
 			t.Errorf("parseSlicerDuration(%q) = %d, want %d", c.in, got, c.want)
 		}
 	}
+}
+
+// TestSlice_PassesFilamentDensityFlag verifies the actual bug fix at the Go
+// level: a stub "slicer" records its invoked args and writes a minimal
+// valid gcode footer, so this doesn't need a real PrusaSlicer binary to
+// confirm --filament-density is present exactly when configured. The claim
+// that omitting it silently zeroes out weight was confirmed separately
+// against a real PrusaSlicer 2.7.4 binary (see slice.go's doc comment).
+func TestSlice_PassesFilamentDensityFlag(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	stub := writeStubSlicer(t, dir, argsFile)
+
+	cfg := Config{
+		SlicerBin:           stub,
+		BaseTempDir:         dir,
+		Timeout:             5 * time.Second,
+		MemoryMB:            256,
+		FilamentDensityGCm3: 1.27,
+	}
+	if _, err := Slice(context.Background(), cfg, filepath.Join(dir, "in.stl")); err != nil {
+		t.Fatalf("Slice: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading recorded args: %v", err)
+	}
+	if !strings.Contains(string(got), "--filament-density 1.27") {
+		t.Fatalf("stub slicer args = %q, want it to contain --filament-density 1.27", got)
+	}
+}
+
+func TestSlice_OmitsFilamentDensityFlagWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	stub := writeStubSlicer(t, dir, argsFile)
+
+	cfg := Config{
+		SlicerBin:   stub,
+		BaseTempDir: dir,
+		Timeout:     5 * time.Second,
+		MemoryMB:    256,
+	}
+	if _, err := Slice(context.Background(), cfg, filepath.Join(dir, "in.stl")); err != nil {
+		t.Fatalf("Slice: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading recorded args: %v", err)
+	}
+	if strings.Contains(string(got), "--filament-density") {
+		t.Fatalf("stub slicer args = %q, want no --filament-density flag when unset", got)
+	}
+}
+
+// writeStubSlicer creates an executable shell script that records its
+// argv to argsFile and writes a minimal valid gcode footer to whatever
+// path follows -o, so Slice's own ParseGCodeStats call succeeds.
+func writeStubSlicer(t *testing.T, dir, argsFile string) string {
+	t.Helper()
+	stub := filepath.Join(dir, "stub-slicer.sh")
+	script := `#!/bin/sh
+echo "$@" >> "` + argsFile + `"
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    out="$arg"
+  fi
+  prev="$arg"
+done
+cat > "$out" <<'EOF'
+; total filament used [g] = 10.00
+; estimated printing time (normal mode) = 10m 0s
+EOF
+`
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing stub slicer: %v", err)
+	}
+	return stub
 }

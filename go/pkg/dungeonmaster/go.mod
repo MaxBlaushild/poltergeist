@@ -20,7 +20,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
-	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0

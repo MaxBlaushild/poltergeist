@@ -39,7 +39,8 @@ func main() {
 	deepPriest := deep_priest.SummonDeepPriest()
 	texterClient := texter.NewClient()
 	emailClient := email.NewClient(email.ClientConfig{
-		ApiKey:      cfg.Secret.SendgridApiKey,
+		AccountSid:  cfg.Secret.TwilioAccountSid,
+		AuthToken:   cfg.Secret.TwilioAuthToken,
 		FromAddress: cfg.Public.EmailFromAddress,
 		WebHost:     cfg.Public.WebHost,
 	})

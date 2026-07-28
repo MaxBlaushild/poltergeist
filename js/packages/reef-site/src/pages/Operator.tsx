@@ -41,7 +41,7 @@ export default function Operator() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold">Operator metrics</h1>
+      <h1 className="font-display text-2xl font-bold text-reef-lagoon">Operator metrics</h1>
 
       <div className="flex flex-wrap items-end gap-4 text-sm">
         <label className="flex flex-col gap-1">
@@ -51,7 +51,7 @@ export default function Operator() {
             min={1}
             value={days}
             onChange={(e) => setDays(Number(e.target.value) || 30)}
-            className="w-24 rounded border border-reef-teal/30 px-2 py-1"
+            className="w-24 rounded-lg border border-reef-teal/30 px-2 py-1"
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -62,14 +62,10 @@ export default function Operator() {
             step="0.01"
             value={adSpend}
             onChange={(e) => setAdSpend(e.target.value)}
-            className="w-32 rounded border border-reef-teal/30 px-2 py-1"
+            className="w-32 rounded-lg border border-reef-teal/30 px-2 py-1"
           />
         </label>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="rounded bg-reef-coral px-4 py-2 font-semibold text-reef-ink hover:opacity-90 disabled:opacity-50"
-        >
+        <button onClick={load} disabled={loading} className="btn-primary px-4 py-2">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
@@ -144,9 +140,9 @@ export default function Operator() {
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded border border-reef-teal/20 px-3 py-2">
+    <div className="rounded-xl border border-reef-teal/20 bg-white px-3 py-2">
       <dt className="text-xs text-reef-ink/50">{label}</dt>
-      <dd className="text-lg font-semibold">{value}</dd>
+      <dd className="text-lg font-semibold text-reef-lagoon">{value}</dd>
     </div>
   );
 }

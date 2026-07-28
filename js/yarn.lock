@@ -1389,20 +1389,20 @@
   resolved "https://registry.npmjs.org/@emotion/weak-memoize/-/weak-memoize-0.3.1.tgz"
   integrity sha512-EsBwpc7hBUJWAsNPBmJy4hxWx12v6bshQsldrVmjxJoc3isbxhOrF2IcCpaXxfvq03NwkI7sbsOLXbYuqF/8Ww==
 
-"@esbuild/linux-x64@0.25.12":
+"@esbuild/darwin-arm64@0.25.12":
   version "0.25.12"
-  resolved "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.12.tgz"
-  integrity sha512-uqZMTLr/zR/ed4jIGnwSLkaHmPjOjJvnm6TVVitAa08SLS9Z0VM8wIRx7gWbJB5/J54YuIMInDquWyYvQLZkgw==
+  resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.25.12.tgz"
+  integrity sha512-N3zl+lxHCifgIlcMUP5016ESkeQjLj/959RxxNYIthIg+CQHInujFuXeWbWMgnTo4cp5XVHqFPmpyu9J65C1Yg==
 
-"@esbuild/linux-x64@0.27.7":
+"@esbuild/darwin-arm64@0.27.7":
   version "0.27.7"
-  resolved "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.27.7.tgz"
-  integrity sha512-hzznmADPt+OmsYzw1EE33ccA+HPdIqiCRq7cQeL1Jlq2gb1+OyWBkMCrYGBJ+sxVzve2ZJEVeePbLM2iEIZSxA==
+  resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.27.7.tgz"
+  integrity sha512-5lckdqeuBPlKUwvoCXIgI2D9/ABmPq3Rdp7IfL70393YgaASt7tbju3Ac+ePVi3KDH6N2RqePfHnXkaDtY9fkw==
 
-"@esbuild/linux-x64@0.28.1":
+"@esbuild/darwin-arm64@0.28.1":
   version "0.28.1"
-  resolved "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.1.tgz"
-  integrity sha512-u/anNYF2mmVOEDwLtnQ1wOr3EZ9sTNGLWrsYGYwHWzGA3Si84IOkHXlbWTD1NB+9/1lcnweYKO54uhxZydNzfA==
+  resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz"
+  integrity sha512-TZbWkQY7kvTAXbXUT7uVACR5cMHsDiSz9z7ZKAX/RTq/WJEk3QyRr0wZpNhBDX+/0CtdqUIJlOiodQcta6tY3Q==
 
 "@eslint-community/eslint-utils@^4.2.0", "@eslint-community/eslint-utils@^4.7.0", "@eslint-community/eslint-utils@^4.8.0":
   version "4.9.0"
@@ -2117,15 +2117,10 @@
     tslib "^2.3.0"
     yargs-parser "21.1.1"
 
-"@nx/nx-linux-x64-gnu@18.3.3":
+"@nx/nx-darwin-arm64@18.3.3":
   version "18.3.3"
-  resolved "https://registry.npmjs.org/@nx/nx-linux-x64-gnu/-/nx-linux-x64-gnu-18.3.3.tgz"
-  integrity sha512-FgYTQ3VEE6EUOGtJT9riRK8IBwPGFjKS+N2mudQJn2bB/9IumUvVRYQUIX08gqGLlqZPO6uUUhUjwZY8SnjRLQ==
-
-"@nx/nx-linux-x64-musl@18.3.3":
-  version "18.3.3"
-  resolved "https://registry.npmjs.org/@nx/nx-linux-x64-musl/-/nx-linux-x64-musl-18.3.3.tgz"
-  integrity sha512-QnWjGViR1Wj9gJXa1RJ9mXyy2/JzQ7NF2C4ulTYSH5St1HoxhkfnLsV0+uNLFEV9PSZq+2BfxmQuT8Appefv1A==
+  resolved "https://registry.npmjs.org/@nx/nx-darwin-arm64/-/nx-darwin-arm64-18.3.3.tgz"
+  integrity sha512-NpA2/7o1uUuaocMYopX9muxKif9HlGfWaXo2UeiR918usF6xri4aUqweZbaXVc9iqCAEbVMWUsjaLYGKPXHAjw==
 
 "@octokit/auth-token@^3.0.0":
   version "3.0.4"
@@ -2268,14 +2263,14 @@
     schema-utils "^3.0.0"
     source-map "^0.7.3"
 
-"@poltergeist/api-client@*", "@poltergeist/api-client@file:/home/user/poltergeist/js/packages/api-client":
+"@poltergeist/api-client@*", "@poltergeist/api-client@file:/Users/maxblaushild/Projects/poltergeist/js/packages/api-client":
   version "1.0.0"
   resolved "file:packages/api-client"
   dependencies:
     "@poltergeist/types" "*"
     axios "^1.6.7"
 
-"@poltergeist/components@*", "@poltergeist/components@file:/home/user/poltergeist/js/packages/components":
+"@poltergeist/components@*", "@poltergeist/components@file:/Users/maxblaushild/Projects/poltergeist/js/packages/components":
   version "1.0.0"
   resolved "file:packages/components"
   dependencies:
@@ -2284,14 +2279,14 @@
     "@types/node" "^20.10.5"
     react-phone-number-input "^3.3.7"
 
-"@poltergeist/contexts@*", "@poltergeist/contexts@file:/home/user/poltergeist/js/packages/contexts":
+"@poltergeist/contexts@*", "@poltergeist/contexts@file:/Users/maxblaushild/Projects/poltergeist/js/packages/contexts":
   version "1.0.0"
   resolved "file:packages/contexts"
   dependencies:
     "@poltergeist/api-client" "*"
     "@poltergeist/types" "*"
 
-"@poltergeist/hooks@*", "@poltergeist/hooks@file:/home/user/poltergeist/js/packages/hooks":
+"@poltergeist/hooks@*", "@poltergeist/hooks@file:/Users/maxblaushild/Projects/poltergeist/js/packages/hooks":
   version "1.0.0"
   resolved "file:packages/hooks"
   dependencies:
@@ -2300,14 +2295,14 @@
     "@poltergeist/types" "*"
     typescript "^5.7.3"
 
-"@poltergeist/types@*", "@poltergeist/types@file:/home/user/poltergeist/js/packages/types":
+"@poltergeist/types@*", "@poltergeist/types@file:/Users/maxblaushild/Projects/poltergeist/js/packages/types":
   version "1.0.0"
   resolved "file:packages/types"
   dependencies:
     "@types/jest" "^29.5.11"
     "@types/node" "^20.10.5"
 
-"@poltergeist/utils@file:/home/user/poltergeist/js/packages/utils":
+"@poltergeist/utils@file:/Users/maxblaushild/Projects/poltergeist/js/packages/utils":
   version "1.0.0"
   resolved "file:packages/utils"
   dependencies:
@@ -2316,7 +2311,7 @@
     "@types/node-fetch" "^2.6.12"
     typescript "^5.7.3"
 
-"@poltergiest/guess-how-many@file:/home/user/poltergeist/js/packages/guess-how-many":
+"@poltergiest/guess-how-many@file:/Users/maxblaushild/Projects/poltergeist/js/packages/guess-how-many":
   version "0.1.0"
   resolved "file:packages/guess-how-many"
   dependencies:
@@ -2400,35 +2395,20 @@
     estree-walker "^1.0.1"
     picomatch "^2.2.2"
 
-"@rollup/rollup-linux-x64-gnu@4.53.3":
+"@rollup/rollup-darwin-arm64@4.53.3":
   version "4.53.3"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.53.3.tgz"
-  integrity sha512-3EhFi1FU6YL8HTUJZ51imGJWEX//ajQPfqWLI3BQq4TlvHy4X0MOr5q3D2Zof/ka0d5FNdPwZXm3Yyib/UEd+w==
+  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.53.3.tgz"
+  integrity sha512-Nr7SlQeqIBpOV6BHHGZgYBuSdanCXuw09hon14MGOLGmXAFYjx1wNvquVPmpZnl0tLjg25dEdr4IQ6GgyToCUA==
 
-"@rollup/rollup-linux-x64-gnu@4.62.0":
+"@rollup/rollup-darwin-arm64@4.62.0":
   version "4.62.0"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.62.0.tgz"
-  integrity sha512-7SDIalKeIpG0Ifogbbdn58HmSotYMlf23K3dCJEmiVd9Fg36Vmni82iPQec27N3wY4Bvbxftkxz6vSx9OcouTg==
+  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.62.0.tgz"
+  integrity sha512-BqCoMoIbn0keKys+dEAdBa70EtOwV1bEsQCUgU9FdiZmmMge/Zk7LlkYGqbrdHR+Frnt0E1FOanly+rlwvvQzw==
 
-"@rollup/rollup-linux-x64-gnu@4.62.2":
+"@rollup/rollup-darwin-arm64@4.62.2":
   version "4.62.2"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.62.2.tgz"
-  integrity sha512-5BqxR/pshjey51iliyzTD5Xi3EN0aLmQ2lZ3lvefVV9c82BvrLo2/6OT55iifpWBufs6kdwWbuOKS841DrmK9A==
-
-"@rollup/rollup-linux-x64-musl@4.53.3":
-  version "4.53.3"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.53.3.tgz"
-  integrity sha512-eoROhjcc6HbZCJr+tvVT8X4fW3/5g/WkGvvmwz/88sDtSJzO7r/blvoBDgISDiCjDRZmHpwud7h+6Q9JxFwq1Q==
-
-"@rollup/rollup-linux-x64-musl@4.62.0":
-  version "4.62.0"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.62.0.tgz"
-  integrity sha512-eRZevouTH2i1HeAVLqJuLnt256krQkGY0TN6WsTmsIhuzbh457HuWDMakKwmi0Cjadux983CoSr8Lim2QhUIFw==
-
-"@rollup/rollup-linux-x64-musl@4.62.2":
-  version "4.62.2"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.62.2.tgz"
-  integrity sha512-uNN83XxQrRAh/w0/pmAfibcwyb6YWt4gP+dpnQKPVJshAloQ785ii8CT8ZCIxkGg9opVsvAlGhFitSm6D1Jjpg==
+  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.62.2.tgz"
+  integrity sha512-v39RCCvj4He82I9sFmk+M1VZ0PLM9sfsLVikjfx2hYBNALhrrOR2D3JjQA6AhlaSOgcR+RzrKY7e1+bT6SUO/A==
 
 "@rtsao/csstype@2.6.5-forked.0":
   version "2.6.5-forked.0"
@@ -2650,10 +2630,10 @@
     "@svgr/plugin-svgo" "^5.5.0"
     loader-utils "^2.0.0"
 
-"@toastdotdev/lib-linux-x64-gnu@0.0.1":
+"@toastdotdev/lib-darwin-arm64@0.0.1":
   version "0.0.1"
-  resolved "https://registry.npmjs.org/@toastdotdev/lib-linux-x64-gnu/-/lib-linux-x64-gnu-0.0.1.tgz"
-  integrity sha512-ThaNF545J8lFOlYmFuuXHFj+PpNZSQg58hjgRM69uf5wNZB3AuiHLGyV0yHtenCUfFKd9OeG2jTtSxaTgOLPbA==
+  resolved "https://registry.npmjs.org/@toastdotdev/lib-darwin-arm64/-/lib-darwin-arm64-0.0.1.tgz"
+  integrity sha512-6UbPdjDFeZsH/2gdNpc3YKVI9FF2VYGLaVUYSUfywpfw4EbAfw/xS+4VZR1ThdowEkoP1Bgy360z3/Iwmv1svg==
 
 "@toastdotdev/lib@0.0.1":
   version "0.0.1"
@@ -5699,7 +5679,7 @@ body-parser@1.20.2:
     type-is "~1.6.18"
     unpipe "1.0.0"
 
-"boltsight@file:/home/user/poltergeist/js/packages/boltsight":
+"boltsight@file:/Users/maxblaushild/Projects/poltergeist/js/packages/boltsight":
   version "0.0.0"
   resolved "file:packages/boltsight"
 
@@ -8127,7 +8107,7 @@ fill-range@^7.1.1:
   dependencies:
     to-regex-range "^5.0.1"
 
-"final-fete@file:/home/user/poltergeist/js/packages/final-fete":
+"final-fete@file:/Users/maxblaushild/Projects/poltergeist/js/packages/final-fete":
   version "0.0.0"
   resolved "file:packages/final-fete"
   dependencies:
@@ -8368,6 +8348,11 @@ fs.realpath@^1.0.0:
   version "1.0.0"
   resolved "https://registry.npmjs.org/fs.realpath/-/fs.realpath-1.0.0.tgz"
   integrity sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==
+
+fsevents@^2.3.2, fsevents@~2.3.2, fsevents@~2.3.3:
+  version "2.3.3"
+  resolved "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz"
+  integrity sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==
 
 function-bind@^1.1.2:
   version "1.1.2"
@@ -13378,7 +13363,7 @@ redent@^3.0.0:
     indent-string "^4.0.0"
     strip-indent "^3.0.0"
 
-"reef-site@file:/home/user/poltergeist/js/packages/reef-site":
+"reef-site@file:/Users/maxblaushild/Projects/poltergeist/js/packages/reef-site":
   version "0.0.0"
   resolved "file:packages/reef-site"
   dependencies:
@@ -15183,7 +15168,7 @@ typescript@~5.9.3:
   resolved "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz"
   integrity sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==
 
-"ucs-admin-ui@file:/home/user/poltergeist/js/packages/ucs-admin-ui":
+"ucs-admin-ui@file:/Users/maxblaushild/Projects/poltergeist/js/packages/ucs-admin-ui":
   version "0.1.0"
   resolved "file:packages/ucs-admin-ui"
   dependencies:
@@ -15394,7 +15379,7 @@ validate-npm-package-name@^5.0.0, validate-npm-package-name@5.0.0:
   dependencies:
     builtins "^5.0.0"
 
-"vampire-ascendancy@file:/home/user/poltergeist/js/packages/vampire-ascendancy":
+"vampire-ascendancy@file:/Users/maxblaushild/Projects/poltergeist/js/packages/vampire-ascendancy":
   version "0.0.0"
   resolved "file:packages/vampire-ascendancy"
   dependencies:

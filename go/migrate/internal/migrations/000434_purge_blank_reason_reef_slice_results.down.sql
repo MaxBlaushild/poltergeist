@@ -1,0 +1,4 @@
+-- Irreversible: this only deletes rows that had no meaningful data to begin
+-- with (a blank rejection_reason), so there's nothing to restore. Any
+-- configuration/product referencing a purged geometry_hash will simply
+-- regenerate a correct slice_result on its next attempt.

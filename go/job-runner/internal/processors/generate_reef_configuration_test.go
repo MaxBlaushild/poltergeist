@@ -56,10 +56,10 @@ func envOr(key, fallback string) string {
 // is what this test is actually verifying) touches real subprocesses.
 func stubSliceAlwaysOverweight(ctx context.Context, cfg slice.Config, stlPath string) (*slice.Result, error) {
 	return &slice.Result{
-		WeightG:         999999,
-		PrintTimeS:      60,
-		SupportRequired: false,
-		SlicerVersion:   "stub-test-slicer",
+		WeightG:                999999,
+		PrintTimeS:             60,
+		SupportMaterialPercent: 0,
+		SlicerVersion:          "stub-test-slicer",
 	}, nil
 }
 

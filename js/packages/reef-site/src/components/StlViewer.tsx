@@ -22,7 +22,7 @@ export default function StlViewer({ url, pending, plateFits }: Props) {
     setLoadError(null);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4ede1);
+    scene.background = new THREE.Color(0xe8f6f3);
 
     const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 2000);
     camera.position.set(150, 150, 200);
@@ -90,20 +90,23 @@ export default function StlViewer({ url, pending, plateFits }: Props) {
   }, [url, plateFits]);
 
   return (
-    <div className="relative rounded-lg border border-reef-teal/20 bg-reef-sand overflow-hidden" style={{ height: 360 }}>
-      <div ref={containerRef} className="w-full h-full" />
+    <div className="card relative overflow-hidden bg-reef-foam" style={{ height: 360 }}>
+      <div ref={containerRef} className="h-full w-full" />
       {pending && (
-        <div className="absolute inset-0 flex items-center justify-center bg-reef-sand/80 text-reef-ink/70 text-sm">
-          Rendering preview…
+        <div className="absolute inset-0 flex items-center justify-center bg-reef-foam/80 text-sm text-reef-ink/70">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 animate-shimmer rounded-full bg-reef-teal" />
+            Rendering preview…
+          </span>
         </div>
       )}
       {!pending && !url && (
-        <div className="absolute inset-0 flex items-center justify-center text-reef-ink/50 text-sm">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-reef-ink/50">
           Adjust the parameters to see a preview.
         </div>
       )}
       {loadError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-reef-sand/90 text-red-600 text-sm">
+        <div className="absolute inset-0 flex items-center justify-center bg-reef-foam/90 text-sm text-red-600">
           {loadError}
         </div>
       )}

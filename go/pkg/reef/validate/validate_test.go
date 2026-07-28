@@ -7,24 +7,25 @@ import (
 
 func healthyMetadata() Metadata {
 	return Metadata{
-		BboxMaxDimensionMm: 150,
-		SupportRequired:    false,
-		MinWallMm:          6,
-		PrintTimeS:         3600,
-		WeightG:            80,
-		SealedVoid:         false,
-		DrainPathMm:        6,
-		HasInternalCavity:  true,
+		BboxMaxDimensionMm:     150,
+		SupportMaterialPercent: 0,
+		MinWallMm:              6,
+		PrintTimeS:             3600,
+		WeightG:                80,
+		SealedVoid:             false,
+		DrainPathMm:            6,
+		HasInternalCavity:      true,
 	}
 }
 
 func defaultThresholds() Thresholds {
 	return Thresholds{
-		MaxBboxMm:      210,
-		MinWallMm:      2.0,
-		MaxPrintTimeS:  4 * 60 * 60,
-		MaxWeightG:     250,
-		MinDrainPathMm: 4,
+		MaxBboxMm:             210,
+		MinWallMm:             2.0,
+		MaxPrintTimeS:         4 * 60 * 60,
+		MaxWeightG:            250,
+		MinDrainPathMm:        4,
+		MaxSupportMaterialPct: 10.0,
 	}
 }
 
@@ -45,11 +46,23 @@ func TestValidate_BoundingBoxRule(t *testing.T) {
 	requireRejection(t, rejection, RuleBoundingBox, []string{"width", "tier", "quantity"})
 }
 
-func TestValidate_SupportsRequiredRule(t *testing.T) {
+func TestValidate_ExcessiveSupportRule(t *testing.T) {
 	meta := healthyMetadata()
-	meta.SupportRequired = true
+	meta.SupportMaterialPercent = 50 // well over the 10% default threshold
 	rejection := Validate(meta, defaultThresholds())
-	requireRejection(t, rejection, RuleSupportsRequired, []string{"size", "tiers", "holes"})
+	requireRejection(t, rejection, RuleExcessiveSupport, []string{"size", "tiers", "holes"})
+}
+
+// A design needing a small amount of support (e.g. one small overhanging
+// feature, like frag_rack's vent channel) is still a healthy, sellable
+// part — only a substantial fraction of the print needing scaffolding
+// should reject.
+func TestValidate_MinorSupportPasses(t *testing.T) {
+	meta := healthyMetadata()
+	meta.SupportMaterialPercent = 3 // under the 10% default threshold
+	if rejection := Validate(meta, defaultThresholds()); rejection != nil {
+		t.Fatalf("expected minor support material (3%%) to pass, got rejection: %+v", rejection)
+	}
 }
 
 func TestValidate_MinWallThicknessRule(t *testing.T) {

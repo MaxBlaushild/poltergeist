@@ -16,37 +16,37 @@ export default function OrderStatus() {
       .catch(() => setOrder(null));
   }, [token]);
 
-  if (order === undefined) return <p>Loading…</p>;
-  if (order === null) return <p>We couldn't find that order.</p>;
+  if (order === undefined) return <p className="text-reef-ink/60">Loading…</p>;
+  if (order === null) return <p className="text-reef-ink/60">We couldn't find that order.</p>;
 
   return (
-    <div className="max-w-lg space-y-4">
-      <h1 className="text-2xl font-bold">Order {order.orderToken}</h1>
-      <p className="rounded bg-reef-teal/10 border border-reef-teal/20 px-3 py-2 inline-block">
-        Status: <span className="font-medium">{statusLabel(order.status)}</span>
+    <div className="mx-auto max-w-lg space-y-5">
+      <h1 className="font-display text-2xl font-bold text-reef-ink">Order {order.orderToken}</h1>
+      <p className="pill bg-reef-teal/10 text-reef-teal">
+        Status: <span className="ml-1 font-semibold">{statusLabel(order.status)}</span>
       </p>
 
-      <ul className="divide-y divide-reef-teal/10">
+      <ul className="card divide-y divide-reef-teal/10 px-5">
         {order.items.map((item) => (
-          <li key={item.id} className="py-2 flex justify-between text-sm">
-            <span>
+          <li key={item.id} className="flex justify-between py-3 text-sm">
+            <span className="text-reef-ink/80">
               {item.variantKey ? `${item.variantKey} ` : ''}× {item.quantity}
             </span>
-            <span>${((item.unitPriceCents * item.quantity) / 100).toFixed(2)}</span>
+            <span className="font-medium text-reef-ink">${((item.unitPriceCents * item.quantity) / 100).toFixed(2)}</span>
           </li>
         ))}
       </ul>
 
-      <div className="text-sm space-y-1 border-t border-reef-teal/20 pt-3">
+      <div className="card space-y-1 p-5 text-sm">
         <div className="flex justify-between">
-          <span>Subtotal</span>
+          <span className="text-reef-ink/70">Subtotal</span>
           <span>${(order.subtotalCents / 100).toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Shipping</span>
+          <span className="text-reef-ink/70">Shipping</span>
           <span>${(order.shippingCents / 100).toFixed(2)}</span>
         </div>
-        <div className="flex justify-between font-semibold">
+        <div className="flex justify-between border-t border-reef-teal/10 pt-2 font-semibold text-reef-ink">
           <span>Total</span>
           <span>${(order.totalCents / 100).toFixed(2)}</span>
         </div>

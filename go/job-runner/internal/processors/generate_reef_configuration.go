@@ -149,10 +149,11 @@ func (p *GenerateReefFullProcessor) process(ctx context.Context, payload jobs.Ge
 	}
 
 	sliceCfg := slice.Config{
-		SlicerBin:   p.cfg.ReefSlicerBin,
-		BaseTempDir: os.TempDir(),
-		Timeout:     time.Duration(p.cfg.ReefSubprocessTimeoutSec) * time.Second,
-		MemoryMB:    p.cfg.ReefSubprocessMemoryMB,
+		SlicerBin:           p.cfg.ReefSlicerBin,
+		BaseTempDir:         os.TempDir(),
+		Timeout:             time.Duration(p.cfg.ReefSubprocessTimeoutSec) * time.Second,
+		MemoryMB:            p.cfg.ReefSubprocessMemoryMB,
+		FilamentDensityGCm3: p.cfg.ReefFilamentDensityGCm3,
 	}
 	sliceResult, err := p.slice(ctx, sliceCfg, renderResult.STLPath)
 	if err != nil {
@@ -163,21 +164,22 @@ func (p *GenerateReefFullProcessor) process(ctx context.Context, payload jobs.Ge
 	}
 
 	meta := validate.Metadata{
-		BboxMaxDimensionMm: box.MaxDimensionMm(),
-		SupportRequired:    sliceResult.SupportRequired,
-		MinWallMm:          analysis.MinWallMm,
-		PrintTimeS:         sliceResult.PrintTimeS,
-		WeightG:            sliceResult.WeightG,
-		SealedVoid:         analysis.SealedVoid,
-		DrainPathMm:        analysis.DrainPathMm,
-		HasInternalCavity:  analysis.HasInternalCavity,
+		BboxMaxDimensionMm:     box.MaxDimensionMm(),
+		SupportMaterialPercent: sliceResult.SupportMaterialPercent,
+		MinWallMm:              analysis.MinWallMm,
+		PrintTimeS:             sliceResult.PrintTimeS,
+		WeightG:                sliceResult.WeightG,
+		SealedVoid:             analysis.SealedVoid,
+		DrainPathMm:            analysis.DrainPathMm,
+		HasInternalCavity:      analysis.HasInternalCavity,
 	}
 	thresholds := validate.Thresholds{
-		MaxBboxMm:      p.cfg.ReefMaxBboxMm,
-		MinWallMm:      p.cfg.ReefMinWallMm,
-		MaxPrintTimeS:  p.cfg.ReefMaxPrintTimeS,
-		MaxWeightG:     p.cfg.ReefMaxWeightG,
-		MinDrainPathMm: p.cfg.ReefMinDrainPathMm,
+		MaxBboxMm:             p.cfg.ReefMaxBboxMm,
+		MinWallMm:             p.cfg.ReefMinWallMm,
+		MaxPrintTimeS:         p.cfg.ReefMaxPrintTimeS,
+		MaxWeightG:            p.cfg.ReefMaxWeightG,
+		MinDrainPathMm:        p.cfg.ReefMinDrainPathMm,
+		MaxSupportMaterialPct: p.cfg.ReefMaxSupportMaterialPct,
 	}
 	rejection := validate.Validate(meta, thresholds)
 
@@ -190,22 +192,24 @@ func (p *GenerateReefFullProcessor) process(ctx context.Context, payload jobs.Ge
 	printTimeS := sliceResult.PrintTimeS
 	minWallMm := analysis.MinWallMm
 	sealedVoid := analysis.SealedVoid
-	supportRequired := sliceResult.SupportRequired
+	supportMaterialPercent := sliceResult.SupportMaterialPercent
+	supportRequired := supportMaterialPercent > 0
 	plateFits := box.MaxDimensionMm() <= thresholds.MaxBboxMm
 
 	sliceRow := &models.ReefSliceResult{
-		GeometryHash:    hash,
-		ProductID:       product.ID,
-		WeightG:         &weightG,
-		PrintTimeS:      &printTimeS,
-		BboxMm:          datatypes.JSON(bboxJSON),
-		PlateFits:       &plateFits,
-		SupportRequired: &supportRequired,
-		MinWallMm:       &minWallMm,
-		SealedVoid:      &sealedVoid,
-		Warnings:        datatypes.JSON([]byte(`[]`)),
-		SlicerVersion:   sliceResult.SlicerVersion,
-		OpenSCADVersion: openscadVersion,
+		GeometryHash:           hash,
+		ProductID:              product.ID,
+		WeightG:                &weightG,
+		PrintTimeS:             &printTimeS,
+		BboxMm:                 datatypes.JSON(bboxJSON),
+		PlateFits:              &plateFits,
+		SupportRequired:        &supportRequired,
+		SupportMaterialPercent: &supportMaterialPercent,
+		MinWallMm:              &minWallMm,
+		SealedVoid:             &sealedVoid,
+		Warnings:               datatypes.JSON([]byte(`[]`)),
+		SlicerVersion:          sliceResult.SlicerVersion,
+		OpenSCADVersion:        openscadVersion,
 	}
 
 	if rejection != nil {

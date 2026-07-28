@@ -37,10 +37,39 @@ module "ecs" {
         aws_secretsmanager_secret.polymarket_address.arn,
       ]
 
+      tasks_iam_role_statements = [
+        {
+          sid       = "ReefSiteArtifactsObjectAccess"
+          effect    = "Allow"
+          actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+          resources = ["arn:aws:s3:::reef-site-artifacts/*"]
+        },
+        {
+          sid       = "ReefSiteArtifactsBucketAccess"
+          effect    = "Allow"
+          actions   = ["s3:ListBucket"]
+          resources = ["arn:aws:s3:::reef-site-artifacts"]
+        }
+      ]
+
       container_definitions = {
         "core" = {
           essential = true
           image     = "${aws_ecr_repository.core.repository_url}:latest"
+          # readonlyRootFilesystem defaults to true in this module. reef-site's
+          # OpenSCAD preview path (go/reef-site/internal/server/configure.go)
+          # shells out and needs a writable scratch dir for each render
+          # (go/pkg/reef/procexec.NewWorkDir, under os.TempDir()) — give it an
+          # in-memory tmpfs at /tmp rather than disabling read-only-root
+          # wholesale.
+          linuxParameters = {
+            tmpfs = [
+              {
+                containerPath = "/tmp"
+                size          = 512
+              }
+            ]
+          }
           environment = [
             {
               name  = "DB_HOST"
@@ -97,12 +126,45 @@ module "ecs" {
             {
               name  = "UNCLAIMED_STREETS_APPLICATION_CREDENTIALS"
               value = "/etc/core/fcm-service-account.json"
+            },
+            {
+              name  = "REEF_S3_BUCKET"
+              value = "reef-site-artifacts"
+            },
+            {
+              name  = "REEF_AWS_REGION"
+              value = local.region
+            },
+            {
+              # Default (210mm) was narrower than what the schema itself
+              # advertises as the widest configurable rack (widthMm max
+              # 250mm) — any width over 210 always failed the print-envelope
+              # check regardless of the actual printer. 250 matches the
+              # printer's real 256x256x256mm bed with a small safety margin.
+              name  = "REEF_MAX_BBOX_MM"
+              value = "250"
+            },
+            {
+              name  = "REEF_OPERATOR_EMAIL"
+              value = "orders@reef.forteus.tech"
+            },
+            {
+              name  = "EMAIL_FROM_ADDRESS"
+              value = "no-reply@reef.forteus.tech"
             }
           ]
           secrets = [
             {
               name      = "DB_PASSWORD"
               valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+            },
+            {
+              name      = "TWILIO_ACCOUNT_SID"
+              valueFrom = "${aws_secretsmanager_secret.twilio_account_sid.arn}"
+            },
+            {
+              name      = "TWILIO_AUTH_TOKEN"
+              valueFrom = "${aws_secretsmanager_secret.twilio_auth_token.arn}"
             },
             {
               name      = "HUE_CLIENT_ID"
@@ -235,7 +297,20 @@ module "ecs" {
 
         "job-runner" = {
           essential = true
-          secrets = [{ 
+          # Same readonlyRootFilesystem-vs-writable-/tmp issue as the "core"
+          # container above — job-runner's full generate+slice path
+          # (go/job-runner/internal/processors/generate_reef_configuration.go)
+          # shells out to OpenSCAD and PrusaSlicer via the same
+          # procexec.NewWorkDir(os.TempDir()) helper.
+          linuxParameters = {
+            tmpfs = [
+              {
+                containerPath = "/tmp"
+                size          = 1024
+              }
+            ]
+          }
+          secrets = [{
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }, {
@@ -293,6 +368,35 @@ module "ecs" {
             {
               name  = "POLYMARKET_TRADES_LIMIT"
               value = "100"
+            },
+            {
+              # Must match core's REEF_MAX_BBOX_MM — a Viper config-loading
+              # bug meant job-runner silently ignored any REEF_* override
+              # attempt here until it was fixed (see
+              # go/job-runner/internal/config/config.go), so core's preview
+              # and job-runner's real checkout validation could accept
+              # different max sizes without anyone setting them differently
+              # on purpose.
+              name  = "REEF_MAX_BBOX_MM"
+              value = "250"
+            },
+            {
+              # Minor/localized support (e.g. frag_rack's small vent-channel
+              # overhang, measured ~2.4% on a real print) still passes; only
+              # a design needing scaffolding through a substantial fraction
+              # of the print rejects. See go/pkg/reef/validate's
+              # checkExcessiveSupport.
+              name  = "REEF_MAX_SUPPORT_MATERIAL_PCT"
+              value = "10"
+            },
+            {
+              # Without this, PrusaSlicer reports every part's weight as
+              # exactly 0.00g (confirmed against a real 2.7.4 binary),
+              # zeroing out pricing.Price's material-cost component on every
+              # order. 1.27 g/cm3 is standard PETG; update if the actual
+              # filament differs meaningfully.
+              name  = "REEF_FILAMENT_DENSITY_G_CM3"
+              value = "1.27"
             }
           ]
           portMappings = [

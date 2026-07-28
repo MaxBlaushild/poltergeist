@@ -156,46 +156,42 @@ export default function Configure() {
     });
   };
 
-  if (!product || !schema) return <p>Loading…</p>;
+  if (!product || !schema) return <p className="text-reef-ink/60">Loading…</p>;
 
   return (
-    <div className="grid md:grid-cols-2 gap-8">
+    <div className="grid gap-8 md:grid-cols-2">
       <div>
-        <h1 className="text-2xl font-bold mb-4">{product.name}</h1>
+        <h1 className="font-display mb-4 text-2xl font-bold text-reef-ink">{product.name}</h1>
         <StlViewer url={preview?.previewUrl ?? null} pending={previewPending} plateFits={preview?.plateFits ?? true} />
 
         {preview && (
-          <div className="mt-3 text-sm space-y-1">
-            <p>
+          <div className="mt-3 space-y-1 text-sm">
+            <p className="text-reef-ink/70">
               Bounding box: {preview.bboxMm.xMm.toFixed(0)} × {preview.bboxMm.yMm.toFixed(0)} ×{' '}
               {preview.bboxMm.zMm.toFixed(0)} mm
             </p>
-            <p className={preview.plateFits ? 'text-reef-teal' : 'text-red-600'}>
+            <p className={preview.plateFits ? 'font-medium text-reef-teal' : 'font-medium text-red-600'}>
               {preview.plateFits ? '✓ Fits the print envelope' : '✗ Exceeds the print envelope — reduce size'}
             </p>
           </div>
         )}
         {previewError && <p className="mt-2 text-sm text-red-600">{previewError}</p>}
 
-        <button onClick={handleShare} className="mt-4 text-sm text-reef-teal underline">
+        <button onClick={handleShare} className="mt-4 text-sm font-medium text-reef-teal underline decoration-reef-teal/40 underline-offset-2 hover:text-reef-coral">
           {copyStatus === 'copied' ? 'Link copied!' : 'Copy shareable link'}
         </button>
       </div>
 
-      <div>
+      <div className="card p-6">
         <SchemaForm schema={schema} values={values} onChange={handleChange} tanks={tanks} />
 
         <div className="mt-6">
           {configuration?.status === 'rejected' && (
-            <p className="mb-3 rounded bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+            <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {configuration.rejectionReason}
             </p>
           )}
-          <button
-            onClick={handleAddToCart}
-            disabled={validating}
-            className="w-full rounded bg-reef-coral px-5 py-3 font-semibold text-reef-ink hover:opacity-90 disabled:opacity-50"
-          >
+          <button onClick={handleAddToCart} disabled={validating} className="btn-primary w-full">
             {validating ? 'Validating…' : 'Add to cart'}
           </button>
           <p className="mt-2 text-xs text-reef-ink/50">

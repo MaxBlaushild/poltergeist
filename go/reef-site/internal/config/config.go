@@ -54,8 +54,9 @@ type PublicConfig struct {
 }
 
 type SecretConfig struct {
-	DbPassword  string
-	EmailApiKey string
+	DbPassword       string
+	TwilioAccountSid string
+	TwilioAuthToken  string
 }
 
 type Config struct {
@@ -64,11 +65,25 @@ type Config struct {
 }
 
 func defaults(v *viper.Viper) {
+	// AutomaticEnv() + Unmarshal only picks up a field's real env var if
+	// viper already knows the key exists (via SetDefault/BindEnv/a config
+	// file) — NewConfigFromEnv's path (composed into go/core) skips the
+	// config-file step entirely, so every field below silently zeroed out
+	// in production despite the real env var being set correctly, until
+	// these defaults existed to make viper aware of the keys.
+	v.SetDefault("REDIS_URL", "redis://localhost:6379")
+	v.SetDefault("BASE_URL", "http://localhost:3000")
+	v.SetDefault("REEF_OPERATOR_EMAIL", "")
+	v.SetDefault("EMAIL_FROM_ADDRESS", "")
 	v.SetDefault("REEF_OPENSCAD_BIN", "openscad")
 	v.SetDefault("REEF_SLICER_BIN", "prusa-slicer")
 	v.SetDefault("REEF_SUBPROCESS_TIMEOUT_SEC", 60)
 	v.SetDefault("REEF_SUBPROCESS_MEMORY_MB", 1024)
-	v.SetDefault("REEF_PREVIEW_TIMEOUT_SEC", 10)
+	// Worst case (4 tiers x 12 holes at $fn=24, R-4.2's schema maxima)
+	// measured at ~65s end-to-end; 90s leaves headroom without making every
+	// ordinary preview wait that long — this is a per-request timeout, not
+	// a fixed delay.
+	v.SetDefault("REEF_PREVIEW_TIMEOUT_SEC", 90)
 	v.SetDefault("REEF_S3_BUCKET", "reef-site-artifacts")
 	v.SetDefault("REEF_AWS_REGION", "us-east-1")
 	v.SetDefault("REEF_PRICE_SETUP_FEE_CENTS", 300)
@@ -125,8 +140,9 @@ func load(name, fileType, path string) (*Config, error) {
 	return &Config{
 		Public: publicCfg,
 		Secret: SecretConfig{
-			DbPassword:  os.Getenv("DB_PASSWORD"),
-			EmailApiKey: os.Getenv("SENDGRID_API_KEY"),
+			DbPassword:       os.Getenv("DB_PASSWORD"),
+			TwilioAccountSid: os.Getenv("TWILIO_ACCOUNT_SID"),
+			TwilioAuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
 		},
 	}, nil
 }

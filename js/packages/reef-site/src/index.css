@@ -3,5 +3,89 @@
 @tailwind utilities;
 
 body {
-  @apply bg-reef-sand text-reef-ink;
+  @apply bg-reef-paper text-reef-ink antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+@layer components {
+  /* Chunky, offset-shadow "sticker" buttons: shadow grows and the button
+     lifts on hover (bouncy overshoot easing), then presses flat on click —
+     the tactile, playful interaction this redesign is going for. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-reef-ink
+      bg-reef-coral px-6 py-3 font-display font-bold text-reef-ink shadow-pop
+      transition-all duration-300 ease-bounce
+      hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[7px_7px_0_0_#0b1c26]
+      active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+      disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-pop;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-reef-ink
+      bg-white px-5 py-2.5 font-display font-bold text-reef-ink shadow-pop-sm
+      transition-all duration-300 ease-bounce
+      hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-reef-foam hover:shadow-[5px_5px_0_0_#0b1c26]
+      active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-reef-ink/15
+      text-reef-ink transition-all duration-200 ease-bounce hover:scale-110 hover:border-reef-ink hover:bg-reef-foam;
+  }
+
+  .card {
+    @apply rounded-[1.75rem] border-2 border-reef-ink/10 bg-white transition-all duration-300 ease-bounce;
+  }
+
+  .card-hover {
+    @apply hover:-translate-y-1.5 hover:border-reef-ink hover:shadow-pop;
+  }
+
+  .input-field {
+    @apply w-full rounded-2xl border-2 border-reef-ink/15 bg-white px-3.5 py-2.5 text-reef-ink
+      transition-all duration-200 focus:border-reef-ink focus:outline-none focus:ring-4
+      focus:ring-reef-glow/30;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-bold;
+  }
+
+  /* Soft organic splash shapes — the "bouncy ocean color on white" accent
+     motif, used behind hero/section content instead of full-bleed dark
+     gradients. Colors are set per-use via bg-reef-*; the shape itself
+     drifts and morphs via the `blob`/`drift` keyframes. */
+  .blob {
+    @apply pointer-events-none absolute blur-2xl;
+    border-radius: 42% 58% 65% 35% / 45% 40% 60% 55%;
+  }
+
+  .bubble {
+    @apply pointer-events-none absolute rounded-full bg-white/40 backdrop-blur-sm;
+  }
+
+  .wave-divider {
+    @apply pointer-events-none block h-10 w-full sm:h-16;
+  }
+}
+
+input[type='range'] {
+  accent-color: theme('colors.reef.coral');
+}
+
+input[type='checkbox'] {
+  accent-color: theme('colors.reef.coral');
+}
+
+::selection {
+  background-color: theme('colors.reef.glow');
+  color: theme('colors.reef.ink');
 }

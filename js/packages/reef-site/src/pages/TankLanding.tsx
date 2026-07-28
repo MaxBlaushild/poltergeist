@@ -30,12 +30,12 @@ export default function TankLanding() {
     });
   }, [manufacturer, model]);
 
-  if (tank === undefined) return <p>Loading…</p>;
+  if (tank === undefined) return <p className="text-reef-ink/60">Loading…</p>;
   if (tank === null) {
     return (
-      <div>
-        <p>We don't have a verified profile for that tank yet.</p>
-        <Link to="/configure/magnetic-frag-rack" className="text-reef-teal underline">
+      <div className="card mx-auto max-w-md space-y-3 p-8 text-center">
+        <p className="text-reef-ink/70">We don't have a verified profile for that tank yet.</p>
+        <Link to="/configure/magnetic-frag-rack" className="btn-secondary">
           Configure by hand instead
         </Link>
       </div>
@@ -48,24 +48,22 @@ export default function TankLanding() {
   });
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">
+    <div className="card space-y-4 p-8">
+      <h1 className="font-display text-2xl font-bold text-reef-ink">
         Frag rack for the {tank.manufacturer} {tank.model}
       </h1>
       <p className="text-reef-ink/70">
         Pre-filled with the {tank.manufacturer} {tank.model}'s verified glass thickness (
         {tank.glassThicknessMm}mm). Fine-tune width, tiers, and hole count before ordering.
       </p>
-      <Link
-        to={`/configure/magnetic-frag-rack?${prefill}`}
-        className="inline-block rounded bg-reef-coral px-5 py-3 font-semibold text-reef-ink hover:opacity-90"
-      >
+      <Link to={`/configure/magnetic-frag-rack?${prefill}`} className="btn-primary">
         Start configuring
+        <span aria-hidden="true">→</span>
       </Link>
       {tank.sourceUrl && (
         <p className="text-xs text-reef-ink/40">
           Dimensions sourced from{' '}
-          <a href={tank.sourceUrl} target="_blank" rel="noreferrer" className="underline">
+          <a href={tank.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-reef-teal">
             manufacturer specs
           </a>
           .

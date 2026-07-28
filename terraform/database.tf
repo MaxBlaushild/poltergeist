@@ -22,7 +22,7 @@ resource "aws_security_group" "db_sg" {
 resource "aws_db_instance" "poltergeist-db" {
   identifier             = "poltergeist"
   engine                 = "postgres"
-  engine_version         = "15.12"
+  engine_version         = "15.17"
   instance_class         = "db.t3.micro"
   allocated_storage      = 20
   db_name                = "poltergeist"

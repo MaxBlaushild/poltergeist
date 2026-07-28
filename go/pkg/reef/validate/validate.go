@@ -9,26 +9,27 @@ import "fmt"
 
 // Thresholds are the config-driven limits every rule checks against.
 type Thresholds struct {
-	MaxBboxMm      float64
-	MinWallMm      float64
-	MaxPrintTimeS  int64
-	MaxWeightG     float64
-	MinDrainPathMm float64
+	MaxBboxMm             float64
+	MinWallMm             float64
+	MaxPrintTimeS         int64
+	MaxWeightG            float64
+	MinDrainPathMm        float64
+	MaxSupportMaterialPct float64
 }
 
 // Metadata is everything a rule needs to know about one generated,
 // sliced part. BboxMaxDimensionMm and the Analyze-derived fields come from
 // pure geometry (stlbbox, generate.Analysis); WeightG/PrintTimeS/
-// SupportRequired come from the slicer (R-2.7).
+// SupportMaterialPercent come from the slicer (R-2.7).
 type Metadata struct {
-	BboxMaxDimensionMm float64
-	SupportRequired    bool
-	MinWallMm          float64
-	PrintTimeS         int64
-	WeightG            float64
-	SealedVoid         bool
-	DrainPathMm        float64
-	HasInternalCavity  bool // only meaningful together with SealedVoid/DrainPathMm
+	BboxMaxDimensionMm     float64
+	SupportMaterialPercent float64 // % of total extrusion the slicer used for supports
+	MinWallMm              float64
+	PrintTimeS             int64
+	WeightG                float64
+	SealedVoid             bool
+	DrainPathMm            float64
+	HasInternalCavity      bool // only meaningful together with SealedVoid/DrainPathMm
 }
 
 // RuleName identifies which of the six rules fired, for rejection
@@ -37,7 +38,7 @@ type RuleName string
 
 const (
 	RuleBoundingBox      RuleName = "bounding_box"
-	RuleSupportsRequired RuleName = "supports_required"
+	RuleExcessiveSupport RuleName = "excessive_support_material"
 	RuleMinWallThickness RuleName = "min_wall_thickness"
 	RulePrintTime        RuleName = "print_time"
 	RuleWeight           RuleName = "weight"
@@ -56,7 +57,7 @@ type ruleFunc func(Metadata, Thresholds) *Rejection
 // a visitor through fixing one thing at a time.
 var order = []ruleFunc{
 	checkBoundingBox,
-	checkSupportsRequired,
+	checkExcessiveSupport,
 	checkMinWallThickness,
 	checkPrintTime,
 	checkWeight,
@@ -88,14 +89,22 @@ func checkBoundingBox(meta Metadata, t Thresholds) *Rejection {
 	}
 }
 
-// checkSupportsRequired — R-5.2 rule 2.
-func checkSupportsRequired(meta Metadata, _ Thresholds) *Rejection {
-	if !meta.SupportRequired {
+// checkExcessiveSupport — R-5.2 rule 2. A design needing a small dusting of
+// support material (e.g. one small overhanging feature) is still a healthy,
+// sellable part — this only rejects designs where the slicer had to fill a
+// substantial fraction of the print with scaffolding, which is a real sign
+// something about the geometry isn't self-supporting the way this catalog
+// intends.
+func checkExcessiveSupport(meta Metadata, t Thresholds) *Rejection {
+	if meta.SupportMaterialPercent <= t.MaxSupportMaterialPct {
 		return nil
 	}
 	return &Rejection{
-		Rule:   RuleSupportsRequired,
-		Reason: "This configuration needs printed supports, which this catalog doesn't ship with. Try a smaller size or fewer tiers/holes so the geometry stays self-supporting.",
+		Rule: RuleExcessiveSupport,
+		Reason: fmt.Sprintf(
+			"This configuration needs support material for %.0f%% of the print, over the %.0f%% limit for a catalog that's meant to print without supports. Try a smaller size or fewer tiers/holes so the geometry stays self-supporting.",
+			meta.SupportMaterialPercent, t.MaxSupportMaterialPct,
+		),
 	}
 }
 

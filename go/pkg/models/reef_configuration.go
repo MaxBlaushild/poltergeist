@@ -55,15 +55,19 @@ type ReefSliceResult struct {
 	PrintTimeS      *int64         `json:"printTimeS" gorm:"column:print_time_s"`
 	BboxMm          datatypes.JSON `json:"bboxMm" gorm:"column:bbox_mm"`
 	PlateFits       *bool          `json:"plateFits" gorm:"column:plate_fits"`
-	SupportRequired *bool          `json:"supportRequired" gorm:"column:support_required"`
-	MinWallMm       *float64       `json:"minWallMm" gorm:"column:min_wall_mm"`
-	SealedVoid      *bool          `json:"sealedVoid" gorm:"column:sealed_void"`
-	Warnings        datatypes.JSON `json:"warnings"`
-	SlicerVersion   string         `json:"slicerVersion" gorm:"column:slicer_version"`
-	OpenSCADVersion string         `json:"openscadVersion" gorm:"column:openscad_version"`
-	STLKey          string         `json:"stlKey" gorm:"column:stl_key"`
-	PreviewKey      string         `json:"previewKey" gorm:"column:preview_key"`
-	PriceCents      *int64         `json:"priceCents" gorm:"column:price_cents"`
+	// SupportRequired is derived (percent > 0) and kept for continuity with
+	// existing rows/dashboards; SupportMaterialPercent is what R-5.2's
+	// checkExcessiveSupport rule actually gates on (see go/pkg/reef/validate).
+	SupportRequired        *bool          `json:"supportRequired" gorm:"column:support_required"`
+	SupportMaterialPercent *float64       `json:"supportMaterialPercent" gorm:"column:support_material_percent"`
+	MinWallMm              *float64       `json:"minWallMm" gorm:"column:min_wall_mm"`
+	SealedVoid             *bool          `json:"sealedVoid" gorm:"column:sealed_void"`
+	Warnings               datatypes.JSON `json:"warnings"`
+	SlicerVersion          string         `json:"slicerVersion" gorm:"column:slicer_version"`
+	OpenSCADVersion        string         `json:"openscadVersion" gorm:"column:openscad_version"`
+	STLKey                 string         `json:"stlKey" gorm:"column:stl_key"`
+	PreviewKey             string         `json:"previewKey" gorm:"column:preview_key"`
+	PriceCents             *int64         `json:"priceCents" gorm:"column:price_cents"`
 }
 
 func (ReefSliceResult) TableName() string {

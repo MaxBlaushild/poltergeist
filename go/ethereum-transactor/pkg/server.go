@@ -4,12 +4,13 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/ethereum"
 	"github.com/MaxBlaushild/poltergeist/ethereum-transactor/internal/server"
+	"github.com/gin-gonic/gin"
 )
 
 // Server interface for ethereum-transactor server
 type Server interface {
 	ListenAndServe(port string)
-	SetupRoutes(r interface{})
+	SetupRoutes(r *gin.Engine)
 }
 
 // NewServerFromDependencies creates a new ethereum-transactor server with minimal dependencies

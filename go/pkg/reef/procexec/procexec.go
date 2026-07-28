@@ -148,11 +148,8 @@ func Run(ctx context.Context, workDir, bin string, args []string, limits Limits)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	networkSandboxed := true
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid:    true,
-		Cloneflags: syscall.CLONE_NEWNET,
-	}
+	networkSandboxed := networkSandboxSupported
+	cmd.SysProcAttr = sandboxedSysProcAttr()
 	// Kill the whole process group (not just the direct child) on timeout,
 	// since the wrapping `sh -c ... exec` replaces itself with bin — a
 	// group kill still catches anything bin itself forks.
