@@ -151,3 +151,27 @@ variable "polymarket_address" {
   type        = string
   sensitive   = true
 }
+
+variable "slant_api_key" {
+  description = "Slant 3D API key (sl_*** — from slant3dapi.com account settings). Not yet in real use: R-7.3's sample-part gate hasn't been cleared, so this only powers the operator print queue's manual, per-order \"Send to Slant\" action. Placeholder default (Secrets Manager rejects an empty string) until a real key is supplied — Slant will simply reject requests with an auth error until then."
+  type        = string
+  sensitive   = true
+  default     = "sl-not-configured"
+}
+
+variable "slant_platform_id" {
+  description = "Slant 3D platform ID (UUID), created once via POST /platforms or the slant3dapi.com dashboard."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client ID for reef-site's \"Sign in with Google\" — also the audience checked when the authenticator verifies Google ID tokens. Not secret (embedded in the frontend bundle too), but stored the same way as google_client_secret for consistency."
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret. Not currently used by the ID-token verification flow (no server-side code exchange happens), kept for potential future use (e.g. server-side refresh tokens)."
+  type        = string
+  sensitive   = true
+}

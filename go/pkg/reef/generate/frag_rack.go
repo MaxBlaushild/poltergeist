@@ -200,6 +200,28 @@ func FragRackMaxHolesPerTier(widthMm, plugHoleDiameterMm float64) int {
 	return max
 }
 
+// ValidateParams catches a holesPerTier that packs tighter than
+// FragRackMaxHolesPerTier allows for the given width/hole-diameter — the
+// schema's own static "maximum: 12" can't express that the real limit
+// depends on widthMm and plugHoleDiameterMm, so an in-range-per-schema
+// combination can still be geometrically invalid. Without this, that
+// combination silently reaches a full render+slice (tens of seconds) only
+// to fail R-5.2's wall-thickness rule with a message that doesn't name
+// holesPerTier as the actual thing to change.
+func (f FragRack) ValidateParams(params map[string]interface{}) error {
+	l, err := fragRackParamsToLayout(params)
+	if err != nil {
+		return err
+	}
+	if max := FragRackMaxHolesPerTier(l.widthMm, l.plugHoleDiameterMm); l.holesPerTier > max {
+		return fmt.Errorf(
+			"holesPerTier %d is too many for a %.0fmm-wide rack with %.0fmm plug holes — %d is the most that fit with a safe wall between them. Reduce holes per tier or increase width.",
+			l.holesPerTier, l.widthMm, l.plugHoleDiameterMm, max,
+		)
+	}
+	return nil
+}
+
 // fragRackSCADBody is the fixed CSG program; every dimension is a variable
 // assigned above so the geometry is entirely parametric. Magnet pockets are
 // blind holes on the mating faces with a vent channel to the top edge so no

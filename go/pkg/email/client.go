@@ -27,6 +27,7 @@ type ClientConfig struct {
 	AccountSid  string
 	AuthToken   string
 	FromAddress string
+	FromName    string
 	WebHost     string
 }
 
@@ -39,12 +40,16 @@ type Email struct {
 }
 
 func NewClient(cfg ClientConfig) EmailClient {
+	fromName := cfg.FromName
+	if fromName == "" {
+		fromName = "Max Blaushild"
+	}
 	return &client{
 		httpClient:  http.DefaultClient,
 		accountSid:  cfg.AccountSid,
 		authToken:   cfg.AuthToken,
 		fromAddress: cfg.FromAddress,
-		fromName:    "Max Blaushild",
+		fromName:    fromName,
 		webHost:     cfg.WebHost,
 	}
 }

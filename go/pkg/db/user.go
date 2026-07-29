@@ -80,6 +80,60 @@ func (h *userHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.User, 
 	return &user, nil
 }
 
+func (h *userHandle) InsertWithEmail(ctx context.Context, name string, email string, passwordHash string) (*models.User, error) {
+	user := models.User{
+		Name:         name,
+		Email:        &email,
+		PasswordHash: &passwordHash,
+	}
+
+	if err := h.db.WithContext(ctx).Model(&models.User{}).Create(&user).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// InsertWithGoogle creates a fresh account for a first-time Google sign-in
+// (no existing row matched by google_id or email).
+func (h *userHandle) InsertWithGoogle(ctx context.Context, name string, email string, googleID string) (*models.User, error) {
+	user := models.User{
+		Name:     name,
+		Email:    &email,
+		GoogleID: &googleID,
+	}
+
+	if err := h.db.WithContext(ctx).Model(&models.User{}).Create(&user).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// SetGoogleID links a Google account onto an existing user row — e.g. one
+// that originally signed up with email+password and later uses "Sign in
+// with Google" with the same email address.
+func (h *userHandle) SetGoogleID(ctx context.Context, userID uuid.UUID, googleID string) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("google_id", googleID).Error
+}
+
+func (h *userHandle) FindByGoogleID(ctx context.Context, googleID string) (*models.User, error) {
+	var user models.User
+	if err := h.db.WithContext(ctx).Where("google_id = ?", googleID).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (h *userHandle) FindByEmail(ctx context.Context, email string) (*models.User, error) {
+	var user models.User
+	if err := h.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 func (h *userHandle) FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error) {
 	var user models.User
 	if err := h.db.WithContext(ctx).Where(&models.User{PhoneNumber: phoneNumber}).First(&user).Error; err != nil {

@@ -3,11 +3,13 @@ package server
 import (
 	"net/http"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/reef-site/internal/config"
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +21,7 @@ type Deps struct {
 	JobsClient    jobs.Client
 	EmailClient   email.EmailClient
 	BillingClient billing.Client
+	AuthClient    auth.Client
 }
 
 type server struct {
@@ -51,7 +54,24 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	group.GET("/orders/:token", s.getOrder)
 
 	group.POST("/events", s.postEvent)
-	group.GET("/operator/metrics", s.getOperatorMetrics)
+
+	group.POST("/auth/register", s.registerCustomer)
+	group.POST("/auth/login", s.loginCustomer)
+	group.POST("/auth/google", s.loginWithGoogle)
+	group.GET("/me/orders", middleware.WithAuthenticationWithoutLocation(s.deps.AuthClient, s.getMyOrders))
+
+	// The print queue (added after /operator/metrics already existed as an
+	// unauthenticated, unlisted-URL page) now carries real customer names
+	// and shipping addresses, so the whole /operator surface is gated
+	// behind a shared password rather than "nobody will guess the URL."
+	operatorGroup := group.Group("/operator", gin.BasicAuth(gin.Accounts{
+		"operator": s.deps.Config.Secret.AdminToken,
+	}))
+	operatorGroup.GET("/metrics", s.getOperatorMetrics)
+	operatorGroup.GET("/orders", s.listOperatorOrders)
+	operatorGroup.PATCH("/orders/:id/fulfillment", s.updateOrderFulfillment)
+	operatorGroup.POST("/orders/:id/fulfill-slant", s.fulfillOrderWithSlant)
+	operatorGroup.POST("/orders/:id/refresh-slant-status", s.refreshSlantStatus)
 }
 
 // permissiveCORS mirrors go/core's own CORS config (gin-contrib/cors would

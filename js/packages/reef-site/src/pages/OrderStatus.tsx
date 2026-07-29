@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { reefApi } from '../api/client';
 import type { Order } from '../api/types';
 
@@ -30,7 +30,14 @@ export default function OrderStatus() {
         {order.items.map((item) => (
           <li key={item.id} className="flex justify-between py-3 text-sm">
             <span className="text-reef-ink/80">
-              {item.variantKey ? `${item.variantKey} ` : ''}× {item.quantity}
+              {item.configurationId ? (
+                <Link to={`/configurations/${item.configurationId}`} className="underline decoration-reef-teal/40 underline-offset-2 hover:text-reef-coral">
+                  {item.productName || 'Item'}
+                </Link>
+              ) : (
+                item.productName || 'Item'
+              )}
+              {item.variantKey ? ` (${item.variantKey})` : ''} × {item.quantity}
             </span>
             <span className="font-medium text-reef-ink">${((item.unitPriceCents * item.quantity) / 100).toFixed(2)}</span>
           </li>

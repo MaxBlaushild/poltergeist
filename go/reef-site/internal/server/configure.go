@@ -79,6 +79,16 @@ func (s *server) resolveModule(c *gin.Context, req configureRequest) (*models.Re
 		return nil, nil, nil, false
 	}
 
+	// Schema min/max bounds are static and can't express a limit that
+	// depends on another field's current value (e.g. FragRack's
+	// holesPerTier vs. widthMm/plugHoleDiameterMm) — this is the
+	// generator's own, more precise check for exactly that, run before
+	// preview or validate pays for a render+slice cycle to find out.
+	if err := module.ValidateParams(req.Params); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return nil, nil, nil, false
+	}
+
 	return product, schema, module, true
 }
 
@@ -284,20 +294,43 @@ func (s *server) configureValidate(c *gin.Context) {
 	})
 }
 
+type configurationResponse struct {
+	models.ReefConfiguration
+	PreviewURL string `json:"previewUrl,omitempty"`
+}
+
 // GET /api/reef/configurations/:id (R-8.1) — what the client polls after
-// configure/validate.
+// configure/validate, and also what a customer's order page links into so
+// they can look back at the exact part they ordered (R-4.6's STL viewer,
+// reused rather than duplicated).
 func (s *server) getConfiguration(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid configuration id"})
 		return
 	}
-	cfg, err := s.deps.DbClient.ReefConfiguration().FindByID(c.Request.Context(), id)
+	ctx := c.Request.Context()
+	cfg, err := s.deps.DbClient.ReefConfiguration().FindByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "configuration not found"})
 		return
 	}
-	c.JSON(http.StatusOK, cfg)
+
+	resp := configurationResponse{ReefConfiguration: *cfg}
+	if cfg.GeometryHash != nil {
+		if sliceResult, err := s.deps.DbClient.ReefSliceResult().FindByGeometryHash(ctx, *cfg.GeometryHash); err == nil && sliceResult != nil {
+			// STLKey (the full-resolution slice) is what was actually
+			// produced for this order; PreviewKey is only a fallback for
+			// configurations that somehow never got a full slice's STL.
+			if sliceResult.STLKey != "" {
+				resp.PreviewURL = s.previewURL(sliceResult.STLKey)
+			} else if sliceResult.PreviewKey != "" {
+				resp.PreviewURL = s.previewURL(sliceResult.PreviewKey)
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func decodeBbox(raw datatypes.JSON) bboxResponse {

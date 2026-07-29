@@ -5,6 +5,8 @@ go 1.24.0
 toolchain go1.24.10
 
 replace (
+	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
+	github.com/MaxBlaushild/poltergeist/pkg/middleware => ../pkg/middleware
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
 	github.com/MaxBlaushild/poltergeist/pkg/billing => ../pkg/billing
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
@@ -18,6 +20,8 @@ replace (
 )
 
 require (
+	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000

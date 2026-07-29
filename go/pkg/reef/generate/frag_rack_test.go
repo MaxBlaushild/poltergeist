@@ -1,6 +1,9 @@
 package generate
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Regression test: an earlier version used a fixed 8mm edge margin for both
 // plug holes and magnets. With a 20mm plug hole (R-4.2's larger standard
@@ -83,5 +86,49 @@ func TestFragRackMaxHolesPerTier_ScalesWithWidthAndHoleSize(t *testing.T) {
 	holes20 := FragRackMaxHolesPerTier(150, 20)
 	if holes15 < holes20 {
 		t.Fatalf("expected 15mm holes to allow >= as many holes as 20mm at the same width: 15mm=%d, 20mm=%d", holes15, holes20)
+	}
+}
+
+// Regression test for a real production bug: schema validation alone let a
+// customer submit widthMm=152/holesPerTier=7/plugHoleDiameterMm=20 — every
+// field individually within its schema min/max — reach a full render+slice
+// (tens of seconds) only to fail R-5.2's wall-thickness rule with "A wall in
+// this design would print at 1.00mm..." — correct, but far too late, and
+// not naming holesPerTier as the actual thing to change, even though
+// FragRackMaxHolesPerTier already existed specifically to catch this and was
+// simply never called from anywhere.
+func TestFragRack_ValidateParams_RejectsHolesPerTierExceedingDerivedMax(t *testing.T) {
+	m := FragRack{}
+	// The exact reported case: FragRackMaxHolesPerTier(152, 20) = 6, but 7
+	// was submitted and accepted all the way through to a wasted slice.
+	if max := FragRackMaxHolesPerTier(152, 20); max != 6 {
+		t.Fatalf("sanity check: FragRackMaxHolesPerTier(152, 20) = %d, want 6 (test's own assumption is stale)", max)
+	}
+	err := m.ValidateParams(map[string]interface{}{
+		"glassThicknessMm":   4.0,
+		"tierCount":          2.0,
+		"widthMm":            152.0,
+		"plugHoleDiameterMm": 20.0,
+		"holesPerTier":       7.0,
+	})
+	if err == nil {
+		t.Fatal("expected ValidateParams to reject holesPerTier=7 at widthMm=152/plugHoleDiameterMm=20, got nil")
+	}
+	if !strings.Contains(err.Error(), "holesPerTier") {
+		t.Fatalf("error %q should name holesPerTier as the thing to change", err.Error())
+	}
+}
+
+func TestFragRack_ValidateParams_AcceptsHolesPerTierAtDerivedMax(t *testing.T) {
+	m := FragRack{}
+	err := m.ValidateParams(map[string]interface{}{
+		"glassThicknessMm":   4.0,
+		"tierCount":          2.0,
+		"widthMm":            152.0,
+		"plugHoleDiameterMm": 20.0,
+		"holesPerTier":       6.0, // FragRackMaxHolesPerTier(152, 20) == 6, exactly at the limit
+	})
+	if err != nil {
+		t.Fatalf("expected holesPerTier at exactly the derived max to pass, got: %v", err)
 	}
 }

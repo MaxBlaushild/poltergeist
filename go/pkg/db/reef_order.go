@@ -78,9 +78,26 @@ func (h *reefOrderHandle) Update(ctx context.Context, order *models.ReefOrder) e
 	return h.db.WithContext(ctx).Omit("Items").Save(order).Error
 }
 
+// FindByUserID is order history's data source (R-8.2's anonymous
+// order-token lookup stays the default; this only ever returns orders that
+// were placed while the customer was logged in — see checkout.go's
+// optional-auth handling of postCheckout).
+func (h *reefOrderHandle) FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.ReefOrder, error) {
+	var orders []models.ReefOrder
+	if err := h.db.WithContext(ctx).
+		Preload("Items").
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
 func (h *reefOrderHandle) FindPaid(ctx context.Context) ([]models.ReefOrder, error) {
 	var orders []models.ReefOrder
 	if err := h.db.WithContext(ctx).
+		Preload("Items").
 		Where("status IN ?", []string{models.ReefOrderStatusPaid, models.ReefOrderStatusFulfilled}).
 		Order("created_at DESC").
 		Find(&orders).Error; err != nil {

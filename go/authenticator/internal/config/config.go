@@ -10,6 +10,13 @@ import (
 type SecretConfig struct {
 	DbPassword     string
 	AuthPrivateKey string
+	// GoogleClientID is also the audience checked when verifying "Sign in
+	// with Google" ID tokens — kept alongside the secret (rather than in
+	// PublicConfig/the baked-in live.env like PHONE_NUMBER) so both values
+	// live in the same place and neither requires an image rebuild to
+	// rotate.
+	GoogleClientID     string
+	GoogleClientSecret string
 }
 
 type PublicConfig struct {
@@ -59,8 +66,10 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword:     os.Getenv("DB_PASSWORD"),
-			AuthPrivateKey: os.Getenv("AUTH_PRIVATE_KEY"),
+			DbPassword:         os.Getenv("DB_PASSWORD"),
+			AuthPrivateKey:     os.Getenv("AUTH_PRIVATE_KEY"),
+			GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+			GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		},
 		Public: publicCfg,
 	}, nil

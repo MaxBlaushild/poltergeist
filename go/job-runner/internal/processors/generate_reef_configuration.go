@@ -239,18 +239,24 @@ func (p *GenerateReefFullProcessor) process(ctx context.Context, payload jobs.Ge
 		sliceRow.PriceCents = &priceCents
 	}
 
-	if err := p.dbClient.ReefSliceResult().Create(ctx, sliceRow); err != nil {
+	// geometry_hash is reef_slice_results' primary key, and the preview
+	// endpoint (configurePreview) can insert a `pending` placeholder row
+	// under this exact same hash at any point — including in the middle of
+	// this very function's render+slice window (which takes long enough,
+	// tens of seconds at the high end, for a fresh preview request to land)
+	// — not just before it started. A check-then-act pattern (check for an
+	// existing row, then decide whether to insert or update) cannot close
+	// that race no matter where the check is placed; only an atomic
+	// upsert can. sliceRow is always a complete, non-blank result — a
+	// concurrent duplicate computation for the same params is harmless to
+	// let win, so plain last-write-wins is correct here, unlike the old
+	// Create()-with-DoNothing behavior this replaced (which silently kept
+	// whichever row got there first, including an empty pending one).
+	if err := p.dbClient.ReefSliceResult().Upsert(ctx, sliceRow); err != nil {
 		return fmt.Errorf("persist slice result: %w", err)
 	}
-	// Create is a no-op on conflict (a concurrent request may have won the
-	// race to populate the cache first) — re-read so we apply whichever row
-	// actually won, not necessarily the one we just computed.
-	winner, err := p.dbClient.ReefSliceResult().FindByGeometryHash(ctx, hash)
-	if err != nil || winner == nil {
-		winner = sliceRow
-	}
 
-	return p.applyResult(ctx, cfgRow, product.Slug, hash, winner)
+	return p.applyResult(ctx, cfgRow, product.Slug, hash, sliceRow)
 }
 
 func (p *GenerateReefFullProcessor) applyResult(ctx context.Context, cfgRow *models.ReefConfiguration, productSlug, hash string, sliceRow *models.ReefSliceResult) error {

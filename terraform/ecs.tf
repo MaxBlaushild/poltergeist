@@ -35,6 +35,10 @@ module "ecs" {
         aws_secretsmanager_secret.polymarket_api_secret.arn,
         aws_secretsmanager_secret.polymarket_api_passphrase.arn,
         aws_secretsmanager_secret.polymarket_address.arn,
+        aws_secretsmanager_secret.reef_admin_token.arn,
+        aws_secretsmanager_secret.slant_api_key.arn,
+        aws_secretsmanager_secret.google_client_id.arn,
+        aws_secretsmanager_secret.google_client_secret.arn,
       ]
 
       tasks_iam_role_statements = [
@@ -149,8 +153,38 @@ module "ecs" {
               value = "orders@reef.forteus.tech"
             },
             {
+              # Twilio's Comms API only has forteus.tech (the apex) domain-
+              # authenticated (see s1/s2._domainkey CNAMEs on that domain in
+              # Route53) — reef.forteus.tech was never separately verified,
+              # so every send from that subdomain was rejected with a 403
+              # "Domain not authorized" (confirmed by probing the API
+              # directly), silently breaking both the operator notification
+              # and the customer order confirmation email.
               name  = "EMAIL_FROM_ADDRESS"
-              value = "no-reply@reef.forteus.tech"
+              value = "no-reply@forteus.tech"
+            },
+            {
+              # reef-site's own base URL, deliberately separate from the
+              # shared BASE_URL above (that one is api.poltergeist.gg, used
+              # by core/travel-angels) — reef-site is served from a
+              # different domain, and Stripe's payment-complete callback
+              # must be built from the domain that actually resolves.
+              name  = "REEF_BASE_URL"
+              value = "https://api.unclaimedstreets.com"
+            },
+            {
+              # The customer-facing storefront, for order confirmation
+              # email links — distinct from REEF_BASE_URL (reef-site's own
+              # API domain) above.
+              name  = "REEF_SITE_URL"
+              value = "https://reef.forteus.tech"
+            },
+            {
+              # Not a secret (just an identifier), but pairs with
+              # SLANT_API_KEY below to configure the operator print queue's
+              # "Send to Slant" action.
+              name  = "SLANT_PLATFORM_ID"
+              value = var.slant_platform_id
             }
           ]
           secrets = [
@@ -165,6 +199,14 @@ module "ecs" {
             {
               name      = "TWILIO_AUTH_TOKEN"
               valueFrom = "${aws_secretsmanager_secret.twilio_auth_token.arn}"
+            },
+            {
+              name      = "REEF_ADMIN_TOKEN"
+              valueFrom = "${aws_secretsmanager_secret.reef_admin_token.arn}"
+            },
+            {
+              name      = "SLANT_API_KEY"
+              valueFrom = "${aws_secretsmanager_secret.slant_api_key.arn}"
             },
             {
               name      = "HUE_CLIENT_ID"
@@ -241,6 +283,12 @@ module "ecs" {
           }, {
             name      = "AUTH_PRIVATE_KEY",
             valueFrom = "${aws_secretsmanager_secret.auth_private_key.arn}"
+          }, {
+            name      = "GOOGLE_CLIENT_ID",
+            valueFrom = "${aws_secretsmanager_secret.google_client_id.arn}"
+          }, {
+            name      = "GOOGLE_CLIENT_SECRET",
+            valueFrom = "${aws_secretsmanager_secret.google_client_secret.arn}"
           }]
           image = "${aws_ecr_repository.authenticator.repository_url}:latest"
           portMappings = [

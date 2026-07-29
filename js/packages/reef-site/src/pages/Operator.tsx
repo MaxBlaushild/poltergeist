@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { reefApi } from '../api/client';
 import type { OperatorMetrics } from '../api/types';
+import AdminAuthGate, { isUnauthorized } from '../components/AdminAuthGate';
 
 function pct(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
@@ -15,6 +17,10 @@ function usd(cents: number): string {
 // mean landed COGS, and CAC (ad spend entered manually). Not linked from the
 // storefront nav; reached directly at /operator.
 export default function Operator() {
+  return <AdminAuthGate>{(onAuthError) => <OperatorMetricsView onAuthError={onAuthError} />}</AdminAuthGate>;
+}
+
+function OperatorMetricsView({ onAuthError }: { onAuthError: () => void }) {
   const [days, setDays] = useState(30);
   const [adSpend, setAdSpend] = useState('0');
   const [metrics, setMetrics] = useState<OperatorMetrics | null>(null);
@@ -25,7 +31,7 @@ export default function Operator() {
     reefApi
       .operatorMetrics(targetDays, adSpendCents)
       .then(setMetrics)
-      .catch(() => setError('Failed to load metrics'))
+      .catch((err) => (isUnauthorized(err) ? onAuthError() : setError('Failed to load metrics')))
       .finally(() => setLoading(false));
   };
 
@@ -41,7 +47,12 @@ export default function Operator() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <h1 className="font-display text-2xl font-bold text-reef-lagoon">Operator metrics</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-2xl font-bold text-reef-lagoon">Operator metrics</h1>
+        <Link to="/operator/print-queue" className="text-sm font-medium text-reef-teal underline underline-offset-2">
+          Print queue →
+        </Link>
+      </div>
 
       <div className="flex flex-wrap items-end gap-4 text-sm">
         <label className="flex flex-col gap-1">

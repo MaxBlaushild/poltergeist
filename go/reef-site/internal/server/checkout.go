@@ -1,16 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
+	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/reef/pricing"
 	"github.com/MaxBlaushild/poltergeist/reef-site/internal/fulfillment"
@@ -89,8 +92,14 @@ func (s *server) postCheckout(c *gin.Context) {
 		orderItems = append(orderItems, orderItem)
 	}
 
+	var userID *uuid.UUID
+	if user := s.optionalCurrentUser(c); user != nil {
+		userID = &user.ID
+	}
+
 	order, err := s.deps.DbClient.ReefOrder().Create(ctx, &models.ReefOrder{
 		OrderToken:          orderToken,
+		UserID:              userID,
 		CustomerEmail:       req.CustomerEmail,
 		Status:              models.ReefOrderStatusPendingPayment,
 		FulfillmentProvider: s.deps.Config.Public.FulfillmentProvider,
@@ -221,6 +230,13 @@ func (s *server) postStripeWebhook(c *gin.Context) {
 		return
 	}
 
+	// Best-effort, like the fulfillment submission above: the payment is
+	// already recorded, so a failed confirmation email shouldn't fail the
+	// webhook (Stripe/billing would just retry the whole thing).
+	if err := s.sendOrderConfirmationEmail(ctx, order); err != nil {
+		log.Printf("[reef] failed to send order confirmation email for order %s: %v", order.OrderToken, err)
+	}
+
 	if err := s.deps.DbClient.ReefEvent().Create(ctx, &models.ReefEvent{
 		EventType: models.ReefEventPurchaseCompleted,
 		SessionID: payload.Metadata["reef_session_id"],
@@ -230,6 +246,50 @@ func (s *server) postStripeWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// sendOrderConfirmationEmail is the customer-facing counterpart to
+// ManualAdapter's notifyOperator (go/reef-site/internal/fulfillment/manual.go)
+// — that one tells the operator what to print, this tells the customer
+// their payment went through. It's sent from here rather than from a
+// fulfillment adapter because confirming payment isn't a fulfillment
+// concern (the SlantAdapter of R-7.3 would need it just the same).
+func (s *server) sendOrderConfirmationEmail(ctx context.Context, order *models.ReefOrder) error {
+	if order.CustomerEmail == "" {
+		return fmt.Errorf("order %s has no customer email", order.OrderToken)
+	}
+
+	orderWithItems, err := s.deps.DbClient.ReefOrder().FindByID(ctx, order.ID)
+	if err != nil {
+		return err
+	}
+
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "Thanks for your order!\n\n")
+	fmt.Fprintf(&body, "Order %s\n\n", order.OrderToken)
+	for _, item := range orderWithItems.Items {
+		name := item.VariantKey
+		if product, err := s.deps.DbClient.ReefProduct().FindByID(ctx, item.ProductID); err == nil {
+			name = product.Name
+			if item.VariantKey != "" {
+				name = fmt.Sprintf("%s (%s)", name, item.VariantKey)
+			}
+		}
+		fmt.Fprintf(&body, "- %s x%d — $%.2f\n", name, item.Quantity, float64(item.UnitPriceCents*int64(item.Quantity))/100)
+	}
+	fmt.Fprintf(&body, "\nShipping: $%.2f\n", float64(order.ShippingCents)/100)
+	fmt.Fprintf(&body, "Total: $%.2f\n\n", float64(order.TotalCents)/100)
+
+	orderURL := s.deps.Config.Public.SiteURL + "/orders/" + order.OrderToken
+	fmt.Fprintf(&body, "Track your order: %s\n", orderURL)
+
+	return s.deps.EmailClient.SendMail(email.Email{
+		Subject:          "Your reef order is confirmed — " + order.OrderToken,
+		Name:             order.CustomerEmail,
+		Email:            order.CustomerEmail,
+		PlainTextContent: body.String(),
+		HtmlContent:      "<pre>" + html.EscapeString(body.String()) + "</pre>",
+	})
 }
 
 func (s *server) buildFulfillmentOrder(ctx context.Context, order *models.ReefOrder, addr *billing.ShippingAddress) (fulfillment.Order, error) {
@@ -271,6 +331,19 @@ func (s *server) buildFulfillmentOrder(ctx context.Context, order *models.ReefOr
 	}
 
 	return fo, nil
+}
+
+// slantAdapter is deliberately separate from fulfillmentAdapter() above:
+// FulfillmentProvider still only ever resolves "manual" at checkout time
+// (R-7.3's sample-part gate hasn't been cleared), so Slant is reached only
+// through the operator print queue's explicit per-order action.
+func (s *server) slantAdapter() *fulfillment.SlantAdapter {
+	return fulfillment.NewSlantAdapter(
+		s.deps.AwsClient,
+		s.deps.Config.Secret.SlantAPIKey,
+		s.deps.Config.Public.SlantPlatformID,
+		s.deps.Config.Public.S3Bucket,
+	)
 }
 
 func (s *server) fulfillmentAdapter() (fulfillment.Adapter, error) {

@@ -3,6 +3,7 @@ package pkg
 import (
 	"log"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -41,7 +42,8 @@ func NewServerFromDependencies(dbClient db.DbClient) Server {
 		AccountSid:  cfg.Secret.TwilioAccountSid,
 		AuthToken:   cfg.Secret.TwilioAuthToken,
 		FromAddress: cfg.Public.EmailFromAddress,
-		WebHost:     cfg.Public.BaseURL,
+		FromName:    "reef",
+		WebHost:     cfg.Public.SiteURL,
 	})
 
 	return server.NewServer(server.Deps{
@@ -51,5 +53,6 @@ func NewServerFromDependencies(dbClient db.DbClient) Server {
 		JobsClient:    jobsClient,
 		EmailClient:   emailClient,
 		BillingClient: billing.NewClient(),
+		AuthClient:    auth.NewClient(),
 	})
 }

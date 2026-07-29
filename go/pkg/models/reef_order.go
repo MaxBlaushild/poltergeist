@@ -17,13 +17,16 @@ const (
 	ReefFulfillmentProviderSlant  = "slant"
 )
 
-// ReefOrder is looked up with no login via order_token (R-8.2: /orders/[token]).
+// ReefOrder is looked up with no login via order_token (R-8.2: /orders/[token]) —
+// UserID is optional (guest checkout stays supported) and is only set when the
+// customer was logged in at checkout time, to power their order history.
 type ReefOrder struct {
 	ID                    uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	CreatedAt             time.Time      `json:"createdAt"`
 	UpdatedAt             time.Time      `json:"updatedAt"`
 	OrderToken            string         `json:"orderToken" gorm:"column:order_token;uniqueIndex"`
 	StripeSessionID       string         `json:"stripeSessionId" gorm:"column:stripe_session_id;index"`
+	UserID                *uuid.UUID     `json:"userId" gorm:"column:user_id;type:uuid;index"`
 	CustomerEmail         string         `json:"customerEmail" gorm:"column:customer_email"`
 	ShippingAddress       datatypes.JSON `json:"shippingAddress" gorm:"column:shipping_address"`
 	Status                string         `json:"status"`

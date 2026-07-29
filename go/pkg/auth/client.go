@@ -36,6 +36,24 @@ type LoginByTextRequest struct {
 	Code        string `json:"code" binding:"required"`
 }
 
+type RegisterByEmailRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type LoginByEmailRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+// LoginWithGoogleRequest carries the ID token minted by Google Identity
+// Services on the frontend (google.accounts.id) — the authenticator
+// verifies it against Google directly rather than trusting it as-is.
+type LoginWithGoogleRequest struct {
+	IDToken string `json:"idToken" binding:"required"`
+}
+
 type AuthenicateResponse struct {
 	Token string `json:"token"`
 	User  User   `json:"user"`
@@ -51,6 +69,7 @@ type User struct {
 	UpdatedAt   time.Time `db:"updated_at"`
 	Name        string    `json:"name"`
 	PhoneNumber string    `json:"phoneNumber"`
+	Email       *string   `json:"email"`
 }
 
 type client struct {
@@ -61,6 +80,9 @@ type Client interface {
 	GetUsers(ctx context.Context, userIDs []uuid.UUID) ([]User, error)
 	RegisterByText(ctx context.Context, request *RegisterByTextRequest) (*AuthenicateResponse, error)
 	LoginByText(ctx context.Context, request *LoginByTextRequest) (*AuthenicateResponse, error)
+	RegisterByEmail(ctx context.Context, request *RegisterByEmailRequest) (*AuthenicateResponse, error)
+	LoginByEmail(ctx context.Context, request *LoginByEmailRequest) (*AuthenicateResponse, error)
+	LoginWithGoogle(ctx context.Context, request *LoginWithGoogleRequest) (*AuthenicateResponse, error)
 	VerifyToken(ctx context.Context, request *VerifyTokenRequest) (*models.User, error)
 }
 
@@ -109,6 +131,51 @@ func (c *client) RegisterByText(ctx context.Context, request *RegisterByTextRequ
 
 func (c *client) LoginByText(ctx context.Context, request *LoginByTextRequest) (*AuthenicateResponse, error) {
 	respBytes, err := c.httpClient.Post(ctx, "/authenticator/text/login", request)
+	if err != nil {
+		return nil, err
+	}
+
+	var res AuthenicateResponse
+	err = json.Unmarshal(respBytes, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (c *client) RegisterByEmail(ctx context.Context, request *RegisterByEmailRequest) (*AuthenicateResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/email/register", request)
+	if err != nil {
+		return nil, err
+	}
+
+	var res AuthenicateResponse
+	err = json.Unmarshal(respBytes, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (c *client) LoginByEmail(ctx context.Context, request *LoginByEmailRequest) (*AuthenicateResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/email/login", request)
+	if err != nil {
+		return nil, err
+	}
+
+	var res AuthenicateResponse
+	err = json.Unmarshal(respBytes, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (c *client) LoginWithGoogle(ctx context.Context, request *LoginWithGoogleRequest) (*AuthenicateResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/google/login", request)
 	if err != nil {
 		return nil, err
 	}

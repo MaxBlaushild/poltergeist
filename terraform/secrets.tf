@@ -267,3 +267,52 @@ resource "aws_secretsmanager_secret_version" "polymarket_address" {
   secret_id     = aws_secretsmanager_secret.polymarket_address.id
   secret_string = var.polymarket_address
 }
+
+# reef-site's /operator print queue password — generated rather than
+# supplied via var.* like the secrets above, since there's no existing
+# credential to reuse and nothing else needs to know it besides whoever
+# logs into the print queue.
+resource "random_password" "reef_admin_token" {
+  length  = 24
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "reef_admin_token" {
+  name = "REEF_ADMIN_TOKEN"
+}
+
+resource "aws_secretsmanager_secret_version" "reef_admin_token" {
+  secret_id     = aws_secretsmanager_secret.reef_admin_token.id
+  secret_string = random_password.reef_admin_token.result
+}
+
+# R-7.3 SlantAdapter — inert until var.slant_api_key is set to a real key
+# (empty string is a valid, harmless placeholder; the adapter is only ever
+# invoked by an explicit operator action, never automatically).
+resource "aws_secretsmanager_secret" "slant_api_key" {
+  name = "SLANT_API_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "slant_api_key" {
+  secret_id     = aws_secretsmanager_secret.slant_api_key.id
+  secret_string = var.slant_api_key
+}
+
+# go/authenticator's "Sign in with Google" support (reef-site's login page).
+resource "aws_secretsmanager_secret" "google_client_id" {
+  name = "GOOGLE_CLIENT_ID"
+}
+
+resource "aws_secretsmanager_secret_version" "google_client_id" {
+  secret_id     = aws_secretsmanager_secret.google_client_id.id
+  secret_string = var.google_client_id
+}
+
+resource "aws_secretsmanager_secret" "google_client_secret" {
+  name = "GOOGLE_CLIENT_SECRET"
+}
+
+resource "aws_secretsmanager_secret_version" "google_client_secret" {
+  secret_id     = aws_secretsmanager_secret.google_client_secret.id
+  secret_string = var.google_client_secret
+}

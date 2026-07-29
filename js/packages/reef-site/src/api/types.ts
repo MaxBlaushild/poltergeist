@@ -89,6 +89,7 @@ export interface Configuration {
   rejectionReason: string;
   priceCents: number | null;
   sessionId: string;
+  previewUrl?: string;
 }
 
 export interface BboxMm {
@@ -149,6 +150,7 @@ export interface OrderItem {
   createdAt: string;
   orderId: string;
   productId: string;
+  productName: string;
   configurationId?: string;
   variantKey: string;
   quantity: number;
@@ -173,6 +175,17 @@ export interface Order {
   cogsCents: number | null;
   reprintCount: number;
   items: OrderItem[];
+}
+
+export interface CustomerUser {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+export interface CustomerAuth {
+  token: string;
+  user: CustomerUser;
 }
 
 export type ReefEventType =
@@ -203,3 +216,27 @@ export interface OperatorMetrics {
   adSpendCents: number;
   cacCents: number;
 }
+
+export interface ShippingAddress {
+  name: string;
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+}
+
+export interface OperatorOrderItem extends OrderItem {
+  stlUrl?: string;
+}
+
+export interface OperatorOrder extends Omit<Order, 'items' | 'shippingAddress'> {
+  items: OperatorOrderItem[];
+  shippingAddress: ShippingAddress | null;
+}
+
+// GET /api/reef/me/orders returns the exact same enriched shape as the
+// operator print queue (go/reef-site/internal/server/auth.go reuses
+// toOperatorOrderResponse) — aliased so call sites read naturally.
+export type MyOrder = OperatorOrder;

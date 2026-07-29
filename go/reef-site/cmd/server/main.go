@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -35,7 +36,8 @@ func main() {
 		AccountSid:  cfg.Secret.TwilioAccountSid,
 		AuthToken:   cfg.Secret.TwilioAuthToken,
 		FromAddress: cfg.Public.EmailFromAddress,
-		WebHost:     cfg.Public.BaseURL,
+		FromName:    "reef",
+		WebHost:     cfg.Public.SiteURL,
 	})
 
 	log.Println("reef-site listening on :8091")
@@ -46,5 +48,6 @@ func main() {
 		JobsClient:    jobsClient,
 		EmailClient:   emailClient,
 		BillingClient: billing.NewClient(),
+		AuthClient:    auth.NewClient(),
 	}).ListenAndServe("8091")
 }

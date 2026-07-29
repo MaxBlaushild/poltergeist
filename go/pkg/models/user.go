@@ -33,4 +33,16 @@ type User struct {
 	Bio                   *string    `json:"bio" db:"bio"`
 	Category              *string    `json:"category" db:"category"`
 	AgeRange              *string    `json:"ageRange" db:"age_range"`
+
+	// Email/PasswordHash support email+password login (reef-site) alongside
+	// the original phone+SMS flow every other domain uses — both are
+	// optional so neither login method requires the other's field.
+	Email        *string `json:"email" gorm:"unique"`
+	PasswordHash *string `json:"-" gorm:"column:password_hash"`
+
+	// GoogleID is Google's stable per-account "sub" claim — a user who
+	// signs in with Google after already having an email/password account
+	// gets this column linked onto their existing row (matched by email)
+	// rather than a second duplicate account.
+	GoogleID *string `json:"-" gorm:"column:google_id;unique"`
 }

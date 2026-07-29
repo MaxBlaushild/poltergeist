@@ -34,6 +34,16 @@ type Module interface {
 	// also the only thing that can say whether it vented it, which is exact
 	// rather than a generic mesh-analysis estimate.
 	Analyze(params map[string]interface{}) (Analysis, error)
+	// ValidateParams catches parameter combinations a generator already
+	// knows are invalid *before* paying for a render+slice cycle to find
+	// out — e.g. FragRack's holesPerTier vs. widthMm/plugHoleDiameterMm.
+	// Schema min/max bounds alone can't express "this field's real max
+	// depends on two other fields' current values"; only the generator
+	// that does the packing math knows that. Called from resolveModule
+	// (shared by preview and validate) so every product gets this for
+	// free just by implementing it — return nil when a module has no such
+	// constraint (e.g. LidClip).
+	ValidateParams(params map[string]interface{}) error
 }
 
 // Analysis is a generator's self-report of structural facts about its own

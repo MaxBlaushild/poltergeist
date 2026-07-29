@@ -17,6 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/idtoken"
 	"gorm.io/gorm"
 )
 
@@ -463,6 +465,174 @@ func main() {
 		c.JSON(200, gin.H{
 			"user":  user,
 			"token": token,
+		})
+	})
+
+	// Email+password login (reef-site's own customer accounts) — added
+	// alongside the phone+SMS flow above rather than replacing it; every
+	// other domain in this repo keeps using RegisterByText/LoginByText
+	// unchanged.
+	r.POST("/authenticator/email/register", func(c *gin.Context) {
+		var requestBody auth.RegisterByEmailRequest
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if existing, err := dbClient.User().FindByEmail(c, requestBody.Email); err == nil && existing != nil {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "an account with that email already exists",
+			})
+			return
+		}
+
+		hash, err := bcrypt.GenerateFromPassword([]byte(requestBody.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "hashing password error").Error(),
+			})
+			return
+		}
+
+		user, err := dbClient.User().InsertWithEmail(c, requestBody.Name, requestBody.Email, string(hash))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "inserting user error").Error(),
+			})
+			return
+		}
+
+		tok, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": tok,
+		})
+	})
+
+	r.POST("/authenticator/email/login", func(c *gin.Context) {
+		var requestBody auth.LoginByEmailRequest
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		user, err := dbClient.User().FindByEmail(c, requestBody.Email)
+		if err != nil || user.PasswordHash == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid email or password",
+			})
+			return
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(requestBody.Password)); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid email or password",
+			})
+			return
+		}
+
+		tok, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": tok,
+		})
+	})
+
+	// "Sign in with Google" via Google Identity Services' ID-token flow
+	// (frontend gets a credential from Google's own button, we verify it
+	// server-side) rather than a redirect/authorization-code exchange —
+	// simpler for a SPA and needs no client secret to verify.
+	r.POST("/authenticator/google/login", func(c *gin.Context) {
+		var requestBody auth.LoginWithGoogleRequest
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		payload, err := idtoken.Validate(c.Request.Context(), requestBody.IDToken, cfg.Secret.GoogleClientID)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": errors.Wrap(err, "invalid google id token").Error(),
+			})
+			return
+		}
+
+		googleID := payload.Subject
+		email, _ := payload.Claims["email"].(string)
+		name, _ := payload.Claims["name"].(string)
+
+		user, err := dbClient.User().FindByGoogleID(c, googleID)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "finding user by google id error").Error(),
+			})
+			return
+		}
+
+		// Not linked yet — match by email so an existing email/password
+		// account gets Google linked onto it instead of creating a
+		// duplicate.
+		if user == nil && email != "" {
+			if existing, findErr := dbClient.User().FindByEmail(c, email); findErr == nil && existing != nil {
+				if linkErr := dbClient.User().SetGoogleID(c, existing.ID, googleID); linkErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error": errors.Wrap(linkErr, "linking google account error").Error(),
+					})
+					return
+				}
+				existing.GoogleID = &googleID
+				user = existing
+			}
+		}
+
+		if user == nil {
+			if name == "" {
+				name = email
+			}
+			created, insertErr := dbClient.User().InsertWithGoogle(c, name, email, googleID)
+			if insertErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(insertErr, "creating google user error").Error(),
+				})
+				return
+			}
+			user = created
+		}
+
+		tok, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": tok,
 		})
 	})
 

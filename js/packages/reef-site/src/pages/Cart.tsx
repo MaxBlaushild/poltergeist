@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { reefApi } from '../api/client';
 import type { CartResponse } from '../api/types';
 import { useCart } from '../hooks/useCart';
+import { useCustomerAuth } from '../hooks/useCustomerAuth';
 import { getSessionId } from '../lib/session';
 
 export default function Cart() {
   const { items, removeItem, setQuantity } = useCart();
+  const { auth } = useCustomerAuth();
   const [cart, setCart] = useState<CartResponse | null>(null);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => auth?.user.email ?? '');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
 

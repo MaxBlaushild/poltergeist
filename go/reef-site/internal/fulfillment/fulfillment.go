@@ -12,7 +12,21 @@ type Status string
 const (
 	StatusSubmitted Status = "submitted"
 	StatusUnknown   Status = "unknown"
+
+	// StatusPrinted and StatusShipped are set by the operator directly from
+	// the print queue (there is nothing to poll them from for manual
+	// fulfillment — see ManualAdapter.GetStatus).
+	StatusPrinted Status = "printed"
+	StatusShipped Status = "shipped"
 )
+
+// OperatorSettableStatuses is what the print queue is allowed to set
+// reef_orders.fulfillment_status to — deliberately excludes StatusSubmitted
+// (set only by SubmitOrder) and StatusUnknown (not a real state).
+var OperatorSettableStatuses = map[Status]bool{
+	StatusPrinted: true,
+	StatusShipped: true,
+}
 
 type OrderItem struct {
 	ProductSlug string

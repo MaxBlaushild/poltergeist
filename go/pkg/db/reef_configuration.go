@@ -67,7 +67,10 @@ func (h *reefSliceResultHandle) FindByGeometryHash(ctx context.Context, geometry
 // Create inserts a new cache row, doing nothing if the geometry_hash already
 // exists (R-3.3: identical inputs must never regenerate or re-slice — a
 // concurrent request that lost the race to populate the cache should not
-// error, it should just read what's there).
+// error, it should just read what's there). Used by the preview path, where
+// a losing race just means "someone else's preview is already cached" — no
+// data is lost either way, since a pending placeholder is all preview ever
+// writes.
 func (h *reefSliceResultHandle) Create(ctx context.Context, result *models.ReefSliceResult) error {
 	return h.db.WithContext(ctx).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "geometry_hash"}}, DoNothing: true}).
@@ -76,6 +79,30 @@ func (h *reefSliceResultHandle) Create(ctx context.Context, result *models.ReefS
 
 func (h *reefSliceResultHandle) Update(ctx context.Context, result *models.ReefSliceResult) error {
 	return h.db.WithContext(ctx).Save(result).Error
+}
+
+// Upsert writes a fully-computed result (from the full-generation path),
+// overwriting whatever's already at this geometry_hash on conflict rather
+// than discarding the write. DoNothing (what Create uses) is wrong here: a
+// pending preview placeholder for this exact hash can be inserted at any
+// point up until the moment this call commits — including after an initial
+// existence check earlier in the caller, since generation+slicing takes
+// long enough for a fresh preview request to land in that window — so only
+// an atomic upsert, not a check-then-act pattern, actually closes the race.
+// Every caller of this always has a complete, non-blank result to write, so
+// last-write-wins on a genuine double-computation is harmless.
+func (h *reefSliceResultHandle) Upsert(ctx context.Context, result *models.ReefSliceResult) error {
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "geometry_hash"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"updated_at", "product_id", "status", "rejection_rule", "rejection_reason",
+				"weight_g", "print_time_s", "bbox_mm", "plate_fits", "support_required",
+				"support_material_percent", "min_wall_mm", "sealed_void", "warnings",
+				"slicer_version", "openscad_version", "stl_key", "preview_key", "price_cents",
+			}),
+		}).
+		Create(result).Error
 }
 
 type reefGenerationJobHandle struct {

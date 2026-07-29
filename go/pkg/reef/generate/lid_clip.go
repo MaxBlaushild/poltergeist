@@ -96,6 +96,13 @@ func (c LidClip) Analyze(params map[string]interface{}) (Analysis, error) {
 	}, nil
 }
 
+// ValidateParams: unlike FragRack, every wall here is a fixed constant
+// (clipWallMm) regardless of params — there's no "N features packed into a
+// width" relationship for any parameter to violate.
+func (LidClip) ValidateParams(params map[string]interface{}) error {
+	return nil
+}
+
 const lidClipSCADBody = `
 module clip_profile() {
     difference() {

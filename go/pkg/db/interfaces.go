@@ -226,6 +226,7 @@ type ReefSliceResultHandle interface {
 	FindByGeometryHash(ctx context.Context, geometryHash string) (*models.ReefSliceResult, error)
 	Create(ctx context.Context, result *models.ReefSliceResult) error
 	Update(ctx context.Context, result *models.ReefSliceResult) error
+	Upsert(ctx context.Context, result *models.ReefSliceResult) error
 }
 
 type ReefGenerationJobHandle interface {
@@ -242,6 +243,7 @@ type ReefOrderHandle interface {
 	FindByStripeSessionID(ctx context.Context, sessionID string) (*models.ReefOrder, error)
 	Update(ctx context.Context, order *models.ReefOrder) error
 	FindPaid(ctx context.Context) ([]models.ReefOrder, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.ReefOrder, error)
 	CogsStatsSince(ctx context.Context, since time.Time) (*OperatorCogsStats, error)
 }
 
@@ -401,7 +403,12 @@ type HowManyQuestionHandle interface {
 
 type UserHandle interface {
 	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string, category *string, ageRange *string) (*models.User, error)
+	InsertWithEmail(ctx context.Context, name string, email string, passwordHash string) (*models.User, error)
+	InsertWithGoogle(ctx context.Context, name string, email string, googleID string) (*models.User, error)
+	SetGoogleID(ctx context.Context, userID uuid.UUID, googleID string) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	FindByGoogleID(ctx context.Context, googleID string) (*models.User, error)
 	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
 	FindUsersByIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.User, error)
 	FindAll(ctx context.Context) ([]models.User, error)

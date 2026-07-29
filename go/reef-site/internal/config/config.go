@@ -15,7 +15,19 @@ type PublicConfig struct {
 	DbPort   string `mapstructure:"DB_PORT"`
 	DbName   string `mapstructure:"DB_NAME"`
 	RedisUrl string `mapstructure:"REDIS_URL"`
-	BaseURL  string `mapstructure:"BASE_URL"`
+
+	// Deliberately its own key rather than the repo-wide BASE_URL: that one
+	// is shared by go/core and go/travel-angels for api.poltergeist.gg
+	// (their real domain), but reef-site is served from a different domain
+	// (api.unclaimedstreets.com) and reusing BASE_URL sent Stripe's payment
+	// completion callback to a host that doesn't resolve, silently stranding
+	// every order at "awaiting payment" forever.
+	BaseURL string `mapstructure:"REEF_BASE_URL"`
+
+	// The customer-facing storefront domain — distinct from BaseURL/REEF_BASE_URL
+	// above (that one is reef-site's own API domain, used for Stripe's
+	// server-to-server callback). Order confirmation emails link here.
+	SiteURL string `mapstructure:"REEF_SITE_URL"`
 
 	// R-2.5 subprocess contract: binary paths + resource limits, all
 	// config-driven rather than hardcoded so they can be tuned per
@@ -51,12 +63,25 @@ type PublicConfig struct {
 	FulfillmentProvider string `mapstructure:"REEF_FULFILLMENT_PROVIDER"`
 	OperatorEmail       string `mapstructure:"REEF_OPERATOR_EMAIL"`
 	EmailFromAddress    string `mapstructure:"EMAIL_FROM_ADDRESS"`
+
+	// R-7.3 SlantAdapter — reached only via an explicit per-order operator
+	// action (see internal/server/operator_orders.go), never the checkout-time
+	// default (FulfillmentProvider above stays "manual"). PlatformID isn't a
+	// secret (just a UUID identifying this integration in Slant's system),
+	// unlike the API key.
+	SlantPlatformID string `mapstructure:"SLANT_PLATFORM_ID"`
 }
 
 type SecretConfig struct {
 	DbPassword       string
 	TwilioAccountSid string
 	TwilioAuthToken  string
+	// AdminToken gates /api/reef/operator/* (HTTP Basic Auth) — that surface
+	// now includes real customer names/addresses via the print queue, not
+	// just aggregate metrics, so it's no longer left as an unlisted-URL-only
+	// endpoint.
+	AdminToken  string
+	SlantAPIKey string
 }
 
 type Config struct {
@@ -72,7 +97,8 @@ func defaults(v *viper.Viper) {
 	// in production despite the real env var being set correctly, until
 	// these defaults existed to make viper aware of the keys.
 	v.SetDefault("REDIS_URL", "redis://localhost:6379")
-	v.SetDefault("BASE_URL", "http://localhost:3000")
+	v.SetDefault("REEF_BASE_URL", "http://localhost:3000")
+	v.SetDefault("REEF_SITE_URL", "http://localhost:5181")
 	v.SetDefault("REEF_OPERATOR_EMAIL", "")
 	v.SetDefault("EMAIL_FROM_ADDRESS", "")
 	v.SetDefault("REEF_OPENSCAD_BIN", "openscad")
@@ -99,6 +125,7 @@ func defaults(v *viper.Viper) {
 	v.SetDefault("REEF_MAX_WEIGHT_G", 250.0)
 	v.SetDefault("REEF_MIN_DRAIN_PATH_MM", 4.0)
 	v.SetDefault("REEF_FULFILLMENT_PROVIDER", "manual")
+	v.SetDefault("SLANT_PLATFORM_ID", "")
 }
 
 func ParseFlagsAndGetConfig() (*Config, error) {
@@ -143,6 +170,8 @@ func load(name, fileType, path string) (*Config, error) {
 			DbPassword:       os.Getenv("DB_PASSWORD"),
 			TwilioAccountSid: os.Getenv("TWILIO_ACCOUNT_SID"),
 			TwilioAuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
+			AdminToken:       os.Getenv("REEF_ADMIN_TOKEN"),
+			SlantAPIKey:      os.Getenv("SLANT_API_KEY"),
 		},
 	}, nil
 }

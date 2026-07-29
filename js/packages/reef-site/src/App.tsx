@@ -1,5 +1,6 @@
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 import { useCart } from './hooks/useCart';
+import { useCustomerAuth } from './hooks/useCustomerAuth';
 import { WaveDivider } from './components/Decor';
 import Home from './pages/Home';
 import ProductDetail from './pages/ProductDetail';
@@ -7,9 +8,14 @@ import Configure from './pages/Configure';
 import TankLanding from './pages/TankLanding';
 import Cart from './pages/Cart';
 import OrderStatus from './pages/OrderStatus';
+import ConfigurationPreview from './pages/ConfigurationPreview';
 import HowToMeasure from './pages/HowToMeasure';
 import MaterialsAndCare from './pages/MaterialsAndCare';
 import Operator from './pages/Operator';
+import PrintQueue from './pages/PrintQueue';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Account from './pages/Account';
 
 function Logo() {
   return (
@@ -40,6 +46,7 @@ function Logo() {
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { items } = useCart();
+  const { auth } = useCustomerAuth();
   const count = items.reduce((sum, i) => sum + i.quantity, 0);
   return (
     <div className="flex min-h-screen flex-col bg-reef-paper">
@@ -52,6 +59,9 @@ function Layout({ children }: { children: React.ReactNode }) {
             </Link>
             <Link to="/materials-and-care" className="hidden transition-colors hover:text-reef-coral sm:inline">
               Materials &amp; care
+            </Link>
+            <Link to={auth ? '/account' : '/login'} className="transition-colors hover:text-reef-coral">
+              {auth ? auth.user.name.split(' ')[0] : 'Log in'}
             </Link>
             <Link
               to="/cart"
@@ -97,9 +107,14 @@ export default function App() {
           <Route path="/tanks/:manufacturer/:model" element={<TankLanding />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/orders/:token" element={<OrderStatus />} />
+          <Route path="/configurations/:id" element={<ConfigurationPreview />} />
           <Route path="/how-to-measure" element={<HowToMeasure />} />
           <Route path="/materials-and-care" element={<MaterialsAndCare />} />
           <Route path="/operator" element={<Operator />} />
+          <Route path="/operator/print-queue" element={<PrintQueue />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/account" element={<Account />} />
         </Routes>
       </Layout>
     </BrowserRouter>

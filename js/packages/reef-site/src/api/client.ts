@@ -4,14 +4,19 @@ import type {
   CheckoutResponse,
   Configuration,
   ConfigureValidateResponse,
+  CustomerAuth,
+  MyOrder,
   Order,
   OperatorMetrics,
+  OperatorOrder,
   ParameterSchema,
   PreviewResponse,
   Product,
   ReefEventType,
   TankProfile,
 } from './types';
+import { clearAdminAuth, getAdminAuthHeader } from './adminAuth';
+import { clearStoredAuth, getStoredAuth } from '../hooks/useCustomerAuth';
 
 const BASE_URL = (import.meta.env.VITE_API_URL ?? '') + '/api/reef';
 
@@ -24,10 +29,12 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const auth = getStoredAuth();
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -45,6 +52,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
   return res.json() as Promise<T>;
+}
+
+// operator/* routes are gated with HTTP Basic Auth (see api/adminAuth.ts) —
+// a 401 here means the stored password is wrong or missing, so it's cleared
+// to force the login gate to re-prompt rather than loop silently.
+async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeader = getAdminAuthHeader();
+  try {
+    return await request<T>(path, {
+      ...init,
+      headers: {
+        ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      clearAdminAuth();
+    }
+    throw err;
+  }
 }
 
 export const reefApi = {
@@ -84,6 +112,21 @@ export const reefApi = {
 
   getOrder: (token: string) => request<Order>(`/orders/${token}`),
 
+  register: (name: string, email: string, password: string) =>
+    request<CustomerAuth>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+
+  login: (email: string, password: string) =>
+    request<CustomerAuth>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+
+  loginWithGoogle: (idToken: string) =>
+    request<CustomerAuth>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) }),
+
+  myOrders: () =>
+    request<MyOrder[]>('/me/orders').catch((err) => {
+      if (err instanceof ApiError && err.status === 401) clearStoredAuth();
+      throw err;
+    }),
+
   recordEvent: (
     eventType: ReefEventType,
     fields: {
@@ -102,7 +145,21 @@ export const reefApi = {
     }),
 
   operatorMetrics: (days: number, adSpendCents: number) =>
-    request<OperatorMetrics>(`/operator/metrics?days=${days}&adSpendCents=${adSpendCents}`),
+    operatorRequest<OperatorMetrics>(`/operator/metrics?days=${days}&adSpendCents=${adSpendCents}`),
+
+  operatorOrders: () => operatorRequest<OperatorOrder[]>('/operator/orders'),
+
+  updateOrderFulfillment: (orderId: string, status: 'printed' | 'shipped') =>
+    operatorRequest<OperatorOrder>(`/operator/orders/${orderId}/fulfillment`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  fulfillOrderWithSlant: (orderId: string) =>
+    operatorRequest<OperatorOrder>(`/operator/orders/${orderId}/fulfill-slant`, { method: 'POST' }),
+
+  refreshSlantStatus: (orderId: string) =>
+    operatorRequest<OperatorOrder>(`/operator/orders/${orderId}/refresh-slant-status`, { method: 'POST' }),
 };
 
 export { ApiError };
