@@ -34,6 +34,44 @@ type Tab =
   | 'invites'
   | 'players';
 
+// The console groups its twelve tabs into three sections, matching the
+// actual arc of running one of these nights: get people in (Setup), pace
+// the evening (Live), track the game (Scoring). Each group's first tab is
+// its default when switching into it.
+type Group = 'setup' | 'run' | 'scoring';
+const GROUPS: { id: Group; label: string; tabs: { id: Tab; label: string }[] }[] = [
+  {
+    id: 'setup',
+    label: 'Setup',
+    tabs: [
+      { id: 'content', label: 'Content' },
+      { id: 'invites', label: 'Invites' },
+      { id: 'players', label: 'Players' },
+      { id: 'cohosts', label: 'Co-Hosts' },
+    ],
+  },
+  {
+    id: 'run',
+    label: 'Live',
+    tabs: [
+      { id: 'controls', label: 'Controls' },
+      { id: 'notifications', label: 'Announcements' },
+      { id: 'broadcast', label: 'Broadcast' },
+    ],
+  },
+  {
+    id: 'scoring',
+    label: 'Scoring',
+    tabs: [
+      { id: 'submissions', label: 'Submissions' },
+      { id: 'awards', label: 'HF Awards' },
+      { id: 'games', label: 'Games' },
+      { id: 'items', label: 'Items' },
+      { id: 'standings', label: 'Standings' },
+    ],
+  },
+];
+
 // Whether the signed-in account can administer this one Toast — checked by
 // consequence (gmGetState either 200s or the server's withInstanceAdmin
 // middleware rejects it), same pattern the old passcode gate used.
@@ -85,6 +123,9 @@ export const GMAdmin = () => {
 const GMConsole = () => {
   const navigate = useNavigate();
   const { auth } = useUserAuth();
+  // Default to Live → Controls — the single most-reached-for tab,
+  // whether they're mid-event or just checking the current act.
+  const [group, setGroup] = useState<Group>('run');
   const [tab, setTab] = useState<Tab>('controls');
   const [state, setState] = useState<GameState | null>(null);
 
@@ -93,20 +134,11 @@ const GMConsole = () => {
     refreshState();
   }, []);
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'controls', label: 'Controls' },
-    { id: 'submissions', label: 'Submissions' },
-    { id: 'awards', label: 'HF Awards' },
-    { id: 'games', label: 'Games' },
-    { id: 'items', label: 'Items' },
-    { id: 'content', label: 'Content' },
-    { id: 'standings', label: 'Standings' },
-    { id: 'notifications', label: 'Announcements' },
-    { id: 'broadcast', label: 'Broadcast' },
-    { id: 'invites', label: 'Invites' },
-    { id: 'players', label: 'Players' },
-    { id: 'cohosts', label: 'Co-Hosts' },
-  ];
+  const activeGroup = GROUPS.find((g) => g.id === group)!;
+  const selectGroup = (g: Group) => {
+    setGroup(g);
+    setTab(GROUPS.find((x) => x.id === g)!.tabs[0].id);
+  };
 
   return (
     <div className="min-h-screen max-w-3xl mx-auto px-4 py-6">
@@ -125,8 +157,22 @@ const GMConsole = () => {
 
       <GMReminder />
 
+      <nav className="flex gap-2 mb-3">
+        {GROUPS.map((g) => (
+          <button
+            key={g.id}
+            onClick={() => selectGroup(g.id)}
+            className={`flex-1 px-4 py-2.5 rounded-full text-sm uppercase tracking-[0.2em] font-semibold transition-colors ${
+              group === g.id ? 'bg-gold text-blood-ink' : 'text-gold/70 border border-gold/30 hover:text-gold'
+            }`}
+          >
+            {g.label}
+          </button>
+        ))}
+      </nav>
+
       <nav className="flex gap-2 mb-6 flex-wrap">
-        {tabs.map((t) => (
+        {activeGroup.tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
