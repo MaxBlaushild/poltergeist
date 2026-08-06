@@ -7,9 +7,12 @@
 -- "creator" on record for an event that predates this concept. Grant a real
 -- owner with `go run ./cmd/claim-owner` after this migration runs.
 CREATE TEMP TABLE tmp_legacy_vampire_instance AS
-  INSERT INTO vampire_instances (name, status, created_by)
-  VALUES ('The Crimson Toast', 'active', NULL)
-  RETURNING id;
+  WITH ins AS (
+    INSERT INTO vampire_instances (name, status, created_by)
+    VALUES ('The Crimson Toast', 'active', NULL)
+    RETURNING id
+  )
+  SELECT id FROM ins;
 
 -- vampire_game_state: was a singleton row (id always 1, CHECK id = 1); now
 -- one row per instance, keyed by instance_id.
