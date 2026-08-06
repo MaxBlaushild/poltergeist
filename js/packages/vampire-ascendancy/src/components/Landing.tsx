@@ -1,7 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useUserAuth } from '../userAuth';
-import { listMyToasts } from '../platformApi';
 import { VampireMark } from './VampireMark';
 
 const STEPS = [
@@ -10,39 +8,14 @@ const STEPS = [
   { title: 'Run the night live', body: "Advance the acts, verify missions, and broadcast announcements — everyone's screen updates together." },
 ];
 
-// Public landing page — the app's front door. A guest's RSVP link
-// (/rsvp/:token) bypasses this entirely.
+// Public landing page — the app's front door, but only for signed-out
+// visitors. A guest's RSVP link (/rsvp/:token) bypasses this entirely, and
+// a signed-in visitor skips straight past it to their dashboard — there's
+// nothing on this page they need once they have an account.
 export const Landing = () => {
   const { auth } = useUserAuth();
-  const navigate = useNavigate();
-  const [toastCount, setToastCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!auth) {
-      setToastCount(null);
-      return;
-    }
-    listMyToasts()
-      .then((d) => setToastCount(d.instances.length))
-      .catch(() => setToastCount(null));
-  }, [auth]);
-
-  const primaryCta = () => {
-    if (!auth) {
-      // The dashboard itself handles "no Toasts yet" with its own "Host
-      // another Toast" CTA, so this works whether they're new or already
-      // have Toasts waiting (as a Host, Co-Host, or player).
-      navigate('/signin?next=/toasts');
-      return;
-    }
-    if (toastCount && toastCount > 0) {
-      navigate('/toasts');
-    } else {
-      navigate('/toasts/new');
-    }
-  };
-
-  const ctaLabel = auth && toastCount && toastCount > 0 ? 'My Toasts' : 'Host a Toast';
+  if (auth) return <Navigate to="/toasts" replace />;
 
   return (
     <div className="min-h-screen px-4 py-16">
@@ -54,17 +27,7 @@ export const Landing = () => {
           A live murder-mystery party in a box: houses, hidden secrets, missions, and a night that plays
           out in real time on everyone's phone. Host your own Court.
         </p>
-        <button
-          onClick={primaryCta}
-          className="px-8 py-3 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright"
-        >
-          {ctaLabel}
-        </button>
-        {auth && (
-          <p className="mt-3 text-xs text-bone/40">
-            Signed in as {auth.user.name}
-          </p>
-        )}
+        <CtaButton />
       </div>
 
       <div className="mx-auto max-w-3xl mt-16 grid gap-6 sm:grid-cols-3">
@@ -83,5 +46,22 @@ export const Landing = () => {
         </p>
       </div>
     </div>
+  );
+};
+
+// Only ever rendered signed-out (Landing bails to /toasts otherwise), so
+// this always starts the sign-in flow. The dashboard itself handles "no
+// Toasts yet" with its own "Host another Toast" CTA, so sending everyone
+// through /toasts on the way back works whether they're new or already
+// have Toasts waiting (as a Host, Co-Host, or player).
+const CtaButton = () => {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate('/signin?next=/toasts')}
+      className="px-8 py-3 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright"
+    >
+      Host a Toast
+    </button>
   );
 };

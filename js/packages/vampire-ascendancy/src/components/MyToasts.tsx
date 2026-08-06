@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listMyToasts, hostToast, type MyToast } from '../platformApi';
+import { adminListHouses } from '../superAdminApi';
 import { ApiError } from '../api';
 import { useUserAuth } from '../userAuth';
 import { VampireMark } from './VampireMark';
@@ -15,11 +16,18 @@ export const MyToasts = () => {
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<MyToast[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Checked "by consequence" (same pattern SuperAdmin.tsx's own gate uses) —
+  // there's no dedicated "am I a super user" field on the account, so a
+  // super-user-only call either succeeds or 403s.
+  const [isSuperUser, setIsSuperUser] = useState(false);
 
   useEffect(() => {
     listMyToasts()
       .then((d) => setToasts(d.instances))
       .catch(() => setError('Could not load your Toasts.'));
+    adminListHouses()
+      .then(() => setIsSuperUser(true))
+      .catch(() => setIsSuperUser(false));
   }, []);
 
   return (
@@ -32,15 +40,25 @@ export const MyToasts = () => {
             <p className="text-bone/50 text-xs">Signed in as {auth?.user.name}</p>
           </div>
         </div>
-        <button
-          onClick={() => {
-            logout();
-            navigate('/');
-          }}
-          className="text-bone/50 hover:text-bone text-xs uppercase tracking-[0.2em]"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4">
+          {isSuperUser && (
+            <Link
+              to="/admin"
+              className="text-gold/80 hover:text-gold text-xs uppercase tracking-[0.2em]"
+            >
+              Super Admin
+            </Link>
+          )}
+          <button
+            onClick={() => {
+              logout();
+              navigate('/');
+            }}
+            className="text-bone/50 hover:text-bone text-xs uppercase tracking-[0.2em]"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <Link
