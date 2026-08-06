@@ -392,8 +392,9 @@ export const gmRemoveAdmin = (userId: string) =>
 export const gmTransferOwnership = (toUserId: string) =>
   gm<{ ok: boolean }>('/admins/transfer', { method: 'POST', body: JSON.stringify({ toUserId }) });
 
-// ---- Content tab: shared-library inclusion toggles (items/quiz only —
-// which characters are "in" is implicit via invites; see the Invites tab) ----
+// ---- Content tab: shared-library inclusion toggle (items only — the quiz
+// is fixed, not customizable per instance; which characters are "in" is
+// implicit via invites; see the Invites tab) ----
 export interface GMLibraryItem {
   id: string;
   code: string;
@@ -401,21 +402,6 @@ export interface GMLibraryItem {
   category: string;
   included: boolean;
 }
-export interface GMLibraryQuizQuestion {
-  id: string;
-  part: number;
-  ordinal: number;
-  prompt: string;
-  questionType: string;
-  included: boolean;
-}
 export const gmListLibraryItems = () => gm<{ items: GMLibraryItem[] }>('/library/items');
 export const gmSetItemIncluded = (id: string, included: boolean) =>
   gm<{ ok: boolean }>(`/library/items/${id}`, { method: 'PUT', body: JSON.stringify({ included }) });
-export const gmListLibraryQuizQuestions = () =>
-  gm<{ questions: GMLibraryQuizQuestion[] }>('/library/quiz-questions');
-export const gmSetQuizQuestionIncluded = (id: string, included: boolean) =>
-  gm<{ ok: boolean }>(`/library/quiz-questions/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify({ included }),
-  });

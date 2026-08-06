@@ -41,6 +41,8 @@ const PhotoThumb = ({ src, alt, className }: { src: string; alt: string; classNa
   );
 };
 
+type SortMode = 'name' | 'category' | 'effect';
+
 // GM Items tab: this Toast's included items — assign them to players and
 // review/transfer/remove holdings. The catalog itself (creating/editing/
 // deleting items, reference photos) is shared content, edited only by super
@@ -51,8 +53,10 @@ export const ItemsSection = () => {
   const [held, setHeld] = useState<GMPlayerItem[]>([]);
   const [playerId, setPlayerId] = useState('');
   const [itemId, setItemId] = useState('');
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catalogQuery, setCatalogQuery] = useState('');
+  const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [targetedOnly, setTargetedOnly] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>('name');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -78,17 +82,32 @@ export const ItemsSection = () => {
     [players]
   );
 
-  const sortedItems = useMemo(
-    () => [...items].sort((a, b) => a.name.localeCompare(b.name)),
+  const categories = useMemo(
+    () => [...new Set(items.map((i) => i.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [items]
   );
-  const catalogFiltered = useMemo(() => {
-    const q = catalogQuery.trim().toLowerCase();
-    if (!q) return sortedItems;
-    return sortedItems.filter(
-      (i) => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
-    );
-  }, [sortedItems, catalogQuery]);
+
+  const sortedItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = items.filter((i) => {
+      if (categoryFilter && i.category !== categoryFilter) return false;
+      if (targetedOnly && !i.targetsPlayer) return false;
+      if (!q) return true;
+      return (
+        i.name.toLowerCase().includes(q) ||
+        (i.category || '').toLowerCase().includes(q) ||
+        (i.description || '').toLowerCase().includes(q)
+      );
+    });
+    const byName = (a: GMItem, b: GMItem) => a.name.localeCompare(b.name);
+    if (sortMode === 'category') {
+      return [...filtered].sort((a, b) => (a.category || '').localeCompare(b.category || '') || byName(a, b));
+    }
+    if (sortMode === 'effect') {
+      return [...filtered].sort((a, b) => effectScore(b) - effectScore(a) || byName(a, b));
+    }
+    return [...filtered].sort(byName);
+  }, [items, query, categoryFilter, targetedOnly, sortMode]);
 
   const assign = async () => {
     if (!playerId || !itemId) return;
@@ -140,7 +159,7 @@ export const ItemsSection = () => {
       </p>
 
       <Card title="Assign an item">
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           <select
             value={playerId}
             onChange={(e) => setPlayerId(e.target.value)}
@@ -154,29 +173,90 @@ export const ItemsSection = () => {
               </option>
             ))}
           </select>
-          <select
-            value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-            className="rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone"
-          >
-            <option value="">— Select item —</option>
-            {sortedItems.map((it) => (
-              <option key={it.id} value={it.id}>
-                {it.name}
-                {effectTag(it) ? ` — ${effectTag(it)}` : ''}
-              </option>
-            ))}
-          </select>
-          {(() => {
-            const sel = items.find((i) => i.id === itemId);
-            return sel?.hasPhoto ? (
-              <PhotoThumb
-                src={itemPhotoUrl(sel.id)}
-                alt={sel.name}
-                className="w-24 h-24 rounded object-cover border border-blood/40"
-              />
-            ) : null;
-          })()}
+
+          <div className="flex gap-2 flex-wrap">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name, category, description…"
+              className="flex-1 min-w-[160px] rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+            />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+            >
+              <option value="name">Sort: Name</option>
+              <option value="category">Sort: Category</option>
+              <option value="effect">Sort: Strongest effect</option>
+            </select>
+            <label className="flex items-center gap-1.5 text-xs text-bone/70 px-1">
+              <input type="checkbox" checked={targetedOnly} onChange={(e) => setTargetedOnly(e.target.checked)} />
+              Targets a player
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-1.5 max-h-96 overflow-y-auto rounded-md border border-blood/20 p-1.5">
+            {sortedItems.length === 0 ? (
+              <p className="text-bone/50 text-sm p-2">No items match.</p>
+            ) : (
+              sortedItems.map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => setItemId(it.id)}
+                  className={`flex items-start gap-2.5 rounded-md border p-2 text-left transition-colors ${
+                    itemId === it.id
+                      ? 'border-blood-bright bg-blood/20'
+                      : 'border-blood/20 bg-black/30 hover:border-blood/50'
+                  }`}
+                >
+                  {it.hasPhoto ? (
+                    <img
+                      src={itemPhotoUrl(it.id)}
+                      alt={it.name}
+                      className="w-12 h-12 rounded object-cover border border-blood/40 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded border border-blood/30 bg-black/40 shrink-0 flex items-center justify-center text-bone/30 text-[10px] uppercase tracking-wide">
+                      No photo
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-bone text-sm font-semibold flex items-center flex-wrap gap-1.5">
+                      {it.name}
+                      {it.category && (
+                        <span className="text-[10px] uppercase tracking-[0.15em] rounded-full border border-blood/40 px-1.5 py-0.5 text-bone/60 font-normal">
+                          {it.category}
+                        </span>
+                      )}
+                      {it.targetsPlayer && (
+                        <span className="text-[10px] uppercase tracking-[0.15em] text-blood-bright font-normal">targeted</span>
+                      )}
+                    </p>
+                    {it.description && (
+                      <p className="text-xs text-bone/60 mt-0.5 line-clamp-2">{it.description}</p>
+                    )}
+                    {it.effect && <p className="text-xs text-gold/90 italic mt-0.5 line-clamp-1">{it.effect}</p>}
+                    {effectTag(it) && <p className="text-xs text-gold/70 mt-0.5">{effectTag(it)}</p>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
           <button
             onClick={assign}
             disabled={busy || !playerId || !itemId}
@@ -185,59 +265,6 @@ export const ItemsSection = () => {
             Assign
           </button>
         </div>
-      </Card>
-
-      <Card title={`Catalog (${sortedItems.length}) — included in this Toast`}>
-        <button
-          onClick={() => setCatalogOpen((o) => !o)}
-          className="text-xs text-gold uppercase tracking-[0.15em] mb-2"
-        >
-          {catalogOpen ? '▾ Hide catalog' : '▸ Show catalog'}
-        </button>
-        {catalogOpen && (
-          <input
-            value={catalogQuery}
-            onChange={(e) => setCatalogQuery(e.target.value)}
-            placeholder="Search items by name or category…"
-            className="w-full mb-2 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
-          />
-        )}
-        {!catalogOpen ? null : sortedItems.length === 0 ? (
-          <p className="text-bone/50 text-sm">No items yet.</p>
-        ) : catalogFiltered.length === 0 ? (
-          <p className="text-bone/50 text-sm">No items match “{catalogQuery}”.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {catalogFiltered.map((it) => (
-              <div key={it.id} className="border-b border-blood/15 last:border-0 pb-1.5">
-                <div className="flex items-center gap-2">
-                  {it.hasPhoto && (
-                    <PhotoThumb
-                      src={itemPhotoUrl(it.id)}
-                      alt={it.name}
-                      className="w-12 h-12 rounded object-cover border border-blood/40 shrink-0"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-bone text-sm">
-                      {it.name}
-                      {it.category && (
-                        <span className="ml-2 text-[10px] uppercase tracking-[0.15em] rounded-full border border-blood/40 px-1.5 py-0.5 text-bone/60">
-                          {it.category}
-                        </span>
-                      )}
-                      {it.targetsPlayer && <span className="ml-2 text-[10px] uppercase tracking-[0.15em] text-blood-bright">targeted</span>}
-                    </p>
-                    {effectTag(it) && <p className="text-xs text-gold/80">{effectTag(it)}</p>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="mt-2 text-[11px] text-bone/40">
-          To add, edit, delete, or photograph catalog items, use the Super Admin dashboard.
-        </p>
       </Card>
 
       {owners.length === 0 ? (
@@ -341,6 +368,31 @@ const HoldingRow = ({
     </div>
   );
 };
+
+// Rough "how much does this item do" magnitude, for the picker's
+// strongest-effect sort. Boolean effects (immune, reflect, …) count as one
+// unit each — there's no principled way to compare them to a numeric BT/HF
+// swing, so this is a sort order, not a real valuation.
+const effectScore = (it: {
+  hfEffect: number;
+  btSelf: number;
+  btFromTarget: number;
+  btDeductTarget: number;
+  quizBtPct: number;
+  doubleGameBt: boolean;
+  immune: boolean;
+  reflect: boolean;
+  stripResistance: boolean;
+}): number =>
+  Math.abs(it.hfEffect) +
+  Math.abs(it.btSelf) +
+  Math.abs(it.btFromTarget) +
+  Math.abs(it.btDeductTarget) +
+  Math.abs(it.quizBtPct) +
+  (it.doubleGameBt ? 1 : 0) +
+  (it.immune ? 1 : 0) +
+  (it.reflect ? 1 : 0) +
+  (it.stripResistance ? 1 : 0);
 
 // A one-line summary of an item's auto-applied effects (HF + BT tally), for the
 // dropdown and catalog. Free-text effects that aren't auto-resolved don't show.
