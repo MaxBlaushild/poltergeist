@@ -3,6 +3,7 @@ import { gmListInvites, gmCreateInvite, gmDeleteInvite, gmResendInvite, gmListCh
 import type { GMInvite, GMCharacter } from '../../gmApi';
 import { ApiError } from '../../api';
 import { Card } from './GameSection';
+import { CharacterBrowser } from './CharacterBrowser';
 
 // Invites tab: the only way a new person joins this Toast as a player. The
 // Host/Co-Host names a real person, picks a character for them, and a text
@@ -133,18 +134,7 @@ const NewInviteForm = ({
             className="flex-1 min-w-[180px] rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone"
           />
         </div>
-        <select
-          value={characterId}
-          onChange={(e) => setCharacterId(e.target.value)}
-          className="rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone"
-        >
-          <option value="">— Choose a character —</option>
-          {characters.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} {c.house ? `(${c.house})` : ''}
-            </option>
-          ))}
-        </select>
+        <CharacterBrowser characters={characters} selectedId={characterId} onSelect={(c) => setCharacterId(c.id)} />
         {characters.length === 0 && (
           <p className="text-bone/40 text-xs">
             Every character is already assigned or has a pending invite.

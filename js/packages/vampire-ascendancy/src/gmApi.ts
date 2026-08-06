@@ -66,6 +66,8 @@ export interface GMCharacter {
   roleType: string;
   isOptional: boolean;
   house?: string;
+  preEventInfo?: string;
+  tags?: string[];
 }
 
 // ---- Calls ----
@@ -277,6 +279,7 @@ export interface GMCharacterFull {
   imageUrl: string;
   sigil: string;
   playerName: string;
+  tags: string[];
   secrets: { ordinal: number; body: string }[];
   missions: (GMMissionEdit & { ordinal: number })[];
 }
@@ -289,6 +292,7 @@ export interface GMCharacterUpdate {
   postAct1Context: string;
   imageUrl: string;
   playerName: string;
+  tags: string[];
   secrets: string[];
   missions: GMMissionEdit[];
 }

@@ -102,7 +102,9 @@ func (s *server) gmUpdatePlayer(ctx *gin.Context) {
 // the Invites tab's "who is this invite for" picker. Not filtered to
 // "included" (that concept is retired — see MULTI_TENANT_REQUIREMENTS.md);
 // the frontend cross-references the current roster + pending invites to
-// grey out ones already spoken for.
+// grey out ones already spoken for. Carries preEventInfo and tags so the
+// picker can search/filter/preview without a second round trip per
+// character.
 func (s *server) gmListCharacters(ctx *gin.Context) {
 	chars, err := s.dbClient.Vampire().ListCharacters(ctx)
 	if err != nil {
@@ -114,12 +116,18 @@ func (s *server) gmListCharacters(ctx *gin.Context) {
 		if c.RoleType != "player" {
 			continue
 		}
+		tags := []string(c.Tags)
+		if tags == nil {
+			tags = []string{}
+		}
 		row := gin.H{
-			"id":         c.ID,
-			"name":       c.Name,
-			"title":      c.Title,
-			"roleType":   c.RoleType,
-			"isOptional": c.IsOptional,
+			"id":           c.ID,
+			"name":         c.Name,
+			"title":        c.Title,
+			"roleType":     c.RoleType,
+			"isOptional":   c.IsOptional,
+			"preEventInfo": c.PreEventInfo,
+			"tags":         tags,
 		}
 		if c.House != nil {
 			row["house"] = c.House.Name

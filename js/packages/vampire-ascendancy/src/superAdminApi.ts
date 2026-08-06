@@ -46,6 +46,7 @@ export interface AdminCharacter {
   isOptional: boolean;
   houseId: string | null;
   house?: string;
+  tags?: string[];
 }
 export const adminListCharacters = () => admin<{ characters: AdminCharacter[] }>('/characters');
 export const adminGetCharacter = (id: string) =>

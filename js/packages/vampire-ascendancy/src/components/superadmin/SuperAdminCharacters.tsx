@@ -54,6 +54,9 @@ export const SuperAdminCharacters = () => {
                   <span className="text-bone/40 mx-2">•</span>
                   <span className="text-bone/50">{c.house || c.roleType}</span>
                 </p>
+                {c.tags && c.tags.length > 0 && (
+                  <p className="mt-0.5 text-[10px] text-gold/70 truncate">{c.tags.join(' · ')}</p>
+                )}
               </div>
               <button
                 onClick={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
@@ -108,6 +111,7 @@ const CharacterEditor = ({
         houseId: c.houseId,
         preEventInfo: c.preEventInfo,
         postAct1Context: c.postAct1Context,
+        tags: c.tags,
         secrets: c.secrets.map((s) => s.body),
         missions: c.missions.map((m) => ({
           tier: m.tier,
@@ -154,6 +158,9 @@ const CharacterEditor = ({
           </select>
         </Field>
       </div>
+      <Field label="Tags — personality/trait labels for the Invites picker (comma-separated)">
+        <TagsInput className={input} tags={c.tags} onChange={(tags) => set('tags', tags)} />
+      </Field>
       <Field label="Pre-event bio">
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />
       </Field>
@@ -239,6 +246,39 @@ const CharacterEditor = ({
         {note && <span className="text-bone/60 text-sm">{note}</span>}
       </div>
     </div>
+  );
+};
+
+// A comma-separated tag list, kept as free-typed text locally (not
+// re-derived from the parsed array on every keystroke) so typing a
+// trailing comma/space to start the next tag doesn't get collapsed away
+// mid-edit. Parses back into the array on blur.
+const TagsInput = ({
+  tags,
+  onChange,
+  className,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  className: string;
+}) => {
+  const [text, setText] = useState(tags.join(', '));
+
+  const commit = () => {
+    const parsed = text.split(',').map((t) => t.trim()).filter(Boolean);
+    onChange(parsed);
+    setText(parsed.join(', '));
+  };
+
+  return (
+    <input
+      className={className}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+      placeholder="musical, gambler, aggressive, risk taker"
+    />
   );
 };
 

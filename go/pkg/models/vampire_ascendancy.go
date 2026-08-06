@@ -225,6 +225,10 @@ type VampireCharacter struct {
 	IsOptional      bool       `gorm:"not null;default:false" json:"isOptional"`
 	PreEventInfo    string     `gorm:"not null;default:''" json:"preEventInfo"`
 	PostAct1Context string     `gorm:"not null;default:''" json:"postAct1Context"`
+	// Tags are free-text personality/trait labels ("musical", "gambler",
+	// "risk taker") — shared content, edited by super users. Used by the
+	// Invites tab to filter/search the character picker.
+	Tags StringArray `gorm:"type:jsonb;default:'[]'" json:"tags"`
 	// ImageURL and Password are DEPRECATED — a character is now shared across
 	// every instance that includes it, so its portrait and sigil moved to
 	// VampireInstanceCharacter (one per instance). Left on this struct only so

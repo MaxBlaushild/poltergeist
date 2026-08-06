@@ -63,6 +63,10 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(chars))
 	for _, c := range chars {
+		tags := []string(c.Tags)
+		if tags == nil {
+			tags = []string{}
+		}
 		row := gin.H{
 			"id":         c.ID,
 			"name":       c.Name,
@@ -70,6 +74,7 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 			"roleType":   c.RoleType,
 			"isOptional": c.IsOptional,
 			"houseId":    c.HouseID,
+			"tags":       tags,
 		}
 		if c.House != nil {
 			row["house"] = c.House.Name
@@ -113,6 +118,10 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		})
 	}
 
+	tags := []string(c.Tags)
+	if tags == nil {
+		tags = []string{}
+	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"id":              c.ID,
 		"name":            c.Name,
@@ -122,6 +131,7 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"houseId":         c.HouseID,
 		"preEventInfo":    c.PreEventInfo,
 		"postAct1Context": c.PostAct1Context,
+		"tags":            tags,
 		"secrets":         secrets,
 		"missions":        missions,
 	})
@@ -145,6 +155,7 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		HouseID         *string  `json:"houseId"`
 		PreEventInfo    string   `json:"preEventInfo"`
 		PostAct1Context string   `json:"postAct1Context"`
+		Tags            []string `json:"tags"`
 		Secrets         []string `json:"secrets"`
 		Missions        []struct {
 			Tier         string `json:"tier"`
@@ -162,6 +173,14 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		return
 	}
 
+	tags := make([]string, 0, len(body.Tags))
+	for _, t := range body.Tags {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+
 	v := s.dbClient.Vampire()
 	fields := map[string]interface{}{
 		"name":              body.Name,
@@ -169,6 +188,7 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		"role_type":         body.RoleType,
 		"pre_event_info":    body.PreEventInfo,
 		"post_act1_context": body.PostAct1Context,
+		"tags":              models.StringArray(tags),
 	}
 	if body.HouseID != nil {
 		if *body.HouseID == "" {
