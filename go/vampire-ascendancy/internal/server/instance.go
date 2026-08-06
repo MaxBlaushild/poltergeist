@@ -298,14 +298,32 @@ func (s *server) gmTransferOwnership(ctx *gin.Context) {
 // player_invites.go), not a separate step. Items and quiz questions are
 // still real catalog entries a Toast can be trimmed to.
 
-// GET /gm/library/items
+type libraryItemWithPhoto struct {
+	db.LibraryItem
+	HasPhoto bool `json:"hasPhoto"`
+}
+
+// GET /gm/library/items — every catalog item (included or not), with the
+// same detail (description, effect, photo) as the Items tab's assign
+// picker, so the Content tab's include/exclude toggle can show the same
+// rich card instead of a bare name.
 func (s *server) gmListLibraryItems(ctx *gin.Context) {
-	rows, err := s.dbClient.Vampire().ListLibraryItems(ctx, instanceIDFromContext(ctx))
+	v := s.dbClient.Vampire()
+	rows, err := v.ListLibraryItems(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"items": rows})
+	photoIDs, _ := v.ItemPhotoIDs(ctx)
+	has := make(map[string]bool, len(photoIDs))
+	for _, id := range photoIDs {
+		has[id.String()] = true
+	}
+	out := make([]libraryItemWithPhoto, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, libraryItemWithPhoto{LibraryItem: r, HasPhoto: has[r.ID.String()]})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"items": out})
 }
 
 // PUT /gm/library/items/:id { included: bool }

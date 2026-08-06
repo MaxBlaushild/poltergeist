@@ -3,6 +3,7 @@ import { gmListLibraryItems, gmSetItemIncluded } from '../../gmApi';
 import type { GMLibraryItem } from '../../gmApi';
 import { ApiError } from '../../api';
 import { Card } from './GameSection';
+import { ItemBrowser } from './ItemBrowser';
 
 // Content tab: choose which of the shared story's items are included in
 // this Toast. (Which characters are "in" is implicit now — see the Invites
@@ -47,23 +48,18 @@ const ItemsPanel = () => {
 
   return (
     <Card title={`Items (${included}/${rows.length} included)`}>
-      <div className="flex flex-col gap-1.5 max-h-96 overflow-y-auto">
-        {rows.map((r) => (
-          <div key={r.id} className="rounded-md border border-blood/30 bg-black/30 px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-bone truncate">
-                {r.name}
-                {r.category && <span className="text-bone/40 text-xs ml-2">{r.category}</span>}
-              </p>
-              <label className="shrink-0 flex items-center gap-2 text-sm text-bone/70">
-                <input type="checkbox" checked={r.included} onChange={() => toggle(r)} />
-                Included
-              </label>
-            </div>
-            {error[r.id] && <p className="text-blood-bright text-xs mt-1">{error[r.id]}</p>}
+      <ItemBrowser
+        items={rows}
+        renderTrailing={(row) => (
+          <div className="flex flex-col items-end gap-1">
+            <label className="flex items-center gap-1.5 text-xs text-bone/70 whitespace-nowrap">
+              <input type="checkbox" checked={row.included} onChange={() => toggle(row)} />
+              Included
+            </label>
+            {error[row.id] && <p className="text-blood-bright text-[11px] text-right">{error[row.id]}</p>}
           </div>
-        ))}
-      </div>
+        )}
+      />
     </Card>
   );
 };

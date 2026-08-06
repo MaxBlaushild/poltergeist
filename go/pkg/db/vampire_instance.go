@@ -290,18 +290,33 @@ func (h *vampireHandler) SetInstanceCharacterImageURL(ctx context.Context, insta
 // ---- Content library: items ----
 
 type LibraryItem struct {
-	ID       uuid.UUID `json:"id"`
-	Code     string    `json:"code"`
-	Name     string    `json:"name"`
-	Category string    `json:"category"`
-	Included bool      `json:"included"`
+	ID              uuid.UUID `json:"id"`
+	Code            string    `json:"code"`
+	Name            string    `json:"name"`
+	Category        string    `json:"category"`
+	Description     string    `json:"description"`
+	Effect          string    `json:"effect"`
+	TargetsPlayer   bool      `json:"targetsPlayer"`
+	HFEffect        int       `json:"hfEffect"`
+	BTSelf          int       `json:"btSelf"`
+	BTFromTarget    int       `json:"btFromTarget"`
+	BTDeductTarget  int       `json:"btDeductTarget"`
+	QuizBTPct       int       `json:"quizBtPct"`
+	DoubleGameBT    bool      `json:"doubleGameBt"`
+	Immune          bool      `json:"immune"`
+	Reflect         bool      `json:"reflect"`
+	StripResistance bool      `json:"stripResistance"`
+	Included        bool      `json:"included"`
 }
 
 func (h *vampireHandler) ListLibraryItems(ctx context.Context, instanceID uuid.UUID) ([]LibraryItem, error) {
 	out := []LibraryItem{}
 	if err := h.db.WithContext(ctx).
 		Table("vampire_items i").
-		Select("i.id, i.code, i.name, i.category, COALESCE(ii.included, false) AS included").
+		Select(`i.id, i.code, i.name, i.category, i.description, i.effect, i.targets_player,
+			i.hf_effect, i.bt_self, i.bt_from_target, i.bt_deduct_target, i.quiz_bt_pct,
+			i.double_game_bt, i.immune, i.reflect, i.strip_resistance,
+			COALESCE(ii.included, false) AS included`).
 		Joins("LEFT JOIN vampire_instance_items ii ON ii.item_id = i.id AND ii.instance_id = ?", instanceID).
 		Order("i.name ASC").
 		Scan(&out).Error; err != nil {

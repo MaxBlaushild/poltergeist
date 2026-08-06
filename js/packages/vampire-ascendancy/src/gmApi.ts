@@ -395,11 +395,10 @@ export const gmTransferOwnership = (toUserId: string) =>
 // ---- Content tab: shared-library inclusion toggle (items only — the quiz
 // is fixed, not customizable per instance; which characters are "in" is
 // implicit via invites; see the Invites tab) ----
-export interface GMLibraryItem {
+// Same shape as GMItem (+ included) — the Content tab's toggle shows the
+// same rich card the Items tab's assign picker does.
+export interface GMLibraryItem extends Omit<GMItem, 'id'> {
   id: string;
-  code: string;
-  name: string;
-  category: string;
   included: boolean;
 }
 export const gmListLibraryItems = () => gm<{ items: GMLibraryItem[] }>('/library/items');
