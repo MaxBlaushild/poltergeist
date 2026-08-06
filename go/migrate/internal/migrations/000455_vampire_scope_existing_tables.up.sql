@@ -6,7 +6,11 @@
 -- created_by is left NULL on the legacy instance — there's no single
 -- "creator" on record for an event that predates this concept. Grant a real
 -- owner with `go run ./cmd/claim-owner` after this migration runs.
-CREATE TEMP TABLE tmp_legacy_vampire_instance AS
+-- ON COMMIT DROP: temp tables live for the whole migration session (every
+-- file run by one `migrate up` invocation), not just this one — without
+-- this, the table would still exist when a later migration tries to create
+-- its own temp table of the same name.
+CREATE TEMP TABLE tmp_legacy_vampire_instance ON COMMIT DROP AS
   WITH ins AS (
     INSERT INTO vampire_instances (name, status, created_by)
     VALUES ('The Crimson Toast', 'active', NULL)

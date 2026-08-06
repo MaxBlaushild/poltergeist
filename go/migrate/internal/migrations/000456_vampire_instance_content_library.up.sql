@@ -40,22 +40,21 @@ CREATE INDEX IF NOT EXISTS vampire_instance_quiz_questions_instance_idx ON vampi
 
 -- Backfill: the legacy instance (created in 000455) includes everything
 -- currently in the library, carrying over each character's existing sigil
--- and portrait.
-CREATE TEMP TABLE tmp_legacy_vampire_instance AS
-  SELECT id FROM vampire_instances WHERE name = 'The Crimson Toast' ORDER BY created_at ASC LIMIT 1;
-
+-- and portrait. Looked up inline (not cached in a temp table) — temp
+-- tables live for the whole migration session, not just one file, so a
+-- name reused across migrations (as 000455 does) would collide.
 INSERT INTO vampire_instance_characters (instance_id, character_id, included, sigil, image_url)
-  SELECT (SELECT id FROM tmp_legacy_vampire_instance), c.id, TRUE, c.password, c.image_url
+  SELECT (SELECT id FROM vampire_instances WHERE name = 'The Crimson Toast' ORDER BY created_at ASC LIMIT 1), c.id, TRUE, c.password, c.image_url
   FROM vampire_characters c
   ON CONFLICT (instance_id, character_id) DO NOTHING;
 
 INSERT INTO vampire_instance_items (instance_id, item_id, included)
-  SELECT (SELECT id FROM tmp_legacy_vampire_instance), i.id, TRUE
+  SELECT (SELECT id FROM vampire_instances WHERE name = 'The Crimson Toast' ORDER BY created_at ASC LIMIT 1), i.id, TRUE
   FROM vampire_items i
   ON CONFLICT (instance_id, item_id) DO NOTHING;
 
 INSERT INTO vampire_instance_quiz_questions (instance_id, question_id, included)
-  SELECT (SELECT id FROM tmp_legacy_vampire_instance), q.id, TRUE
+  SELECT (SELECT id FROM vampire_instances WHERE name = 'The Crimson Toast' ORDER BY created_at ASC LIMIT 1), q.id, TRUE
   FROM vampire_quiz_questions q
   ON CONFLICT (instance_id, question_id) DO NOTHING;
 
