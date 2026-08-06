@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/vampire-ascendancy/internal/config"
 	"github.com/MaxBlaushild/poltergeist/vampire-ascendancy/internal/server"
 )
@@ -25,5 +26,6 @@ func main() {
 		panic(err)
 	}
 
-	server.NewServer(authClient, dbClient, config.Public.RedisUrl).ListenAndServe("8090")
+	texterClient := texter.NewClient()
+	server.NewServer(authClient, dbClient, texterClient, config.Public.RedisUrl, config.Public.PhoneNumber, config.Public.SiteURL).ListenAndServe("8090")
 }

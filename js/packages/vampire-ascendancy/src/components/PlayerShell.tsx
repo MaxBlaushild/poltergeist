@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { getMe, getToken, clearToken, ApiError } from '../api';
+import { Navigate, useParams } from 'react-router-dom';
+import { getMe, setPlayerInstanceId, ApiError } from '../api';
+import { useUserAuth } from '../userAuth';
 import type { MeResponse } from '../types';
 import { Summons } from './Summons';
 import { Tournament } from './Tournament';
@@ -35,12 +36,11 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 const KNOWN_VIEWS: View[] = ['summons', ...TABS.map((t) => t.id)];
 
-// PlayerShell owns the token, the /me poll, and the top navigation. The screens
-// are presentational and read from the shared state.
+// PlayerShell owns the account session, the /me poll, and the top navigation.
+// The screens are presentational and read from the shared state.
 export const PlayerShell = () => {
   const { instanceId } = useParams();
-  const loginPath = `/e/${instanceId}/login`;
-  const token = getToken();
+  const { auth, logout: logoutAccount } = useUserAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +48,13 @@ export const PlayerShell = () => {
   const [dismissedNotif, setDismissedNotif] = useState(() => localStorage.getItem(DISMISSED_KEY));
   const [quizDismissedPart, setQuizDismissedPart] = useState<number | null>(null);
   const [revealDismissed, setRevealDismissed] = useState(() => localStorage.getItem(REVEAL_KEY));
-  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!token) {
+    if (instanceId) setPlayerInstanceId(instanceId);
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (!auth) {
       setLoading(false);
       return;
     }
@@ -60,7 +63,7 @@ export const PlayerShell = () => {
     // Poll so unlocks, act changes, and verifications propagate without a manual
     // refresh. A failed poll keeps the last good state (flaky venue wifi).
     const load = (initial: boolean) => {
-      getMe(token)
+      getMe()
         .then((data) => {
           if (cancelled) return;
           setMe(data);
@@ -69,9 +72,12 @@ export const PlayerShell = () => {
         })
         .catch((err: unknown) => {
           if (cancelled) return;
+          // 401 here means either the account session is stale, or (more
+          // likely, since the account is signed in) this account holds no
+          // character in this particular Toast — distinguished below by
+          // whether `auth` is present at all, not by re-checking the token.
           if (err instanceof ApiError && err.status === 401) {
-            clearToken(); // stale/invalid token — back to login
-            setError('invalid-token');
+            setError('no-character');
             setLoading(false);
           } else if (initial) {
             setError('load-failed');
@@ -85,16 +91,37 @@ export const PlayerShell = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [token]);
+  }, [auth]);
 
   const reload = useCallback(() => {
-    if (token) getMe(token).then(setMe).catch(() => {});
-  }, [token]);
+    if (auth) getMe().then(setMe).catch(() => {});
+  }, [auth]);
 
-  // No token (or it just went stale) → send them to the login page.
-  if (!token || error === 'invalid-token') return <Navigate to={loginPath} replace />;
+  // Not signed in at all → send them to sign in, then back to this Toast.
+  if (!auth) {
+    const next = encodeURIComponent(`/e/${instanceId}`);
+    return <Navigate to={`/signin?next=${next}`} replace />;
+  }
 
   if (loading) return <Centered>Summoning your dossier…</Centered>;
+
+  if (error === 'no-character') {
+    return (
+      <Centered>
+        <VampireMark className="w-16 h-16 mx-auto mb-4" />
+        <p className="text-bone/85">
+          You're signed in, but this account doesn't hold a character in this Toast. Ask your host to send you
+          an invite.
+        </p>
+        <button
+          onClick={logoutAccount}
+          className="mt-6 text-bone/50 hover:text-bone uppercase tracking-[0.2em] text-xs"
+        >
+          Sign out
+        </button>
+      </Centered>
+    );
+  }
   if (error || !me) {
     return (
       <Centered>
@@ -109,11 +136,6 @@ export const PlayerShell = () => {
   const selectView = (v: View) => {
     localStorage.setItem(TAB_KEY, v);
     setView(v);
-  };
-
-  const logout = () => {
-    clearToken();
-    navigate(loginPath, { replace: true });
   };
 
   // Show a GM broadcast as a takeover until this player dismisses it.
@@ -147,7 +169,7 @@ export const PlayerShell = () => {
       {!showReveal && !showQuiz && showTakeover && me.notification && (
         <NotificationTakeover notification={me.notification} onDismiss={dismissTakeover} />
       )}
-      <TopNav active={activeView} onSelect={selectView} onLogout={logout} />
+      <TopNav active={activeView} onSelect={selectView} onLogout={logoutAccount} />
       {activeView === 'summons' && <Summons />}
       {activeView === 'tournament' && <Tournament />}
       {activeView === 'dossier' && <Dossier me={me} />}

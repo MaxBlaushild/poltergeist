@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getLeaderboard, getToken, getSessionInstanceId } from '../api';
+import { getLeaderboard, getSessionInstanceId } from '../api';
 import type { HouseStanding } from '../types';
 import { accentFor, houseInfoFor, formatHF, taglineFor, houseLabel } from '../theme';
 
@@ -80,11 +80,9 @@ export const Leaderboard = ({ myHouse }: { myHouse?: string }) => {
   const [standings, setStandings] = useState<HouseStanding[] | null>(null);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
     let cancelled = false;
     const load = () => {
-      getLeaderboard(token)
+      getLeaderboard()
         .then((d) => !cancelled && setStandings(d.standings))
         .catch(() => {
           /* keep last good standings on a flaky poll */

@@ -53,11 +53,10 @@ export interface GMSubmission {
 
 export interface GMPlayer {
   id: string;
-  token: string;
   guestLabel: string;
   active: boolean;
   btTotal: number;
-  character: { id: string; name: string; roleType: string; house?: string; sigil?: string } | null;
+  character: { id: string; name: string; roleType: string; house?: string } | null;
 }
 
 export interface GMCharacter {
@@ -348,17 +347,24 @@ export const gmRemovePlayerItem = (id: string) =>
 export const gmTransferPlayerItem = (id: string, playerId: string) =>
   gm<{ ok: boolean }>(`/player-items/${id}/owner`, { method: 'PUT', body: JSON.stringify({ playerId }) });
 
-// ---- Player-seat provisioning ----
-export interface GMProvisionedSeat {
-  characterName: string;
-  characterId: string;
-  sigil: string;
+// ---- Invites tab: text a real person a link to accept/decline a character ----
+export interface GMInvite {
+  id: string;
+  guestName: string;
+  phoneNumber: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  character?: { id: string; name: string; title: string; house?: string };
 }
-export const gmProvisionPlayers = (includeOptional = false) =>
-  gm<{ created: GMProvisionedSeat[] }>('/players/provision', {
+export const gmListInvites = () => gm<{ invites: GMInvite[] }>('/invites');
+export const gmCreateInvite = (guestName: string, phoneNumber: string, characterId: string) =>
+  gm<{ id: string; warning?: string }>('/invites', {
     method: 'POST',
-    body: JSON.stringify({ includeOptional }),
+    body: JSON.stringify({ guestName, phoneNumber, characterId }),
   });
+export const gmDeleteInvite = (id: string) => gm<{ ok: boolean }>(`/invites/${id}`, { method: 'DELETE' });
+export const gmResendInvite = (id: string) =>
+  gm<{ ok: boolean }>(`/invites/${id}/resend`, { method: 'POST' });
 
 // ---- Co-Hosts tab: Host/Co-Host management ----
 export interface GMAdminRow {
@@ -386,19 +392,8 @@ export const gmRemoveAdmin = (userId: string) =>
 export const gmTransferOwnership = (toUserId: string) =>
   gm<{ ok: boolean }>('/admins/transfer', { method: 'POST', body: JSON.stringify({ toUserId }) });
 
-// ---- Content tab: shared-library inclusion toggles ----
-export interface GMLibraryCharacter {
-  id: string;
-  name: string;
-  title: string;
-  houseId: string | null;
-  houseName: string;
-  roleType: string;
-  isOptional: boolean;
-  included: boolean;
-  sigil?: string;
-  imageUrl: string;
-}
+// ---- Content tab: shared-library inclusion toggles (items/quiz only —
+// which characters are "in" is implicit via invites; see the Invites tab) ----
 export interface GMLibraryItem {
   id: string;
   code: string;
@@ -414,10 +409,6 @@ export interface GMLibraryQuizQuestion {
   questionType: string;
   included: boolean;
 }
-export const gmListLibraryCharacters = () =>
-  gm<{ characters: GMLibraryCharacter[] }>('/library/characters');
-export const gmSetCharacterIncluded = (id: string, included: boolean) =>
-  gm<{ ok: boolean }>(`/library/characters/${id}`, { method: 'PUT', body: JSON.stringify({ included }) });
 export const gmListLibraryItems = () => gm<{ items: GMLibraryItem[] }>('/library/items');
 export const gmSetItemIncluded = (id: string, included: boolean) =>
   gm<{ ok: boolean }>(`/library/items/${id}`, { method: 'PUT', body: JSON.stringify({ included }) });

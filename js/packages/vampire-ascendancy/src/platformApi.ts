@@ -53,3 +53,24 @@ export const hostToast = (name: string) => request<{ id: string; name: string }>
 
 export const acceptCoHostInvite = (token: string) =>
   request<{ instanceId: string }>(`/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });
+
+// ---- Player invites (RSVP) ----
+export interface PlayerInvite {
+  guestName: string;
+  status: 'pending' | 'accepted' | 'declined';
+  instanceId: string;
+  instanceName?: string;
+  character?: {
+    id: string;
+    name: string;
+    title: string;
+    preEventInfo: string;
+    house?: string;
+  };
+}
+export const getPlayerInvite = (token: string) =>
+  request<PlayerInvite>(`/rsvp/${encodeURIComponent(token)}`, undefined, false);
+export const declinePlayerInvite = (token: string) =>
+  request<{ ok: boolean }>(`/rsvp/${encodeURIComponent(token)}/decline`, { method: 'POST' }, false);
+export const acceptPlayerInvite = (token: string) =>
+  request<{ instanceId: string }>(`/rsvp/${encodeURIComponent(token)}/accept`, { method: 'POST' });

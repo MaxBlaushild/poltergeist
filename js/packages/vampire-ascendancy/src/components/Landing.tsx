@@ -6,12 +6,12 @@ import { VampireMark } from './VampireMark';
 
 const STEPS = [
   { title: 'Host a Toast', body: 'Name your event and it starts fully stocked from the shared story — trim the roster to fit your guest count.' },
-  { title: 'Invite your Court', body: 'Bring in Co-Hosts to help run the night, and hand every guest their character link and sigil.' },
+  { title: 'Invite your Court', body: "Bring in Co-Hosts to help run the night, and text every guest their character's bio and an RSVP link." },
   { title: 'Run the night live', body: "Advance the acts, verify missions, and broadcast announcements — everyone's screen updates together." },
 ];
 
-// Public landing page — the app's front door. Player links
-// (/e/:instanceId/c/:characterId) bypass this entirely.
+// Public landing page — the app's front door. A guest's RSVP link
+// (/rsvp/:token) bypasses this entirely.
 export const Landing = () => {
   const { auth } = useUserAuth();
   const navigate = useNavigate();

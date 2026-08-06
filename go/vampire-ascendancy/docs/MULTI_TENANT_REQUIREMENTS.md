@@ -366,3 +366,39 @@ the first super user (nobody can grant one through the dashboard until one
 exists) is `go run ./cmd/grant-super-user --email you@example.com` — same
 shape as `cmd/claim-owner`. Any super user can grant/revoke another from
 the dashboard after that.
+
+**Resolved (2026-08-06): player invites replace sigil/token login.** The
+"Player login" and "Player accounts (future phase)" sections above are
+superseded — walk-up sigil entry is retired entirely, not deferred. A
+Host/Co-Host now invites a specific real person by name + phone number to a
+specific character from the GM console's new **Invites** tab
+(`gmListCharacters` cross-referenced against the current roster and any
+other pending invite so a character can't be double-booked). That creates a
+`vampire_player_invites` row (migration `000458`) and texts an RSVP link
+(`/rsvp/:token`, `RSVP.tsx`) via `pkg/texter`. The link shows the
+character's teaser (name/title/house/bio) with no account required to view
+it or to **Decline** (frees the character for re-invite). **Accept**
+requires signing in or creating a real account — the same email/password or
+Google flow Hosts use (`platformApi.ts`'s `registerUser`/`loginUser`/
+`loginUserWithGoogle`, reused rather than building a separate phone-based
+authenticator) — which creates the `vampire_players` row (now `user_id`-
+linked, `token` column dropped/deprecated) and drops the player straight
+into `/e/:instanceId`.
+
+Every player-facing route now authenticates the same way admin routes do:
+`Authorization: Bearer <token>` resolved to a `vampire_players` row via
+`GetPlayerByUserAndInstance` (`withPlayer` middleware in `middleware.go`),
+not a per-character sigil. `cmd/provision` and the old public
+`/i/:instanceId/login` endpoint are deleted; `PlayerShell.tsx` distinguishes
+"not signed in" (redirect to `/signin`) from "signed in, but this account
+holds no character in this Toast" (its own message, account not touched)
+using the local `useUserAuth()` check rather than parsing the 401's error
+text, since both cases 401 at the API. The Content tab's character-inclusion
+toggle (`vampire_instance_characters.included`) is retired along with it —
+which characters are "in play" is now implicit from who's been invited to
+them — leaving Content with just the Items and Quiz-questions panels; the
+Players tab drops `ProvisionSeats` and the copy-link button (there's no
+standing link anymore, only a per-invite RSVP one) and becomes purely for
+managing people who've already accepted (reassign character, correct name,
+deactivate, portrait). `go build`/`go test` and `tsc --noEmit`/`vite build`
+all pass.

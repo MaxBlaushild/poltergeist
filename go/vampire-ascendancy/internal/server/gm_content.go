@@ -9,9 +9,9 @@ import (
 
 // GET /gm/characters/:id — a character's full content (bios, secrets,
 // missions — shared, edited only by super users, see GET
-// /admin/characters/:id) plus this Toast's portrait/sigil and the real
-// player name from its active slot, both of which ARE per-instance and
-// editable here.
+// /admin/characters/:id) plus this Toast's portrait and the real player
+// name from its active slot, both of which ARE per-instance and editable
+// here.
 func (s *server) gmGetCharacter(ctx *gin.Context) {
 	instanceID := instanceIDFromContext(ctx)
 	id, err := uuid.Parse(ctx.Param("id"))
@@ -35,9 +35,9 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	sigil, imageURL := "", ""
+	imageURL := ""
 	if ic != nil {
-		sigil, imageURL = ic.Sigil, ic.ImageURL
+		imageURL = ic.ImageURL
 	}
 
 	playerName := ""
@@ -70,7 +70,6 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"preEventInfo":    c.PreEventInfo,
 		"postAct1Context": c.PostAct1Context,
 		"imageUrl":        imageURL,
-		"sigil":           sigil,
 		"playerName":      playerName,
 		"secrets":         secrets,
 		"missions":        missions,

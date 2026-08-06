@@ -3,8 +3,6 @@ package server
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -248,41 +246,12 @@ func (s *server) gmTransferOwnership(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ---- Content library (Content tab): characters / items / quiz questions ----
-
-// GET /gm/library/characters
-func (s *server) gmListLibraryCharacters(ctx *gin.Context) {
-	rows, err := s.dbClient.Vampire().ListLibraryCharacters(ctx, instanceIDFromContext(ctx))
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"characters": rows})
-}
-
-// PUT /gm/library/characters/:id { included: bool } — toggle a character in
-// or out of this Toast's roster. Blocked (409), not just warned, if the
-// character has an active player assigned.
-func (s *server) gmSetCharacterIncluded(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
-		return
-	}
-	var body struct {
-		Included bool `json:"included"`
-	}
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.dbClient.Vampire().SetCharacterIncluded(ctx, instanceIDFromContext(ctx), id, body.Included); err != nil {
-		conflictOrInternal(ctx, err)
-		return
-	}
-	s.logGM(ctx, "set_character_included", map[string]interface{}{"characterId": id.String(), "included": body.Included})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
+// ---- Content library (Content tab): items / quiz questions ----
+//
+// Characters have no inclusion toggle here — which characters are "in" an
+// instance is now implicit (someone has an accepted invite to play them; see
+// player_invites.go), not a separate step. Items and quiz questions are
+// still real catalog entries a Toast can be trimmed to.
 
 // GET /gm/library/items
 func (s *server) gmListLibraryItems(ctx *gin.Context) {
@@ -346,103 +315,4 @@ func (s *server) gmSetQuizQuestionIncluded(ctx *gin.Context) {
 	}
 	s.logGM(ctx, "set_quiz_question_included", map[string]interface{}{"questionId": id.String(), "included": body.Included})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-// ---- Player-seat provisioning (replaces the cmd/provision CLI) ----
-
-// uniqueSigil returns a 4-digit PIN not already in used, marking it used.
-func uniqueSigil(used map[string]bool) string {
-	for {
-		n, _ := rand.Int(rand.Reader, big.NewInt(10000))
-		pin := fmt.Sprintf("%04d", n.Int64())
-		if !used[pin] {
-			used[pin] = true
-			return pin
-		}
-	}
-}
-
-// POST /gm/players/provision — create a player slot + sigil for every
-// included, non-optional playable character in this Toast that doesn't
-// have one yet. Safe to re-run as the roster firms up (only fills gaps),
-// mirroring cmd/provision's CLI behavior but reachable from the Players
-// tab, which self-serve Hosts need since they don't have shell/DB access.
-func (s *server) gmProvisionPlayers(ctx *gin.Context) {
-	instanceID := instanceIDFromContext(ctx)
-	var body struct {
-		IncludeOptional bool `json:"includeOptional"`
-	}
-	_ = ctx.ShouldBindJSON(&body)
-
-	v := s.dbClient.Vampire()
-	chars, err := v.ListIncludedCharacters(ctx, instanceID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	existingPlayers, err := v.ListPlayers(ctx, instanceID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	taken := map[string]bool{}
-	for _, p := range existingPlayers {
-		if p.CharacterID != nil {
-			taken[p.CharacterID.String()] = true
-		}
-	}
-	libraryChars, err := v.ListLibraryCharacters(ctx, instanceID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	usedSigils := map[string]bool{}
-	for _, c := range libraryChars {
-		if c.Sigil != "" {
-			usedSigils[c.Sigil] = true
-		}
-	}
-
-	type provisioned struct {
-		CharacterName string `json:"characterName"`
-		CharacterID   string `json:"characterId"`
-		Sigil         string `json:"sigil"`
-	}
-	created := []provisioned{}
-	for _, c := range chars {
-		if c.RoleType != "player" {
-			continue
-		}
-		if c.IsOptional && !body.IncludeOptional {
-			continue
-		}
-		if taken[c.ID.String()] {
-			continue
-		}
-		token, err := genOpaqueToken()
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		cid := c.ID
-		if err := v.CreatePlayer(ctx, &models.VampirePlayer{
-			InstanceID:  instanceID,
-			Token:       token,
-			CharacterID: &cid,
-			Active:      true,
-		}); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		sigil := uniqueSigil(usedSigils)
-		if err := v.SetInstanceCharacterSigil(ctx, instanceID, c.ID, sigil); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		created = append(created, provisioned{CharacterName: c.Name, CharacterID: c.ID.String(), Sigil: sigil})
-	}
-
-	s.logGM(ctx, "provision_players", map[string]interface{}{"created": len(created)})
-	ctx.JSON(http.StatusOK, gin.H{"created": created})
 }

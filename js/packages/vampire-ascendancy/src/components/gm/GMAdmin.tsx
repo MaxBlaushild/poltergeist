@@ -9,6 +9,7 @@ import { GameSection } from './GameSection';
 import { SubmissionsSection } from './SubmissionsSection';
 import { AwardsSection } from './AwardsSection';
 import { PlayersSection } from './PlayersSection';
+import { InvitesSection } from './InvitesSection';
 import { BroadcastSection } from './BroadcastSection';
 import { QuizSection } from './QuizSection';
 import { GamesSection } from './GamesSection';
@@ -30,6 +31,7 @@ type Tab =
   | 'standings'
   | 'notifications'
   | 'broadcast'
+  | 'invites'
   | 'players';
 
 // Whether the signed-in account can administer this one Toast — checked by
@@ -101,6 +103,7 @@ const GMConsole = () => {
     { id: 'standings', label: 'Standings' },
     { id: 'notifications', label: 'Announcements' },
     { id: 'broadcast', label: 'Broadcast' },
+    { id: 'invites', label: 'Invites' },
     { id: 'players', label: 'Players' },
     { id: 'cohosts', label: 'Co-Hosts' },
   ];
@@ -155,6 +158,7 @@ const GMConsole = () => {
       {tab === 'standings' && <StandingsSection />}
       {tab === 'notifications' && <BroadcastSection />}
       {tab === 'broadcast' && <BroadcastScreen />}
+      {tab === 'invites' && <InvitesSection />}
       {tab === 'players' && <PlayersSection />}
       {tab === 'cohosts' && <CoHostsSection />}
     </div>

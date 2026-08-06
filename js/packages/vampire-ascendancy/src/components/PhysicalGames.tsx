@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getGames, getToken } from '../api';
+import { getGames } from '../api';
 import type { Game } from '../types';
 import { accentFor, formatClock } from '../theme';
 import { VampireMark } from './VampireMark';
@@ -12,11 +12,9 @@ export const PhysicalGames = () => {
   const [games, setGames] = useState<Game[] | null>(null);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
     let cancelled = false;
     const load = () => {
-      getGames(token)
+      getGames()
         .then((d) => !cancelled && setGames(d.games))
         .catch(() => {});
     };

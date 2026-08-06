@@ -75,11 +75,15 @@ type VampireInstanceCharacter struct {
 	CharacterID uuid.UUID `gorm:"primary_key;column:character_id" json:"characterId"`
 	CreatedAt   time.Time `gorm:"not null" json:"createdAt"`
 	UpdatedAt   time.Time `gorm:"not null" json:"updatedAt"`
-	Included    bool      `gorm:"not null;default:true" json:"included"`
-	// Sigil (PIN) validates a player landed on the right character. json:"-"
-	// so it never leaks through a player-facing response.
-	Sigil string `gorm:"not null;default:''" json:"-"`
-	// ImageURL is the player's portrait for this character in this instance.
+	// Included and Sigil are DEPRECATED — they were the walk-up "pick a
+	// character + sigil" login's mechanisms. Player auth moved to real
+	// accounts via invites (VampirePlayerInvite); a character's
+	// availability is now implicit (has an accepted invite or not). Left on
+	// the struct only so old rows still scan; do not read or write them.
+	Included bool   `gorm:"not null;default:true" json:"-"`
+	Sigil    string `gorm:"not null;default:''" json:"-"`
+	// ImageURL is the player's portrait for this character in this
+	// instance — unaffected by the above, still in active use.
 	ImageURL string `gorm:"column:image_url;not null;default:''" json:"imageUrl"`
 }
 
@@ -265,11 +269,15 @@ type VampireMission struct {
 func (VampireMission) TableName() string { return "vampire_missions" }
 
 type VampirePlayer struct {
-	ID          uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
-	CreatedAt   time.Time  `gorm:"not null" json:"createdAt"`
-	UpdatedAt   time.Time  `gorm:"not null" json:"updatedAt"`
-	InstanceID  uuid.UUID  `gorm:"column:instance_id;not null" json:"instanceId"`
-	Token       string     `gorm:"not null" json:"token"`
+	ID         uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt  time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt  time.Time `gorm:"not null" json:"updatedAt"`
+	InstanceID uuid.UUID `gorm:"column:instance_id;not null" json:"instanceId"`
+	// Token is DEPRECATED — player auth moved to real accounts (UserID).
+	// Left on the struct only so old rows still scan; do not read or write
+	// it going forward.
+	Token       string     `gorm:"not null" json:"-"`
+	UserID      *uuid.UUID `gorm:"column:user_id" json:"userId"`
 	CharacterID *uuid.UUID `json:"characterId"`
 	GuestLabel  string     `gorm:"not null;default:''" json:"guestLabel"`
 	Active      bool       `gorm:"not null;default:true" json:"active"`
@@ -278,6 +286,36 @@ type VampirePlayer struct {
 }
 
 func (VampirePlayer) TableName() string { return "vampire_players" }
+
+// VampirePlayerInvite is a Host/Co-Host's invitation of a specific real
+// person (by phone number) to play a specific character in one instance.
+// Accepting it (after signing in/up with a real account, same as Hosts)
+// creates the VampirePlayer row. Replaces the old walk-up "pick your
+// character + sigil" login.
+type VampirePlayerInvite struct {
+	ID             uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt      time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt      time.Time  `gorm:"not null" json:"updatedAt"`
+	InstanceID     uuid.UUID  `gorm:"column:instance_id;not null" json:"instanceId"`
+	CharacterID    uuid.UUID  `gorm:"column:character_id;not null" json:"characterId"`
+	GuestName      string     `gorm:"column:guest_name;not null;default:''" json:"guestName"`
+	PhoneNumber    string     `gorm:"column:phone_number;not null;default:''" json:"phoneNumber"`
+	Token          string     `gorm:"not null" json:"-"`
+	Status         string     `gorm:"not null;default:'pending'" json:"status"` // pending | accepted | declined
+	InvitedBy      *uuid.UUID `gorm:"column:invited_by" json:"invitedBy"`
+	AcceptedUserID *uuid.UUID `gorm:"column:accepted_user_id" json:"acceptedUserId"`
+	RespondedAt    *time.Time `gorm:"column:responded_at" json:"respondedAt"`
+
+	Character *VampireCharacter `gorm:"foreignKey:CharacterID" json:"character,omitempty"`
+}
+
+func (VampirePlayerInvite) TableName() string { return "vampire_player_invites" }
+
+const (
+	PlayerInviteStatusPending  = "pending"
+	PlayerInviteStatusAccepted = "accepted"
+	PlayerInviteStatusDeclined = "declined"
+)
 
 type VampireMissionSubmission struct {
 	ID           uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`

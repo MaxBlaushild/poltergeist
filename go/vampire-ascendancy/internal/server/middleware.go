@@ -19,36 +19,30 @@ func instanceIDParam(ctx *gin.Context) (uuid.UUID, error) {
 	return uuid.Parse(ctx.Param("instanceId"))
 }
 
-// withPlayer authenticates a player from their opaque per-character token,
-// then checks the resolved player belongs to the instance named in the URL.
-// The token is the player's identity — no character id ever comes from the
-// client, so a player can only ever reach their own packet. Tokens are
-// globally unique (not instance-scoped), so the instance check here is
-// defense in depth against a token being replayed against the wrong Toast's
-// URL.
+// withPlayer authenticates a player from their real signed-in account
+// (same Bearer-token mechanism as withUser/withInstanceAdmin) and resolves
+// which character they play in the instance named in the URL — the
+// VampirePlayer row created when they accepted their invite. Replaces the
+// old opaque per-character token/sigil: there is no longer any way to reach
+// a character's packet without a real account that actually holds it.
 func (s *server) withPlayer(ctx *gin.Context) {
 	instanceID, err := instanceIDParam(ctx)
 	if err != nil {
 		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid instance id"})
 		return
 	}
-
-	token := ctx.GetHeader("X-Player-Token")
-	if token == "" {
-		token = ctx.Query("token")
-	}
-	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing player token"})
+	user := s.authenticateUser(ctx)
+	if user == nil {
+		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
 		return
 	}
-
-	player, err := s.dbClient.Vampire().GetPlayerByToken(ctx, token)
+	player, err := s.dbClient.Vampire().GetPlayerByUserAndInstance(ctx, instanceID, user.ID)
 	if err != nil {
 		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if player == nil || !player.Active || player.InstanceID != instanceID {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid player token"})
+	if player == nil || !player.Active {
+		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "you don't have a character in this Toast"})
 		return
 	}
 

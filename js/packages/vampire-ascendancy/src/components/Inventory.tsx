@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react';
-import { getInventory, setInventoryTarget, getToken } from '../api';
+import { getInventory, setInventoryTarget } from '../api';
 import type { InventoryItem, InventoryTarget } from '../api';
 import { VampireMark } from './VampireMark';
 
 // "What you own." Lists the player's items; targeting items get a target picker,
 // which locks once the closing quiz begins.
 export const Inventory = () => {
-  const token = getToken() || '';
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [targets, setTargets] = useState<InventoryTarget[]>([]);
   const [locked, setLocked] = useState(false);
 
   const load = () => {
-    getInventory(token)
+    getInventory()
       .then((d) => {
         setItems(d.items);
         setTargets([...d.targets].sort((a, b) => a.name.localeCompare(b.name)));
@@ -55,7 +54,6 @@ export const Inventory = () => {
               item={it}
               targets={targets}
               locked={locked}
-              token={token}
               onChanged={load}
             />
           ))}
@@ -69,13 +67,11 @@ const ItemCard = ({
   item,
   targets,
   locked,
-  token,
   onChanged,
 }: {
   item: InventoryItem;
   targets: InventoryTarget[];
   locked: boolean;
-  token: string;
   onChanged: () => void;
 }) => {
   const [saving, setSaving] = useState(false);
@@ -83,7 +79,7 @@ const ItemCard = ({
   const pickTarget = async (targetPlayerId: string) => {
     setSaving(true);
     try {
-      await setInventoryTarget(token, item.id, targetPlayerId);
+      await setInventoryTarget(item.id, targetPlayerId);
       onChanged();
     } finally {
       setSaving(false);

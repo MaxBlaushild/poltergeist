@@ -5,15 +5,19 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 )
 
 type server struct {
-	authClient  auth.Client
-	dbClient    db.DbClient
-	asyncClient *asynq.Client // enqueues Part 1 grading jobs onto the job-runner
+	authClient   auth.Client
+	dbClient     db.DbClient
+	asyncClient  *asynq.Client // enqueues Part 1 grading jobs onto the job-runner
+	texterClient texter.Client // sends player-invite SMS
+	fromPhone    string        // texter "From" number
+	siteURL      string        // player-facing frontend origin, for RSVP links
 }
 
 type Server interface {
@@ -24,16 +28,25 @@ type Server interface {
 func NewServer(
 	authClient auth.Client,
 	dbClient db.DbClient,
+	texterClient texter.Client,
 	redisUrl string,
+	fromPhone string,
+	siteURL string,
 ) Server {
 	var asyncClient *asynq.Client
 	if redisUrl != "" {
 		asyncClient = asynq.NewClient(asynq.RedisClientOpt{Addr: util.NormalizeRedisAddr(redisUrl)})
 	}
+	if siteURL == "" {
+		siteURL = "http://localhost:5180"
+	}
 	return &server{
-		authClient:  authClient,
-		dbClient:    dbClient,
-		asyncClient: asyncClient,
+		authClient:   authClient,
+		dbClient:     dbClient,
+		asyncClient:  asyncClient,
+		texterClient: texterClient,
+		fromPhone:    fromPhone,
+		siteURL:      siteURL,
 	}
 }
 
@@ -58,13 +71,18 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/vampire-ascendancy/instances", s.withUser, s.listMyInstances)
 	r.POST("/vampire-ascendancy/invites/:token/accept", s.withUser, s.acceptInstanceAdminInvite)
 
+	// Player invites (RSVP) — a Host/Co-Host invites a specific real person
+	// (name + phone) to a specific character; the SMS link lands here. The
+	// token alone identifies the invite, so none of this is instance-scoped
+	// in the URL. GET (teaser) and decline need no account; accept does
+	// (withUser) — same as Co-Host invites, but under /rsvp instead of
+	// /invites so the two don't collide.
+	r.GET("/vampire-ascendancy/rsvp/:token", s.getPlayerInvite)
+	r.POST("/vampire-ascendancy/rsvp/:token/decline", s.declinePlayerInvite)
+	r.POST("/vampire-ascendancy/rsvp/:token/accept", s.withUser, s.acceptPlayerInvite)
+
 	// Everything else is scoped to one instance ("Toast") via :instanceId.
 	inst := r.Group("/vampire-ascendancy/i/:instanceId")
-
-	// Public login routes — pick a character + enter its sigil to get a token.
-	inst.GET("/characters", s.listCharactersPublic)
-	inst.GET("/characters/:id", s.getCharacterPublic)
-	inst.POST("/login", s.login)
 
 	// Public projector feed — standings + games are not secret (players already
 	// see them), so the /broadcast screen needs no auth to cast to a TV.
@@ -103,9 +121,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/submissions/:id/redeem", s.gmRedeemSubmission)
 	gm.POST("/submissions/:id/reject", s.gmRejectSubmission)
 	gm.GET("/players", s.gmListPlayers)
-	gm.POST("/players", s.gmCreatePlayer)
 	gm.PUT("/players/:id", s.gmUpdatePlayer)
-	gm.POST("/players/provision", s.gmProvisionPlayers)
+	gm.GET("/invites", s.gmListInvites)
+	gm.POST("/invites", s.gmCreateInvite)
+	gm.DELETE("/invites/:id", s.gmDeleteInvite)
+	gm.POST("/invites/:id/resend", s.gmResendInvite)
 	gm.GET("/characters", s.gmListCharacters)
 	gm.GET("/characters/:id", s.gmGetCharacter)
 	gm.PUT("/characters/:id/portrait", s.gmSetCharacterPortrait)
@@ -139,9 +159,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.DELETE("/admins/:userId", s.gmRemoveAdmin)
 	gm.POST("/admins/transfer", s.gmTransferOwnership)
 
-	// Content tab: include/exclude toggles against the shared library.
-	gm.GET("/library/characters", s.gmListLibraryCharacters)
-	gm.PUT("/library/characters/:id", s.gmSetCharacterIncluded)
+	// Content tab: include/exclude toggles against the shared library
+	// (items/quiz only — which characters are "in" is implicit via invites).
 	gm.GET("/library/items", s.gmListLibraryItems)
 	gm.PUT("/library/items/:id", s.gmSetItemIncluded)
 	gm.GET("/library/quiz-questions", s.gmListLibraryQuizQuestions)
@@ -182,7 +201,7 @@ func (s *server) ListenAndServe(port string) {
 func devCORS(ctx *gin.Context) {
 	ctx.Header("Access-Control-Allow-Origin", "*")
 	ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-	ctx.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Player-Token")
+	ctx.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
 	if ctx.Request.Method == "OPTIONS" {
 		ctx.AbortWithStatus(204)
 		return

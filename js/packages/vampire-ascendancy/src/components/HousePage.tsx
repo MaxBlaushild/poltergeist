@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { getHouseOverview, getToken } from '../api';
+import { getHouseOverview, setPlayerInstanceId } from '../api';
+import { useUserAuth } from '../userAuth';
 import type { HouseOverview } from '../types';
 import { accentFor, houseInfoFor, formatHF, taglineFor, houseLabel } from '../theme';
 
 export const HousePage = () => {
-  const token = getToken();
+  const { auth } = useUserAuth();
   const { instanceId, houseId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<HouseOverview | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!token || !houseId) return;
+    if (instanceId) setPlayerInstanceId(instanceId);
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (!auth || !houseId) return;
     let cancelled = false;
     const load = () =>
-      getHouseOverview(token, houseId)
+      getHouseOverview(houseId)
         .then((d) => !cancelled && setData(d))
         .catch(() => !cancelled && setError(true));
     load();
@@ -24,9 +29,12 @@ export const HousePage = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [token, houseId]);
+  }, [auth, houseId]);
 
-  if (!token) return <Navigate to={`/e/${instanceId}/login`} replace />;
+  if (!auth) {
+    const next = encodeURIComponent(`/e/${instanceId}/house/${houseId}`);
+    return <Navigate to={`/signin?next=${next}`} replace />;
+  }
 
   if (error) {
     return (

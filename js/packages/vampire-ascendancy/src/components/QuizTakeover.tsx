@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getQuiz, submitQuizPart1, submitQuizPart2Answer, getToken } from '../api';
+import { getQuiz, submitQuizPart1, submitQuizPart2Answer } from '../api';
 import type { QuizResponse, QuizPart2 } from '../types';
 import { VampireMark } from './VampireMark';
 
@@ -9,15 +9,14 @@ const P1_DRAFT = 'vampireQuizP1Draft';
 // Full-screen end-quiz takeover for the given part. Part 1 is a timed open-end
 // response; Part 2 is silent multiple choice. Answers lock on submit.
 export const QuizTakeover = ({ part, onDone }: { part: 1 | 2; onDone: () => void }) => {
-  const token = getToken() || '';
   const [data, setData] = useState<QuizResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getQuiz(token)
+    getQuiz()
       .then(setData)
       .catch(() => setError('The quiz could not be loaded.'));
-  }, [token]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-blood-ink">
@@ -27,8 +26,8 @@ export const QuizTakeover = ({ part, onDone }: { part: 1 | 2; onDone: () => void
           <p className="text-xs uppercase tracking-[0.4em] text-gold mb-2">The Reckoning</p>
           {error && <p className="text-blood-bright">{error}</p>}
           {!data && !error && <p className="text-bone/70">Summoning the questions…</p>}
-          {data && part === 1 && <Part1 data={data} token={token} onDone={onDone} />}
-          {data && part === 2 && <Part2 data={data} token={token} onDone={onDone} />}
+          {data && part === 1 && <Part1 data={data} onDone={onDone} />}
+          {data && part === 2 && <Part2 data={data} onDone={onDone} />}
         </div>
       </div>
     </div>
@@ -37,11 +36,9 @@ export const QuizTakeover = ({ part, onDone }: { part: 1 | 2; onDone: () => void
 
 const Part1 = ({
   data,
-  token,
   onDone,
 }: {
   data: QuizResponse;
-  token: string;
   onDone: () => void;
 }) => {
   const [answer, setAnswer] = useState(
@@ -68,7 +65,7 @@ const Part1 = ({
     submittedRef.current = true;
     setBusy(true);
     try {
-      await submitQuizPart1(token, answer);
+      await submitQuizPart1(answer);
       localStorage.removeItem(P1_DRAFT);
       setDone(true);
     } catch {
@@ -126,11 +123,9 @@ const Part1 = ({
 // question and locks each answer on submit — you can't peek ahead or go back.
 const Part2 = ({
   data,
-  token,
   onDone,
 }: {
   data: QuizResponse;
-  token: string;
   onDone: () => void;
 }) => {
   const [part2, setPart2] = useState<QuizPart2>(data.part2);
@@ -148,9 +143,9 @@ const Part2 = ({
     if (!q || busy || !ready) return;
     setBusy(true);
     try {
-      await submitQuizPart2Answer(token, q.id, selected);
+      await submitQuizPart2Answer(q.id, selected);
       setSelected('');
-      const fresh = await getQuiz(token);
+      const fresh = await getQuiz();
       setPart2(fresh.part2);
     } finally {
       setBusy(false);

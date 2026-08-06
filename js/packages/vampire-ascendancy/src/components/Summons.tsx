@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getLeaderboard, getToken, getSessionInstanceId } from '../api';
+import { getLeaderboard, getSessionInstanceId } from '../api';
 import type { HouseStanding } from '../types';
 import { accentFor, taglineFor, houseLabel } from '../theme';
 
@@ -10,11 +10,9 @@ export const Summons = () => {
   const [houses, setHouses] = useState<HouseStanding[] | null>(null);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
     let cancelled = false;
     // Houses don't change during play — a single fetch is enough for the links.
-    getLeaderboard(token)
+    getLeaderboard()
       .then((d) => !cancelled && setHouses(d.standings))
       .catch(() => {});
     return () => {

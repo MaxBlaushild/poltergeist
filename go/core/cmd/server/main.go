@@ -97,7 +97,7 @@ func main() {
 	sonarServer := sonar.NewServerFromDependencies(authClient, texterClient, dbClient, cfg)
 	travelAngelsServer := travelangels.NewServerFromDependencies(authClient, dbClient, cfg)
 	verifiableSnServer := verifiablesn.NewServerFromDependencies(authClient, dbClient, cfg)
-	vampireAscendancyServer := vampireascendancy.NewServerFromDependencies(authClient, dbClient)
+	vampireAscendancyServer := vampireascendancy.NewServerFromDependencies(authClient, dbClient, texterClient)
 	tradesARGlassesServer := tradesarglasses.NewServerFromDependencies(dbClient)
 	reefServer := reefsite.NewServerFromDependencies(dbClient)
 	bgiServer := bgisite.NewServerFromDependencies(dbClient)

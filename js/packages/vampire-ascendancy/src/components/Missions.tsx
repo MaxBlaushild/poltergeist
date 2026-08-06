@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getToken, submitMission, photoUrl } from '../api';
+import { submitMission, photoUrl } from '../api';
 import type { MeResponse, Mission } from '../types';
 import { TIER_LABEL } from '../theme';
 import { fileToResizedDataURL } from '../photo';
@@ -13,7 +13,6 @@ const wantsPhoto = (m: Mission) =>
 // "What you need to accomplish." Own tab now — the character's private missions,
 // gated until the host opens the evening.
 export const Missions = ({ me, reload }: { me: MeResponse; reload: () => void }) => {
-  const token = getToken() || '';
   const { character, gameState } = me;
 
   if (!gameState.contentUnlocked) {
@@ -38,7 +37,7 @@ export const Missions = ({ me, reload }: { me: MeResponse; reload: () => void })
       ) : (
         <div className="flex flex-col gap-4">
           {missions.map((m) => (
-            <MissionCard key={m.id} mission={m} token={token} onSubmitted={reload} />
+            <MissionCard key={m.id} mission={m} onSubmitted={reload} />
           ))}
         </div>
       )}
@@ -55,11 +54,9 @@ const Header = () => (
 
 const MissionCard = ({
   mission,
-  token,
   onSubmitted,
 }: {
   mission: Mission;
-  token: string;
   onSubmitted: () => void;
 }) => {
   const draftKey = `vampireDraft:${mission.id}`;
@@ -107,7 +104,7 @@ const MissionCard = ({
     setSubmitting(true);
     setErr(null);
     try {
-      await submitMission(token, mission.id, answer.trim(), {
+      await submitMission(mission.id, answer.trim(), {
         photos: newPhotos.length ? newPhotos : undefined,
         clearPhotos: cleared || undefined,
       });

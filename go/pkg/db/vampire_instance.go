@@ -261,79 +261,8 @@ func (h *vampireHandler) AcceptInstanceAdminInvite(ctx context.Context, token st
 
 // ---- Content library: characters ----
 
-// LibraryCharacter is one library character with this instance's inclusion
-// toggle, sigil, and portrait joined in — the row shape for the GM Content
-// tab's character list.
-type LibraryCharacter struct {
-	ID         uuid.UUID  `json:"id"`
-	Name       string     `json:"name"`
-	Title      string     `json:"title"`
-	HouseID    *uuid.UUID `json:"houseId"`
-	HouseName  string     `json:"houseName"`
-	RoleType   string     `json:"roleType"`
-	IsOptional bool       `json:"isOptional"`
-	Included   bool       `json:"included"`
-	Sigil      string     `json:"sigil,omitempty"`
-	ImageURL   string     `json:"imageUrl"`
-}
-
-// ListLibraryCharacters returns every character in the shared library with
-// this instance's inclusion/sigil/portrait, for the Content tab.
-func (h *vampireHandler) ListLibraryCharacters(ctx context.Context, instanceID uuid.UUID) ([]LibraryCharacter, error) {
-	out := []LibraryCharacter{}
-	if err := h.db.WithContext(ctx).
-		Table("vampire_characters c").
-		Select(`c.id, c.name, c.title, c.house_id, COALESCE(h.name, '') AS house_name,
-			c.role_type, c.is_optional,
-			COALESCE(ic.included, false) AS included,
-			COALESCE(ic.sigil, '') AS sigil,
-			COALESCE(ic.image_url, '') AS image_url`).
-		Joins("LEFT JOIN vampire_houses h ON h.id = c.house_id").
-		Joins("LEFT JOIN vampire_instance_characters ic ON ic.character_id = c.id AND ic.instance_id = ?", instanceID).
-		Order("c.name ASC").
-		Scan(&out).Error; err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// ListIncludedCharacters returns the library characters included in this
-// instance — the player-facing roster and the GM's player-assignment
-// dropdown.
-func (h *vampireHandler) ListIncludedCharacters(ctx context.Context, instanceID uuid.UUID) ([]models.VampireCharacter, error) {
-	var chars []models.VampireCharacter
-	if err := h.db.WithContext(ctx).
-		Preload("House").
-		Joins("JOIN vampire_instance_characters ic ON ic.character_id = vampire_characters.id AND ic.instance_id = ? AND ic.included", instanceID).
-		Order("vampire_characters.name ASC").
-		Find(&chars).Error; err != nil {
-		return nil, err
-	}
-	return chars, nil
-}
-
-// GetIncludedCharacterByID is GetCharacterByID scoped to one instance's
-// included roster — returns nil if the character doesn't exist or isn't
-// included in this instance.
-func (h *vampireHandler) GetIncludedCharacterByID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireCharacter, error) {
-	var c models.VampireCharacter
-	if err := h.db.WithContext(ctx).
-		Preload("House").
-		Preload("Secrets", func(db *gorm.DB) *gorm.DB { return db.Order("ordinal ASC") }).
-		Preload("Missions", func(db *gorm.DB) *gorm.DB { return db.Order("ordinal ASC") }).
-		Joins("JOIN vampire_instance_characters ic ON ic.character_id = vampire_characters.id AND ic.instance_id = ? AND ic.included", instanceID).
-		First(&c, "vampire_characters.id = ?", characterID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &c, nil
-}
-
-// GetInstanceCharacter returns the raw per-instance row (inclusion, sigil,
-// portrait) for one character — used by login (sigil check) and the
-// portrait upload flow.
+// GetInstanceCharacter returns the raw per-instance row (currently just the
+// portrait) for one character.
 func (h *vampireHandler) GetInstanceCharacter(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireInstanceCharacter, error) {
 	var ic models.VampireInstanceCharacter
 	if err := h.db.WithContext(ctx).First(&ic, "instance_id = ? AND character_id = ?", instanceID, characterID).Error; err != nil {
@@ -345,63 +274,17 @@ func (h *vampireHandler) GetInstanceCharacter(ctx context.Context, instanceID, c
 	return &ic, nil
 }
 
-// SetInstanceCharacterSigil sets a character's per-instance sigil (PIN).
-// Replaces the old global SetCharacterPassword. Upserts (defaulting
-// included=true) so it also works for a character added to the library
-// after this instance's join row was last seeded.
-func (h *vampireHandler) SetInstanceCharacterSigil(ctx context.Context, instanceID, characterID uuid.UUID, sigil string) error {
-	return h.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "instance_id"}, {Name: "character_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{"sigil": sigil, "updated_at": time.Now()}),
-		}).
-		Create(&models.VampireInstanceCharacter{InstanceID: instanceID, CharacterID: characterID, Included: true, Sigil: sigil}).Error
-}
-
-// SetInstanceCharacterImageURL sets a character's per-instance portrait.
-// Upserts — see SetInstanceCharacterSigil.
+// SetInstanceCharacterImageURL sets a character's per-instance portrait —
+// the one character-level edit a Host/Co-Host can make directly (bios,
+// secrets, missions are shared content; see the /admin editor). Upserts, so
+// it also works for a character with no join row yet.
 func (h *vampireHandler) SetInstanceCharacterImageURL(ctx context.Context, instanceID, characterID uuid.UUID, url string) error {
 	return h.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "instance_id"}, {Name: "character_id"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{"image_url": url, "updated_at": time.Now()}),
 		}).
-		Create(&models.VampireInstanceCharacter{InstanceID: instanceID, CharacterID: characterID, Included: true, ImageURL: url}).Error
-}
-
-// SetCharacterIncluded toggles a character in or out of an instance's
-// roster. Un-including a character with an active player assigned is
-// blocked (*ConflictError) rather than allowed — the admin must reassign or
-// deactivate that player first.
-func (h *vampireHandler) SetCharacterIncluded(ctx context.Context, instanceID, characterID uuid.UUID, included bool) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if !included {
-			var player models.VampirePlayer
-			err := tx.Where("instance_id = ? AND character_id = ? AND active = ?", instanceID, characterID, true).First(&player).Error
-			if err == nil {
-				label := player.GuestLabel
-				if label == "" {
-					label = "an active player"
-				}
-				return &ConflictError{Message: "can't remove this character — assigned to " + label}
-			}
-			if err != gorm.ErrRecordNotFound {
-				return err
-			}
-		}
-		res := tx.Model(&models.VampireInstanceCharacter{}).
-			Where("instance_id = ? AND character_id = ?", instanceID, characterID).
-			Updates(map[string]interface{}{"included": included, "updated_at": time.Now()})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			// No row yet — character was added to the library after this
-			// instance was created.
-			return tx.Create(&models.VampireInstanceCharacter{InstanceID: instanceID, CharacterID: characterID, Included: included}).Error
-		}
-		return nil
-	})
+		Create(&models.VampireInstanceCharacter{InstanceID: instanceID, CharacterID: characterID, ImageURL: url}).Error
 }
 
 // ---- Content library: items ----

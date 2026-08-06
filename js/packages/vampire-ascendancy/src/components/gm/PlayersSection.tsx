@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import {
-  gmListPlayers,
-  gmListCharacters,
-  gmListHouses,
-  gmUpdatePlayer,
-  gmSetCharacterPortrait,
-  gmProvisionPlayers,
-} from '../../gmApi';
-import type { GMPlayer, GMCharacter, GMProvisionedSeat } from '../../gmApi';
+import { Link } from 'react-router-dom';
+import { gmListPlayers, gmListCharacters, gmListHouses, gmUpdatePlayer, gmSetCharacterPortrait } from '../../gmApi';
+import type { GMPlayer, GMCharacter } from '../../gmApi';
 import type { House } from '../../types';
 import { Card } from './GameSection';
 import { DossierPreviewLoader } from './DossierPreview';
 
+// The roster of accepted players — people who've accepted an invite and hold
+// a character. To bring someone new in, use the Invites tab; this page is
+// for managing people already seated (reassign a character, correct a name,
+// deactivate, set this Toast's portrait).
 export const PlayersSection = () => {
   const [players, setPlayers] = useState<GMPlayer[]>([]);
   const [characters, setCharacters] = useState<GMCharacter[]>([]);
@@ -48,9 +45,10 @@ export const PlayersSection = () => {
 
   return (
     <div className="flex flex-col gap-3">
-      <ProvisionSeats onProvisioned={load} />
       <p className="text-bone/50 text-sm">
-        {players.length} player links · assign characters, edit names, and set this Toast's portrait.
+        {players.length === 0
+          ? 'No one has accepted an invite yet — send one from the Invites tab above.'
+          : `${players.length} player${players.length === 1 ? '' : 's'} · reassign characters, edit names, and set this Toast's portrait. To invite someone new, use the Invites tab above.`}{' '}
         Bios, secrets, and missions are shared content, edited in the{' '}
         <Link to="/admin" className="text-gold underline underline-offset-2">
           Super Admin dashboard
@@ -61,70 +59,6 @@ export const PlayersSection = () => {
         <PlayerRow key={p.id} player={p} characters={assignable} houses={houses} onSaved={load} />
       ))}
     </div>
-  );
-};
-
-// Replaces the old `go run ./cmd/provision` CLI step: create a player slot +
-// sigil for every included, non-optional character that doesn't have one yet.
-// Safe to re-run as the roster firms up.
-const ProvisionSeats = ({ onProvisioned }: { onProvisioned: () => void }) => {
-  const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<GMProvisionedSeat[] | null>(null);
-  const [includeOptional, setIncludeOptional] = useState(false);
-
-  const run = async () => {
-    setBusy(true);
-    try {
-      const res = await gmProvisionPlayers(includeOptional);
-      setCreated(res.created);
-      onProvisioned();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card title="Provision seats">
-      <p className="text-bone/50 text-sm mb-3">
-        Creates a login link + sigil for every included character that doesn't have a player slot yet.
-        Safe to re-run — only fills gaps.
-      </p>
-      <div className="flex items-center gap-3 flex-wrap">
-        <label className="flex items-center gap-2 text-sm text-bone/70">
-          <input
-            type="checkbox"
-            checked={includeOptional}
-            onChange={(e) => setIncludeOptional(e.target.checked)}
-          />
-          Include optional (✦) characters
-        </label>
-        <button
-          onClick={run}
-          disabled={busy}
-          className="py-2 px-4 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
-        >
-          {busy ? 'Provisioning…' : 'Provision seats'}
-        </button>
-      </div>
-      {created && (
-        <div className="mt-3 text-sm">
-          {created.length === 0 ? (
-            <p className="text-bone/50">Everyone already has a seat.</p>
-          ) : (
-            <>
-              <p className="text-gold mb-1">Created {created.length} new seat(s):</p>
-              <ul className="text-bone/70 space-y-0.5">
-                {created.map((c) => (
-                  <li key={c.characterId}>
-                    {c.characterName} — sigil {c.sigil}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
-    </Card>
   );
 };
 
@@ -143,10 +77,8 @@ const PlayerRow = ({
   const [characterId, setCharacterId] = useState(player.character?.id ?? '');
   const [active, setActive] = useState(player.active);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [editingPortrait, setEditingPortrait] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const { instanceId } = useParams();
 
   const dirty =
     label !== player.guestLabel ||
@@ -161,15 +93,6 @@ const PlayerRow = ({
     } finally {
       setBusy(false);
     }
-  };
-
-  const copyLink = () => {
-    const link = player.character
-      ? `${window.location.origin}/e/${instanceId}/c/${player.character.id}`
-      : `${window.location.origin}/e/${instanceId}/login`;
-    navigator.clipboard?.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
@@ -198,9 +121,6 @@ const PlayerRow = ({
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
             Active
           </label>
-          {player.character?.sigil && (
-            <span className="text-xs text-gold">sigil {player.character.sigil}</span>
-          )}
           <span className="text-xs text-bone/40">· {player.btTotal} BT</span>
           {player.character && (
             <button
@@ -213,14 +133,11 @@ const PlayerRow = ({
           {player.character && (
             <button
               onClick={() => setPreviewing(true)}
-              className="text-xs text-gold/80 uppercase tracking-[0.15em]"
+              className="ml-auto text-xs text-gold/80 uppercase tracking-[0.15em]"
             >
               ↗ Preview dossier
             </button>
           )}
-          <button onClick={copyLink} className="ml-auto text-xs text-blood-bright uppercase tracking-[0.15em]">
-            {copied ? 'Copied!' : 'Copy link'}
-          </button>
         </div>
         {dirty && (
           <button

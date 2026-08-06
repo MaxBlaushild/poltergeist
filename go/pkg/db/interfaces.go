@@ -421,26 +421,41 @@ type VampireHandle interface {
 	// from-scratch content re-seed. Score ledgers are archived first.
 	WipeCharactersAndRoster(ctx context.Context) error
 
-	// Content library: characters — per-instance inclusion, sigil, portrait.
-	ListLibraryCharacters(ctx context.Context, instanceID uuid.UUID) ([]LibraryCharacter, error)
-	ListIncludedCharacters(ctx context.Context, instanceID uuid.UUID) ([]models.VampireCharacter, error)
-	GetIncludedCharacterByID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireCharacter, error)
+	// Content library: characters — per-instance portrait only. Inclusion
+	// and sigils are retired; a character's availability is now implicit
+	// (has an accepted player invite or not — see Player invites below).
 	GetInstanceCharacter(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireInstanceCharacter, error)
-	SetInstanceCharacterSigil(ctx context.Context, instanceID, characterID uuid.UUID, sigil string) error
 	SetInstanceCharacterImageURL(ctx context.Context, instanceID, characterID uuid.UUID, url string) error
-	// SetCharacterIncluded returns a *ConflictError when un-including a
-	// character that has an active player assigned in this instance.
-	SetCharacterIncluded(ctx context.Context, instanceID, characterID uuid.UUID, included bool) error
 
-	// Players
+	// Players — created only by accepting a player invite (below), never
+	// directly.
 	CreatePlayer(ctx context.Context, p *models.VampirePlayer) error
-	// GetPlayerByToken is deliberately not instance-scoped — tokens are
-	// globally unique; callers must check the returned player's InstanceID
-	// against the request's instance themselves.
+	// GetPlayerByToken is deprecated (token/sigil auth is retired) and kept
+	// only in case any pre-migration rows still need lookup by it.
 	GetPlayerByToken(ctx context.Context, token string) (*models.VampirePlayer, error)
 	GetPlayerByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampirePlayer, error)
+	// GetPlayerByUserAndInstance resolves a signed-in account's character
+	// assignment in one instance — used by withPlayer.
+	GetPlayerByUserAndInstance(ctx context.Context, instanceID, userID uuid.UUID) (*models.VampirePlayer, error)
 	ListPlayers(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayer, error)
 	UpdatePlayerAssignment(ctx context.Context, instanceID, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
+
+	// Player invites ("RSVP") — a Host/Co-Host invites a specific real
+	// person (name + phone) to a specific character; accepting (with a real
+	// account) creates the VampirePlayer row. Replaces the old walk-up
+	// "pick your character + sigil" login.
+	// CreatePlayerInvite returns a *ConflictError if the character already
+	// has an active player, or another pending invite.
+	CreatePlayerInvite(ctx context.Context, instanceID, characterID uuid.UUID, guestName, phoneNumber string, invitedBy uuid.UUID, token string) (*models.VampirePlayerInvite, error)
+	ListPlayerInvites(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayerInvite, error)
+	GetPlayerInviteByToken(ctx context.Context, token string) (*models.VampirePlayerInvite, error)
+	DeletePlayerInvite(ctx context.Context, id uuid.UUID) error
+	// DeclinePlayerInvite returns a *ConflictError if the invite isn't pending.
+	DeclinePlayerInvite(ctx context.Context, token string) error
+	// AcceptPlayerInvite returns a *ConflictError if the invite isn't
+	// pending, or the user already holds a different character in this
+	// instance.
+	AcceptPlayerInvite(ctx context.Context, token string, userID uuid.UUID) (*models.VampirePlayer, error)
 
 	// Mission submissions
 	UpsertMissionSubmission(ctx context.Context, instanceID, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error)
