@@ -39,7 +39,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -59,7 +59,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 
 	// ---- Part 1 ----
 	part1 := gin.H{"open": state.QuizPart1Open, "openedAt": state.QuizPart1OpenedAt, "submitted": false, "prompt": "", "answer": ""}
-	p1q, err := v.GetPart1Question(ctx)
+	p1q, err := v.GetIncludedPart1Question(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -74,7 +74,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 	// Reveal only the current question — the first one this player hasn't locked.
 	// Later questions progressively disclose details, so we never send them until
 	// the earlier ones are answered.
-	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -118,7 +118,7 @@ func (s *server) submitQuizPart1(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -128,7 +128,7 @@ func (s *server) submitQuizPart1(ctx *gin.Context) {
 		return
 	}
 
-	p1q, err := v.GetPart1Question(ctx)
+	p1q, err := v.GetIncludedPart1Question(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -151,7 +151,7 @@ func (s *server) submitQuizPart1(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := v.UpsertQuizSubmission(ctx, player.ID, p1q.ID, body.Answer, nil, true); err != nil {
+	if _, err := v.UpsertQuizSubmission(ctx, player.InstanceID, player.ID, p1q.ID, body.Answer, nil, true); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -164,7 +164,7 @@ func (s *server) submitQuizPart2(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -180,7 +180,7 @@ func (s *server) submitQuizPart2(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -219,7 +219,7 @@ func (s *server) submitQuizPart2(ctx *gin.Context) {
 			continue
 		}
 		isCorrect := correct != "" && strings.EqualFold(strings.TrimSpace(a.Answer), strings.TrimSpace(correct))
-		if _, err := v.UpsertQuizSubmission(ctx, player.ID, qid, a.Answer, &isCorrect, true); err != nil {
+		if _, err := v.UpsertQuizSubmission(ctx, player.InstanceID, player.ID, qid, a.Answer, &isCorrect, true); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -235,7 +235,7 @@ func (s *server) submitQuizPart2Answer(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -254,7 +254,7 @@ func (s *server) submitQuizPart2Answer(ctx *gin.Context) {
 		return
 	}
 
-	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -290,7 +290,7 @@ func (s *server) submitQuizPart2Answer(ctx *gin.Context) {
 
 	isCorrect := current.CorrectAnswer != "" &&
 		strings.EqualFold(strings.TrimSpace(body.Answer), strings.TrimSpace(current.CorrectAnswer))
-	if _, err := v.UpsertQuizSubmission(ctx, player.ID, current.ID, body.Answer, &isCorrect, true); err != nil {
+	if _, err := v.UpsertQuizSubmission(ctx, player.InstanceID, player.ID, current.ID, body.Answer, &isCorrect, true); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

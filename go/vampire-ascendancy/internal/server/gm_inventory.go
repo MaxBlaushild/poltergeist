@@ -15,10 +15,12 @@ type itemWithPhoto struct {
 	HasPhoto bool `json:"hasPhoto"`
 }
 
-// GET /gm/items — the item catalog, for the assign dropdown, with a hasPhoto flag.
+// GET /gm/items — this Toast's included items, for the assign dropdown, with
+// a hasPhoto flag. See GET /gm/library/items for the full catalog + toggles,
+// or GET /admin/items for the shared-library editor (super users only).
 func (s *server) gmListItems(ctx *gin.Context) {
 	v := s.dbClient.Vampire()
-	items, err := v.ListItems(ctx)
+	items, err := v.ListIncludedItems(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -56,52 +58,9 @@ func (s *server) getItemPhoto(ctx *gin.Context) {
 	ctx.Data(http.StatusOK, photo.ContentType, photo.Data)
 }
 
-// POST /gm/items/:id/photo — set a catalog item's reference photo from a data URL.
-func (s *server) gmSetItemPhoto(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-	var body struct {
-		DataUrl string `json:"dataUrl"`
-	}
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	ct, data, err := decodeDataURL(body.DataUrl)
-	if err != nil || len(data) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid image"})
-		return
-	}
-	if len(data) > maxPhotoBytes {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "image too large"})
-		return
-	}
-	if err := s.dbClient.Vampire().SetItemPhoto(ctx, id, ct, data); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "set_item_photo", map[string]interface{}{"id": id.String()})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-// DELETE /gm/items/:id/photo — remove a catalog item's reference photo.
-func (s *server) gmDeleteItemPhoto(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item id"})
-		return
-	}
-	if err := s.dbClient.Vampire().DeleteItemPhoto(ctx, id); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "delete_item_photo", map[string]interface{}{"id": id.String()})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
+// itemBody is the catalog item editor payload — shared by the (removed)
+// per-instance editor and superadmin.go's /admin/items handlers, which are
+// now the only way to create/edit/delete catalog items.
 type itemBody struct {
 	Code            string `json:"code"`
 	Name            string `json:"name"`
@@ -140,74 +99,16 @@ func (b itemBody) toModel() *models.VampireItem {
 	}
 }
 
-// POST /gm/items — create a new catalog item (GM-authored).
-func (s *server) gmCreateItem(ctx *gin.Context) {
-	var body itemBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if strings.TrimSpace(body.Name) == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
-	}
-	item := body.toModel()
-	if err := s.dbClient.Vampire().CreateItem(ctx, item); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "create_item", map[string]interface{}{"name": item.Name})
-	ctx.JSON(http.StatusOK, gin.H{"id": item.ID})
-}
-
-// PUT /gm/items/:id — edit an existing catalog item.
-func (s *server) gmUpdateItem(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	var body itemBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if strings.TrimSpace(body.Name) == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
-	}
-	if err := s.dbClient.Vampire().UpdateItem(ctx, id, body.toModel()); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "update_item", map[string]interface{}{"id": id.String(), "name": strings.TrimSpace(body.Name)})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-// DELETE /gm/items/:id — remove a catalog item (assignments cascade away).
-func (s *server) gmDeleteItem(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := s.dbClient.Vampire().DeleteItem(ctx, id); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "delete_item", map[string]interface{}{"id": id.String()})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
 // GET /gm/player-items — every assignment, with owner + target names for display.
 func (s *server) gmListPlayerItems(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
-	pis, err := v.ListAllPlayerItems(ctx)
+	pis, err := v.ListAllPlayerItems(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	name := s.playerNameLookup(ctx)
+	name := s.playerNameLookup(ctx, instanceID)
 	out := make([]gin.H, 0, len(pis))
 	for _, pi := range pis {
 		row := gin.H{
@@ -302,8 +203,8 @@ func (s *server) gmRemovePlayerItem(ctx *gin.Context) {
 
 // playerNameLookup returns a func mapping a player id to a display name
 // (character name, else guest label).
-func (s *server) playerNameLookup(ctx context.Context) func(uuid.UUID) string {
-	players, _ := s.dbClient.Vampire().ListPlayers(ctx)
+func (s *server) playerNameLookup(ctx context.Context, instanceID uuid.UUID) func(uuid.UUID) string {
+	players, _ := s.dbClient.Vampire().ListPlayers(ctx, instanceID)
 	m := map[string]string{}
 	for _, p := range players {
 		n := p.GuestLabel
@@ -314,4 +215,3 @@ func (s *server) playerNameLookup(ctx context.Context) func(uuid.UUID) string {
 	}
 	return func(id uuid.UUID) string { return m[id.String()] }
 }
-

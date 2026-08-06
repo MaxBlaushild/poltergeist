@@ -22,6 +22,13 @@ export default function Cart() {
     reefApi.cart(items).then(setCart);
   }, [items]);
 
+  // Keeps `email` correct if login happens after this page is already
+  // mounted (e.g. logging in from another tab) — the state above only
+  // captures auth at first render.
+  useEffect(() => {
+    if (auth?.user.email) setEmail(auth.user.email);
+  }, [auth]);
+
   const handleCheckout = async () => {
     if (!email) {
       setCheckoutError('Enter an email address to continue.');
@@ -136,16 +143,22 @@ export default function Cart() {
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-reef-ink">Email</label>
-            <input
-              type="email"
-              className="input-field"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-          </div>
+          {auth?.user.email ? (
+            <p className="text-sm text-reef-ink/70">
+              Checking out as <span className="font-medium text-reef-ink">{auth.user.email}</span>
+            </p>
+          ) : (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-reef-ink">Email</label>
+              <input
+                type="email"
+                className="input-field"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+          )}
 
           {checkoutError && <p className="text-sm text-red-600">{checkoutError}</p>}
 

@@ -6,7 +6,7 @@ import { accentFor, houseInfoFor, formatHF, taglineFor, houseLabel } from '../th
 
 export const HousePage = () => {
   const token = getToken();
-  const { houseId } = useParams();
+  const { instanceId, houseId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<HouseOverview | null>(null);
   const [error, setError] = useState(false);
@@ -26,7 +26,7 @@ export const HousePage = () => {
     };
   }, [token, houseId]);
 
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) return <Navigate to={`/e/${instanceId}/login`} replace />;
 
   if (error) {
     return (

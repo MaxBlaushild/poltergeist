@@ -90,6 +90,7 @@ export interface Configuration {
   priceCents: number | null;
   sessionId: string;
   previewUrl?: string;
+  productSlug?: string;
 }
 
 export interface BboxMm {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getLeaderboard, getToken } from '../api';
+import { getLeaderboard, getToken, getSessionInstanceId } from '../api';
 import type { HouseStanding } from '../types';
 import { accentFor, taglineFor, houseLabel } from '../theme';
 
@@ -83,7 +83,7 @@ export const Summons = () => {
                 return (
                   <Link
                     key={h.houseId}
-                    to={`/house/${h.houseId}`}
+                    to={`/e/${getSessionInstanceId()}/house/${h.houseId}`}
                     className="flex items-center gap-3 rounded-lg border border-blood/30 bg-black/40 p-4 transition-colors hover:bg-white/5"
                   >
                     <span className="w-1.5 self-stretch rounded-full" style={{ backgroundColor: accent }} />

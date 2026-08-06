@@ -74,6 +74,14 @@ const (
 	// completeness / a future async-preview path, unused for now.
 	GenerateReefPreviewTaskType = "generate_reef_preview"
 	GenerateReefFullTaskType    = "generate_reef_full"
+
+	// bgi-site (R-3.3/R-8.1). Only one kind — a tray set is many parts
+	// generated together, so there's no separate "preview" task type the
+	// way reef has one on the books for schema completeness; bgi-site's
+	// preview path renders a single representative tray synchronously in
+	// the HTTP handler itself, same "must not block beyond the preview
+	// path" carve-out reef's R-2.10 established.
+	GenerateBgiSetTaskType = "generate_bgi_set"
 )
 
 const (
@@ -588,6 +596,15 @@ func SpellDamageRebalanceStatusKey(jobID uuid.UUID) string {
 // processor has somewhere to write its result and something for the client
 // to poll.
 type GenerateReefFullTaskPayload struct {
+	ConfigurationID uuid.UUID `json:"configurationId"`
+	JobID           uuid.UUID `json:"jobId"`
+}
+
+// GenerateBgiSetTaskPayload drives the bgi-site equivalent: ConfigurationID
+// points at a bgi_configurations row bgi-site's API already created
+// synchronously before enqueueing (sleeve/box/color selection), and JobID at
+// a bgi_generation_jobs row the processor writes status/errors to.
+type GenerateBgiSetTaskPayload struct {
 	ConfigurationID uuid.UUID `json:"configurationId"`
 	JobID           uuid.UUID `json:"jobId"`
 }

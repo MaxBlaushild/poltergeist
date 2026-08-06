@@ -53,6 +53,13 @@ type Analysis struct {
 	HasInternalCavity bool // false means SealedVoid/DrainPathMm are not applicable (R-5.3 never fires)
 	SealedVoid        bool
 	DrainPathMm       float64
+	// HeightMm is the part's physical height along whatever axis a caller
+	// stacks it on, for modules where that's meaningful (0 for modules with
+	// no notion of stackable height, which is every reef module today).
+	// go/pkg/reef/set's tray-set assembler reads this to search for the
+	// fewest trays that fit a target box depth without needing a render —
+	// analytical, not mesh-derived, same reasoning as MinWallMm.
+	HeightMm float64
 }
 
 type Detail int
@@ -91,6 +98,8 @@ func Get(slug string) (Module, error) {
 func init() {
 	Register(&FragRack{})
 	Register(&LidClip{})
+	Register(&ShelfRack{})
+	Register(&BgiCardTray{})
 }
 
 // paramFloat/paramBool/paramString pull a typed value out of the decoded

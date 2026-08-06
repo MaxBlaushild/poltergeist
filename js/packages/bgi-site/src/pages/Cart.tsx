@@ -1,0 +1,136 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { bgiApi } from '../api/client';
+import type { CartResponse } from '../api/types';
+import { useCart } from '../hooks/useCart';
+import { getSessionId } from '../lib/session';
+
+export default function Cart() {
+  const { items, removeItem, setQuantity } = useCart();
+  const [cart, setCart] = useState<CartResponse | null>(null);
+  const [email, setEmail] = useState('');
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    bgiApi.cart(items).then(setCart);
+  }, [items]);
+
+  const handleCheckout = async () => {
+    if (!email) {
+      setCheckoutError('Enter an email address to continue.');
+      return;
+    }
+    setCheckingOut(true);
+    setCheckoutError(null);
+    bgiApi.recordEvent('checkout_started', { sessionId: getSessionId() });
+    try {
+      const result = await bgiApi.checkout(
+        items,
+        email,
+        `${window.location.origin}/orders/:orderToken:`,
+        `${window.location.origin}/cart`,
+        getSessionId(),
+      );
+      window.location.href = result.checkoutUrl;
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'Checkout failed');
+      setCheckingOut(false);
+    }
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="card mx-auto max-w-md space-y-3 p-8 text-center">
+        <p className="text-bgi-ink/70">Your cart is empty.</p>
+        <Link to="/" className="btn-secondary">
+          Back to the catalog
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6">
+      <h1 className="font-display text-2xl font-bold text-bgi-ink">Cart</h1>
+
+      {!cart && <p className="text-bgi-ink/60">Loading…</p>}
+
+      {cart && (
+        <>
+          <ul className="card divide-y divide-bgi-teal/10 px-5">
+            {cart.items.map((item, i) => (
+              <li key={i} className="flex items-center justify-between py-4">
+                <div>
+                  <p className="font-medium text-bgi-ink">{item.productName}</p>
+                  <p className="text-sm text-bgi-ink/60">${(item.unitPriceCents / 100).toFixed(2)} each</p>
+                  <div className="mt-2 flex items-center gap-2 text-sm">
+                    <button
+                      className="btn-ghost"
+                      aria-label="Decrease quantity"
+                      onClick={() => setQuantity(items[i], Math.max(0, item.quantity - 1))}
+                    >
+                      −
+                    </button>
+                    <span className="w-4 text-center tabular-nums">{item.quantity}</span>
+                    <button
+                      className="btn-ghost"
+                      aria-label="Increase quantity"
+                      onClick={() => setQuantity(items[i], item.quantity + 1)}
+                    >
+                      +
+                    </button>
+                    <button
+                      className="ml-2 text-xs font-medium text-red-500 underline underline-offset-2 hover:text-red-600"
+                      onClick={() => removeItem(items[i])}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                <p className="font-medium text-bgi-ink">${(item.lineTotalCents / 100).toFixed(2)}</p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="card space-y-1 p-5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-bgi-ink/70">Subtotal</span>
+              <span>${(cart.subtotalCents / 100).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-bgi-ink/70">Shipping</span>
+              <span>{cart.shippingCents === 0 ? 'Free' : `$${(cart.shippingCents / 100).toFixed(2)}`}</span>
+            </div>
+            <div className="flex justify-between border-t border-bgi-teal/10 pt-2 text-base font-semibold text-bgi-ink">
+              <span>Total</span>
+              <span>${(cart.totalCents / 100).toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-bgi-ink">Email</label>
+            <input
+              type="email"
+              className="input-field"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
+
+          <p className="text-xs text-bgi-ink/50">
+            This is a made-to-order print — expect several days of fulfillment lead time before it ships.
+          </p>
+
+          {checkoutError && <p className="text-sm text-red-600">{checkoutError}</p>}
+
+          <button onClick={handleCheckout} disabled={checkingOut} className="btn-primary w-full">
+            {checkingOut ? 'Redirecting to checkout…' : 'Checkout'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}

@@ -24,20 +24,25 @@ type ManualAdapter struct {
 	Bucket        string
 	OperatorEmail string
 	FromAddress   string
+	// SitePrefix namespaces the S3 manifest key and operator-email copy per
+	// product (e.g. "reef", "bgi") — this adapter is shared platform code
+	// (go/pkg/reef/fulfillment), so it must not hardcode any one site's name.
+	SitePrefix string
 }
 
-func NewManualAdapter(awsClient aws.AWSClient, emailClient email.EmailClient, bucket, operatorEmail, fromAddress string) *ManualAdapter {
+func NewManualAdapter(awsClient aws.AWSClient, emailClient email.EmailClient, bucket, operatorEmail, fromAddress, sitePrefix string) *ManualAdapter {
 	return &ManualAdapter{
 		AwsClient:     awsClient,
 		EmailClient:   emailClient,
 		Bucket:        bucket,
 		OperatorEmail: operatorEmail,
 		FromAddress:   fromAddress,
+		SitePrefix:    sitePrefix,
 	}
 }
 
 func (m *ManualAdapter) SubmitOrder(ctx context.Context, o Order) (string, error) {
-	manifestKey := fmt.Sprintf("reef/orders/%s/manifest.csv", o.OrderToken)
+	manifestKey := fmt.Sprintf("%s/orders/%s/manifest.csv", m.SitePrefix, o.OrderToken)
 	manifestCSV, err := buildManifestCSV(o)
 	if err != nil {
 		return "", fmt.Errorf("fulfillment/manual: building manifest: %w", err)
@@ -96,7 +101,7 @@ func buildManifestCSV(o Order) ([]byte, error) {
 
 func (m *ManualAdapter) notifyOperator(o Order, manifestURL string) error {
 	var body bytes.Buffer
-	fmt.Fprintf(&body, "New reef-site order %s\n\n", o.OrderToken)
+	fmt.Fprintf(&body, "New %s order %s\n\n", m.SitePrefix, o.OrderToken)
 	fmt.Fprintf(&body, "Customer: %s\n", o.CustomerEmail)
 	fmt.Fprintf(&body, "Ship to: %s, %s, %s, %s %s, %s\n\n", o.ShippingName, o.ShippingLine1, o.ShippingCity, o.ShippingState, o.ShippingZip, o.ShippingCountry)
 	fmt.Fprintf(&body, "Items:\n")
@@ -114,8 +119,8 @@ func (m *ManualAdapter) notifyOperator(o Order, manifestURL string) error {
 	fmt.Fprintf(&body, "\nGenerated %s\n", time.Now().UTC().Format(time.RFC3339))
 
 	return m.EmailClient.SendMail(email.Email{
-		Subject:          "reef-site order " + o.OrderToken,
-		Name:             "reef-site",
+		Subject:          m.SitePrefix + " order " + o.OrderToken,
+		Name:             m.SitePrefix,
 		Email:            m.OperatorEmail,
 		PlainTextContent: body.String(),
 		HtmlContent:      "<pre>" + body.String() + "</pre>",

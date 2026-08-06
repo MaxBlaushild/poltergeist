@@ -58,6 +58,34 @@ type PublicConfig struct {
 	ReefMaxWeightG                     float64 `mapstructure:"REEF_MAX_WEIGHT_G"`
 	ReefMinDrainPathMm                 float64 `mapstructure:"REEF_MIN_DRAIN_PATH_MM"`
 	ReefMaxSupportMaterialPct          float64 `mapstructure:"REEF_MAX_SUPPORT_MATERIAL_PCT"`
+
+	// bgi-site generation/slicing — same shape as the Reef* block above,
+	// own env var names/values so the two products tune independently. No
+	// Bgi*MinDrainPathMm: bgi trays run with SealedVoidRuleEnabled=false
+	// unconditionally (open-top wells have no cavity story at all), so
+	// there's nothing for a drain-path threshold to gate.
+	BgiOpenSCADBin                    string  `mapstructure:"BGI_OPENSCAD_BIN"`
+	BgiSlicerBin                      string  `mapstructure:"BGI_SLICER_BIN"`
+	BgiFilamentDensityGCm3            float64 `mapstructure:"BGI_FILAMENT_DENSITY_G_CM3"`
+	BgiSubprocessTimeoutSec           int     `mapstructure:"BGI_SUBPROCESS_TIMEOUT_SEC"`
+	BgiSubprocessMemoryMB             int     `mapstructure:"BGI_SUBPROCESS_MEMORY_MB"`
+	BgiS3Bucket                       string  `mapstructure:"BGI_S3_BUCKET"`
+	BgiAwsRegion                      string  `mapstructure:"BGI_AWS_REGION"`
+	BgiPriceSetupFeeCents             int64   `mapstructure:"BGI_PRICE_SETUP_FEE_CENTS"`
+	BgiPriceMaterialRateCentsPerGram  float64 `mapstructure:"BGI_PRICE_MATERIAL_RATE_CENTS_PER_GRAM"`
+	BgiPriceMachineRateCentsPerMinute float64 `mapstructure:"BGI_PRICE_MACHINE_RATE_CENTS_PER_MINUTE"`
+	BgiPriceFulfillmentFeeCents       int64   `mapstructure:"BGI_PRICE_FULFILLMENT_FEE_CENTS"`
+	BgiPriceMarginMultiplier          float64 `mapstructure:"BGI_PRICE_MARGIN_MULTIPLIER"`
+	BgiSetAssemblyFeeCents            int64   `mapstructure:"BGI_SET_ASSEMBLY_FEE_CENTS"`
+	BgiMaxBboxMm                      float64 `mapstructure:"BGI_MAX_BBOX_MM"`
+	BgiMinWallMm                      float64 `mapstructure:"BGI_MIN_WALL_MM"`
+	BgiMaxPrintTimeS                  int64   `mapstructure:"BGI_MAX_PRINT_TIME_S"`
+	BgiMaxWeightG                     float64 `mapstructure:"BGI_MAX_WEIGHT_G"`
+	BgiMaxSupportMaterialPct          float64 `mapstructure:"BGI_MAX_SUPPORT_MATERIAL_PCT"`
+	// BgiMaxSetPrintTimeS is R-6.2 rule 4's throughput/lead-time ceiling on
+	// the TOTAL set (all resolved trays' print time summed), distinct from
+	// BgiMaxPrintTimeS above which still gates each individual tray.
+	BgiMaxSetPrintTimeS int64 `mapstructure:"BGI_MAX_SET_PRINT_TIME_S"`
 }
 
 type Config struct {
@@ -117,6 +145,26 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 	// needing scaffolding through a substantial fraction of the print
 	// should reject. See go/pkg/reef/validate's checkExcessiveSupport.
 	viper.SetDefault("REEF_MAX_SUPPORT_MATERIAL_PCT", 10.0)
+
+	viper.SetDefault("BGI_OPENSCAD_BIN", "openscad")
+	viper.SetDefault("BGI_SLICER_BIN", "prusa-slicer")
+	viper.SetDefault("BGI_FILAMENT_DENSITY_G_CM3", 1.27)
+	viper.SetDefault("BGI_SUBPROCESS_TIMEOUT_SEC", 300)
+	viper.SetDefault("BGI_SUBPROCESS_MEMORY_MB", 1536)
+	viper.SetDefault("BGI_S3_BUCKET", "bgi-site-artifacts")
+	viper.SetDefault("BGI_AWS_REGION", "us-east-1")
+	viper.SetDefault("BGI_PRICE_SETUP_FEE_CENTS", 300)
+	viper.SetDefault("BGI_PRICE_MATERIAL_RATE_CENTS_PER_GRAM", 8.0)
+	viper.SetDefault("BGI_PRICE_MACHINE_RATE_CENTS_PER_MINUTE", 4.0)
+	viper.SetDefault("BGI_PRICE_FULFILLMENT_FEE_CENTS", 250)
+	viper.SetDefault("BGI_PRICE_MARGIN_MULTIPLIER", 1.8)
+	viper.SetDefault("BGI_SET_ASSEMBLY_FEE_CENTS", 500)
+	viper.SetDefault("BGI_MAX_BBOX_MM", 210.0)
+	viper.SetDefault("BGI_MIN_WALL_MM", 2.0)
+	viper.SetDefault("BGI_MAX_PRINT_TIME_S", 4*60*60)
+	viper.SetDefault("BGI_MAX_WEIGHT_G", 250.0)
+	viper.SetDefault("BGI_MAX_SUPPORT_MATERIAL_PCT", 10.0)
+	viper.SetDefault("BGI_MAX_SET_PRINT_TIME_S", 30*60*60)
 
 	viper.AutomaticEnv()
 

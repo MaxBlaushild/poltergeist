@@ -7,6 +7,7 @@ import StlViewer from '../components/StlViewer';
 import { useCart } from '../hooks/useCart';
 import { getSessionId } from '../lib/session';
 import { paramsToSearch, searchToParams } from '../lib/paramsUrl';
+import { derivedBoundFormulas } from '../lib/derivedBounds';
 
 function defaultValues(schema: ParameterSchema): Record<string, unknown> {
   const values: Record<string, unknown> = {};
@@ -38,6 +39,56 @@ export default function Configure() {
   const sessionId = useMemo(() => getSessionId(), []);
   const requestGeneration = useRef(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Live-recomputed bounds for any x-derivedBoundFrom field (e.g.
+  // holesPerTier's real max depends on widthMm/plugHoleDiameterMm, and
+  // conversely widthMm's real min depends on holesPerTier's own schema
+  // minimum) — see lib/derivedBounds.ts. Recomputes on every value change
+  // so the sliders themselves never allow a combination the server would
+  // reject.
+  const derivedBounds = useMemo(() => {
+    if (!slug || !schema) return undefined;
+    const formulas = derivedBoundFormulas[slug];
+    if (!formulas) return undefined;
+    const max: Record<string, number> = {};
+    const min: Record<string, number> = {};
+    for (const [field, bound] of Object.entries(formulas)) {
+      if (bound.max) max[field] = bound.max(values, schema);
+      if (bound.min) min[field] = bound.min(values, schema);
+    }
+    return { min, max };
+  }, [slug, schema, values]);
+
+  // Whenever a dependency changes and pushes a field's current value
+  // outside its derived bound, clamp it back in range immediately rather
+  // than letting the user submit a combination the slider itself now
+  // disallows. holesPerTier always adapts to widthMm (never the reverse —
+  // matching x-derivedBoundFrom's own direction), which is why widthMm's
+  // floor is pinned to holesPerTier's schema *minimum* rather than its
+  // current value: that keeps the two constraints from fighting each
+  // other as the user drags either slider.
+  useEffect(() => {
+    if (!derivedBounds) return;
+    setValues((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [field, max] of Object.entries(derivedBounds.max)) {
+        const current = Number(next[field]);
+        if (Number.isFinite(current) && current > max) {
+          next[field] = max;
+          changed = true;
+        }
+      }
+      for (const [field, min] of Object.entries(derivedBounds.min)) {
+        const current = Number(next[field]);
+        if (Number.isFinite(current) && current < min) {
+          next[field] = min;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [derivedBounds]);
 
   // Load product + schema (+ tanks, if the schema has a tank-select field).
   useEffect(() => {
@@ -183,7 +234,14 @@ export default function Configure() {
       </div>
 
       <div className="card p-6">
-        <SchemaForm schema={schema} values={values} onChange={handleChange} tanks={tanks} />
+        <SchemaForm
+          schema={schema}
+          values={values}
+          onChange={handleChange}
+          tanks={tanks}
+          derivedMax={derivedBounds?.max}
+          derivedMin={derivedBounds?.min}
+        />
 
         <div className="mt-6">
           {configuration?.status === 'rejected' && (

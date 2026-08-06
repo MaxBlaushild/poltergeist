@@ -13,7 +13,7 @@ import (
 func (s *server) submitMission(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := s.dbClient.Vampire().GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -54,14 +54,14 @@ func (s *server) submitMission(ctx *gin.Context) {
 		return
 	}
 
-	sub, err := s.dbClient.Vampire().UpsertMissionSubmission(ctx, player.ID, missionID, body.Answer)
+	sub, err := s.dbClient.Vampire().UpsertMissionSubmission(ctx, player.InstanceID, player.ID, missionID, body.Answer)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if len(body.Photos) > 0 || body.ClearPhotos {
-		if err := s.savePhotos(ctx, sub.ID, body.Photos, body.ClearPhotos); err != nil {
+		if err := s.savePhotos(ctx, player.InstanceID, sub.ID, body.Photos, body.ClearPhotos); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

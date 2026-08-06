@@ -68,6 +68,11 @@ type PaymentCheckoutSessionParams struct {
 	CollectShippingAddress     bool              `json:"collectShippingAddress"`
 	PaymentCompleteCallbackUrl string            `json:"paymentCompleteCallbackUrl" binding:"required"`
 	Metadata                   map[string]string `json:"metadata"`
+	// Platform selects which Stripe account processes this session — empty
+	// (the zero value) keeps existing callers (travel-angels) on the
+	// original shared key unchanged; "reef" routes through reef-site's own
+	// dedicated Stripe account instead.
+	Platform string `json:"platform"`
 }
 
 type ShippingAddress struct {

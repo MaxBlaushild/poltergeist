@@ -5,55 +5,64 @@ import type { PublicCharacter } from '../api';
 import { accentFor } from '../theme';
 import { VampireMark } from './VampireMark';
 
-// Reached from a /c/<characterId> link: confirm "you are X" then enter the sigil.
+// Reached from a /e/<instanceId>/c/<characterId> link: confirm "you are X"
+// then enter the sigil.
 export const ConfirmLogin = () => {
-  const { characterId } = useParams();
+  const { instanceId, characterId } = useParams();
   const [character, setCharacter] = useState<PublicCharacter | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'notfound'>('loading');
 
   useEffect(() => {
-    if (!characterId) {
+    if (!instanceId || !characterId) {
       setStatus('notfound');
       return;
     }
-    getCharacterPublic(characterId)
+    getCharacterPublic(instanceId, characterId)
       .then((c) => {
         setCharacter(c);
         setStatus('ready');
       })
       .catch(() => setStatus('notfound'));
-  }, [characterId]);
+  }, [instanceId, characterId]);
 
   if (status === 'loading') return <Shell>Approaching the gate…</Shell>;
-  if (status === 'notfound' || !character) {
+  if (status === 'notfound' || !character || !instanceId) {
     return (
       <Shell>
         <VampireMark className="w-14 h-14 mx-auto mb-3" />
         <h1 className="font-display text-2xl font-bold text-bone mb-2">Unknown invitation</h1>
         <p className="text-bone/80 mb-4">This link is not recognized.</p>
-        <Link to="/login" className="text-gold uppercase tracking-[0.2em] text-sm">
-          Select your name →
-        </Link>
+        {instanceId && (
+          <Link to={`/e/${instanceId}/login`} className="text-gold uppercase tracking-[0.2em] text-sm">
+            Select your name →
+          </Link>
+        )}
       </Shell>
     );
   }
-  return <LoginForm fixed={character} />;
+  return <LoginForm instanceId={instanceId} fixed={character} />;
 };
 
-// Reached from the general /login link: pick your name, then enter the sigil.
+// Reached from the general /e/<instanceId>/login link: pick your name, then
+// enter the sigil.
 export const SelectLogin = () => {
+  const { instanceId } = useParams();
   const [characters, setCharacters] = useState<PublicCharacter[] | null>(null);
   useEffect(() => {
-    listCharacters().then((d) => setCharacters(d.characters)).catch(() => setCharacters([]));
-  }, []);
+    if (!instanceId) return;
+    listCharacters(instanceId).then((d) => setCharacters(d.characters)).catch(() => setCharacters([]));
+  }, [instanceId]);
+  if (!instanceId) return <Shell>This link is not recognized.</Shell>;
   if (!characters) return <Shell>Gathering the court…</Shell>;
-  return <LoginForm characters={characters} />;
+  return <LoginForm instanceId={instanceId} characters={characters} />;
 };
 
 const LoginForm = ({
+  instanceId,
   fixed,
   characters,
 }: {
+  instanceId: string;
   fixed?: PublicCharacter;
   characters?: PublicCharacter[];
 }) => {
@@ -71,10 +80,10 @@ const LoginForm = ({
     setBusy(true);
     setError(null);
     try {
-      const { token } = await login(characterId, sigil);
-      saveToken(token);
+      const { token } = await login(instanceId, characterId, sigil);
+      saveToken(token, instanceId);
       localStorage.removeItem('vampireTab'); // land on the Summons after logging in
-      navigate('/');
+      navigate(`/e/${instanceId}`);
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 401
@@ -151,7 +160,7 @@ const LoginForm = ({
 
       {fixed && (
         <Link
-          to="/login"
+          to={`/e/${instanceId}/login`}
           className="block mt-4 text-bone/50 hover:text-bone uppercase tracking-[0.2em] text-xs"
         >
           This isn't me →

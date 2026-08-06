@@ -13,7 +13,7 @@ func (s *server) getInventory(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -39,7 +39,7 @@ func (s *server) getInventory(ctx *gin.Context) {
 	}
 
 	// Targetable players — everyone with a character, excluding the viewer.
-	players, err := v.ListPlayers(ctx)
+	players, err := v.ListPlayers(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -61,7 +61,7 @@ func (s *server) setInventoryTarget(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	state, err := v.GetGameState(ctx)
+	state, err := v.GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

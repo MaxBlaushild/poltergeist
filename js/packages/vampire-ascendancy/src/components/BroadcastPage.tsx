@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { getBroadcastStandings, getBroadcastGames } from '../api';
 import type { Game, HouseStanding } from '../types';
 import { BroadcastView } from './BroadcastView';
 import { VampireMark } from './VampireMark';
 
-// Standalone, no-auth projector page (route: /broadcast). Cast this to a TV — it
-// polls the public standings + games feed and never needs a login.
+// Standalone, no-auth projector page (route: /e/:instanceId/broadcast). Cast
+// this to a TV — it polls the public standings + games feed for this one
+// Toast and never needs a login.
 export const BroadcastPage = () => {
+  const { instanceId } = useParams();
   const [standings, setStandings] = useState<HouseStanding[] | null>(null);
   const [games, setGames] = useState<Game[] | null>(null);
 
@@ -28,10 +31,11 @@ export const BroadcastPage = () => {
   }, [scale]);
 
   useEffect(() => {
+    if (!instanceId) return;
     let cancelled = false;
     const load = () => {
-      getBroadcastStandings().then((d) => !cancelled && setStandings(d.standings)).catch(() => {});
-      getBroadcastGames().then((d) => !cancelled && setGames(d.games)).catch(() => {});
+      getBroadcastStandings(instanceId).then((d) => !cancelled && setStandings(d.standings)).catch(() => {});
+      getBroadcastGames(instanceId).then((d) => !cancelled && setGames(d.games)).catch(() => {});
     };
     load();
     const id = setInterval(load, 5000);
@@ -39,7 +43,7 @@ export const BroadcastPage = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, []);
+  }, [instanceId]);
 
   return (
     <div className="min-h-screen bg-blood-ink px-6 py-8">

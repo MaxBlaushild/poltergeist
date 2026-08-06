@@ -175,3 +175,15 @@ variable "google_client_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "reef_stripe_secret_key" {
+  description = "Stripe secret key for reef-site's own, separate Stripe account (distinct from travel_angels_stripe_secret_key) — used only when PaymentCheckoutSessionParams.Platform == \"reef\"."
+  type        = string
+  sensitive   = true
+}
+
+variable "reef_stripe_webhook_secret" {
+  description = "Signing secret for the webhook endpoint registered under reef-site's Stripe account at https://api.unclaimedstreets.com/billing/stripe-webhook."
+  type        = string
+  sensitive   = true
+}

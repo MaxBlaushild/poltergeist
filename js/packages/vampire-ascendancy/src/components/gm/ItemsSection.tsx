@@ -1,45 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   gmListItems,
   gmListPlayers,
   gmListPlayerItems,
   gmAssignItem,
   gmRemovePlayerItem,
-  gmCreateItem,
-  gmUpdateItem,
-  gmDeleteItem,
   gmTransferPlayerItem,
-  gmSetItemPhoto,
-  gmDeleteItemPhoto,
   itemPhotoUrl,
 } from '../../gmApi';
-import type { GMItem, GMItemDraft, GMPlayer, GMPlayerItem } from '../../gmApi';
+import type { GMItem, GMPlayer, GMPlayerItem } from '../../gmApi';
 import { Card } from './GameSection';
-
-// Load a picked image, downscale it (phone photos are multi-MB), return a JPEG data URL.
-const resizeImage = (file: File, maxDim = 1200, quality = 0.8): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const cctx = canvas.getContext('2d');
-        if (!cctx) return reject(new Error('no canvas'));
-        cctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = reader.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 
 // A thumbnail that opens a full-size modal on click.
 const PhotoThumb = ({ src, alt, className }: { src: string; alt: string; className?: string }) => {
@@ -71,102 +41,16 @@ const PhotoThumb = ({ src, alt, className }: { src: string; alt: string; classNa
   );
 };
 
-// Item reference photo + camera-capture control. On a phone, the file input's
-// capture="environment" opens the rear camera directly.
-const ItemPhoto = ({ item, onChanged }: { item: GMItem; onChanged: () => void }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [ver, setVer] = useState(1);
-
-  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setBusy(true);
-    try {
-      await gmSetItemPhoto(item.id, await resizeImage(file));
-      setVer(Date.now());
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const remove = async () => {
-    setBusy(true);
-    try {
-      await gmDeleteItemPhoto(item.id);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      {item.hasPhoto ? (
-        <PhotoThumb
-          src={itemPhotoUrl(item.id, ver)}
-          alt={item.name}
-          className="w-12 h-12 rounded object-cover border border-blood/40"
-        />
-      ) : (
-        <div className="w-12 h-12 rounded border border-dashed border-blood/40 flex items-center justify-center text-bone/30">
-          📷
-        </div>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={pick}
-        className="hidden"
-      />
-      <button
-        onClick={() => inputRef.current?.click()}
-        disabled={busy}
-        className="text-xs text-gold uppercase tracking-[0.15em] disabled:opacity-40"
-      >
-        {busy ? '…' : item.hasPhoto ? '📷 Change' : '📷 Add photo'}
-      </button>
-      {item.hasPhoto && !busy && (
-        <button onClick={remove} className="text-xs text-blood-bright uppercase tracking-[0.15em]">
-          Remove
-        </button>
-      )}
-    </div>
-  );
-};
-
-const emptyDraft: GMItemDraft = {
-  code: '',
-  name: '',
-  category: '',
-  description: '',
-  effect: '',
-  targetsPlayer: false,
-  hfEffect: 0,
-  btSelf: 0,
-  btFromTarget: 0,
-  btDeductTarget: 0,
-  quizBtPct: 0,
-  doubleGameBt: false,
-  immune: false,
-  reflect: false,
-  stripResistance: false,
-};
-
-const field = 'rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone text-sm';
-
-// GM Items tab: create/delete catalog items, assign them to players, and
-// review/remove holdings.
+// GM Items tab: this Toast's included items — assign them to players and
+// review/transfer/remove holdings. The catalog itself (creating/editing/
+// deleting items, reference photos) is shared content, edited only by super
+// users — see the Super Admin dashboard.
 export const ItemsSection = () => {
   const [items, setItems] = useState<GMItem[]>([]);
   const [players, setPlayers] = useState<GMPlayer[]>([]);
   const [held, setHeld] = useState<GMPlayerItem[]>([]);
   const [playerId, setPlayerId] = useState('');
   const [itemId, setItemId] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -238,21 +122,6 @@ export const ItemsSection = () => {
     }
   };
 
-  const deleteItem = async (it: GMItem) => {
-    const holders = held.filter((h) => h.itemName === it.name).length;
-    const msg = holders
-      ? `Delete "${it.name}"? It is held by ${holders} player(s); those assignments will be removed too.`
-      : `Delete "${it.name}" from the catalog?`;
-    if (!window.confirm(msg)) return;
-    setBusy(true);
-    try {
-      await gmDeleteItem(it.id);
-      load();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading) return <p className="text-bone/50">Loading items…</p>;
 
   // Group holdings by owner for a readable review list.
@@ -269,8 +138,6 @@ export const ItemsSection = () => {
       <p className="rounded-md border border-gold/50 bg-gold/10 p-3 text-sm text-bone/90">
         ⚠️ Trading items is allowed, but must be recorded by a GM (use “Transfer” on a holding).
       </p>
-
-      <NewItemForm busy={busy} onCreated={load} />
 
       <Card title="Assign an item">
         <div className="flex flex-col gap-2">
@@ -320,7 +187,7 @@ export const ItemsSection = () => {
         </div>
       </Card>
 
-      <Card title={`Catalog (${sortedItems.length})`}>
+      <Card title={`Catalog (${sortedItems.length}) — included in this Toast`}>
         <button
           onClick={() => setCatalogOpen((o) => !o)}
           className="text-xs text-gold uppercase tracking-[0.15em] mb-2"
@@ -344,6 +211,13 @@ export const ItemsSection = () => {
             {catalogFiltered.map((it) => (
               <div key={it.id} className="border-b border-blood/15 last:border-0 pb-1.5">
                 <div className="flex items-center gap-2">
+                  {it.hasPhoto && (
+                    <PhotoThumb
+                      src={itemPhotoUrl(it.id)}
+                      alt={it.name}
+                      className="w-12 h-12 rounded object-cover border border-blood/40 shrink-0"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-bone text-sm">
                       {it.name}
@@ -355,42 +229,15 @@ export const ItemsSection = () => {
                       {it.targetsPlayer && <span className="ml-2 text-[10px] uppercase tracking-[0.15em] text-blood-bright">targeted</span>}
                     </p>
                     {effectTag(it) && <p className="text-xs text-gold/80">{effectTag(it)}</p>}
-                    <div className="mt-1.5">
-                      <ItemPhoto item={it} onChanged={load} />
-                    </div>
                   </div>
-                  <button
-                    onClick={() => setEditingId((cur) => (cur === it.id ? null : it.id))}
-                    disabled={busy}
-                    className="shrink-0 text-xs text-gold uppercase tracking-[0.15em] disabled:opacity-40"
-                  >
-                    {editingId === it.id ? 'Close' : 'Edit'}
-                  </button>
-                  <button
-                    onClick={() => deleteItem(it)}
-                    disabled={busy}
-                    className="shrink-0 text-xs text-blood-bright uppercase tracking-[0.15em] disabled:opacity-40"
-                  >
-                    Delete
-                  </button>
                 </div>
-                {editingId === it.id && (
-                  <div className="mt-2">
-                    <ItemForm
-                      initial={toDraft(it)}
-                      submitLabel="Save changes"
-                      onSubmit={(draft) => gmUpdateItem(it.id, draft)}
-                      onDone={() => {
-                        setEditingId(null);
-                        load();
-                      }}
-                    />
-                  </div>
-                )}
               </div>
             ))}
           </div>
         )}
+        <p className="mt-2 text-[11px] text-bone/40">
+          To add, edit, delete, or photograph catalog items, use the Super Admin dashboard.
+        </p>
       </Card>
 
       {owners.length === 0 ? (
@@ -520,174 +367,3 @@ const effectTag = (it: {
   if (it.stripResistance) parts.push('strip resistance');
   return parts.join(' · ');
 };
-
-const toDraft = (it: GMItem): GMItemDraft => {
-  const { id: _id, hasPhoto: _p, ...rest } = it;
-  return rest;
-};
-
-// Collapsible wrapper for authoring a brand-new item.
-const NewItemForm = ({ busy, onCreated }: { busy: boolean; onCreated: () => void }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <Card title="Add a new item">
-      <button onClick={() => setOpen((o) => !o)} className="text-xs text-gold uppercase tracking-[0.15em]">
-        {open ? '▾ Hide form' : '▸ New item'}
-      </button>
-      {open && (
-        <div className="mt-3">
-          <ItemForm
-            initial={emptyDraft}
-            submitLabel="Create item"
-            resetOnDone
-            disabled={busy}
-            onSubmit={(draft) => gmCreateItem(draft)}
-            onDone={onCreated}
-          />
-        </div>
-      )}
-    </Card>
-  );
-};
-
-// Shared create/edit form. onSubmit performs the API call; onDone refreshes.
-const ItemForm = ({
-  initial,
-  submitLabel,
-  onSubmit,
-  onDone,
-  resetOnDone,
-  disabled,
-}: {
-  initial: GMItemDraft;
-  submitLabel: string;
-  onSubmit: (draft: GMItemDraft) => Promise<unknown>;
-  onDone: () => void;
-  resetOnDone?: boolean;
-  disabled?: boolean;
-}) => {
-  const [draft, setDraft] = useState<GMItemDraft>(initial);
-  const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const set = <K extends keyof GMItemDraft>(k: K, v: GMItemDraft[K]) =>
-    setDraft((d) => ({ ...d, [k]: v }));
-  const num = (k: keyof GMItemDraft) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    set(k, (Number(e.target.value) || 0) as never);
-
-  const submit = async () => {
-    if (!draft.name.trim()) {
-      setNote('Name is required.');
-      return;
-    }
-    setSaving(true);
-    setNote(null);
-    try {
-      await onSubmit(draft);
-      if (resetOnDone) setDraft(emptyDraft);
-      onDone();
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Save failed.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <input
-        className={field}
-        placeholder="Name (required)"
-        value={draft.name}
-        onChange={(e) => set('name', e.target.value)}
-      />
-      <input
-        className={field}
-        placeholder="Category (e.g. War, Glory, Protection)"
-        value={draft.category}
-        onChange={(e) => set('category', e.target.value)}
-      />
-      <textarea
-        className={field}
-        rows={2}
-        placeholder="Description (flavor, shown to the player)"
-        value={draft.description}
-        onChange={(e) => set('description', e.target.value)}
-      />
-      <input
-        className={field}
-        placeholder="Effect text (shown to the player)"
-        value={draft.effect}
-        onChange={(e) => set('effect', e.target.value)}
-      />
-      <label className="flex items-center gap-2 text-sm text-bone/80">
-        <input
-          type="checkbox"
-          checked={draft.targetsPlayer}
-          onChange={(e) => set('targetsPlayer', e.target.checked)}
-        />
-        Targets another player (shows a target picker)
-      </label>
-
-      <p className="text-[11px] uppercase tracking-[0.15em] text-gold mt-2">Auto-applied effects</p>
-      <div className="grid grid-cols-2 gap-2">
-        <NumIn label="House Favor" v={draft.hfEffect} onChange={num('hfEffect')} />
-        <NumIn label="Flat BT (self)" v={draft.btSelf} onChange={num('btSelf')} />
-        <NumIn label="Steal BT from target" v={draft.btFromTarget} onChange={num('btFromTarget')} />
-        <NumIn label="Deduct BT from target" v={draft.btDeductTarget} onChange={num('btDeductTarget')} />
-        <NumIn label="Quiz BT bonus %" v={draft.quizBtPct} onChange={num('quizBtPct')} />
-      </div>
-      <div className="flex flex-col gap-1.5 mt-1">
-        <Chk label="Double game BT" v={draft.doubleGameBt} onChange={(v) => set('doubleGameBt', v)} />
-        <Chk label="Immune to incoming steals/deducts" v={draft.immune} onChange={(v) => set('immune', v)} />
-        <Chk label="Reflect incoming loss to attacker" v={draft.reflect} onChange={(v) => set('reflect', v)} />
-        <Chk label="Strip target's resistance" v={draft.stripResistance} onChange={(v) => set('stripResistance', v)} />
-      </div>
-
-      <div className="flex items-center gap-3 mt-2">
-        <button
-          onClick={submit}
-          disabled={saving || disabled}
-          className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
-        >
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-        {note && <span className="text-bone/60 text-sm">{note}</span>}
-      </div>
-      <p className="text-[11px] text-bone/40">
-        Steal/deduct effects need "Targets another player" checked, and the target is chosen by the
-        player (or a GM) in their inventory before the quiz locks.
-      </p>
-    </div>
-  );
-};
-
-const NumIn = ({
-  label,
-  v,
-  onChange,
-}: {
-  label: string;
-  v: number;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}) => (
-  <label className="flex flex-col gap-1 text-[11px] text-bone/60">
-    {label}
-    <input type="number" className={`${field} text-center`} value={v} onChange={onChange} />
-  </label>
-);
-
-const Chk = ({
-  label,
-  v,
-  onChange,
-}: {
-  label: string;
-  v: boolean;
-  onChange: (v: boolean) => void;
-}) => (
-  <label className="flex items-center gap-2 text-sm text-bone/80">
-    <input type="checkbox" checked={v} onChange={(e) => onChange(e.target.checked)} />
-    {label}
-  </label>
-);

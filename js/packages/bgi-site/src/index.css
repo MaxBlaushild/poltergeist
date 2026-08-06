@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-bgi-paper text-bgi-ink antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: 'Fraunces', Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-bgi-ink
+      bg-bgi-coral px-6 py-3 font-display font-bold text-bgi-foam shadow-pop
+      transition-all duration-300 ease-bounce
+      hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[7px_7px_0_0_#241a12]
+      active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+      disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-pop;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-bgi-ink
+      bg-white px-5 py-2.5 font-display font-bold text-bgi-ink shadow-pop-sm
+      transition-all duration-300 ease-bounce
+      hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-bgi-foam hover:shadow-[5px_5px_0_0_#241a12]
+      active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-bgi-ink/15
+      text-bgi-ink transition-all duration-200 ease-bounce hover:scale-110 hover:border-bgi-ink hover:bg-bgi-foam;
+  }
+
+  .card {
+    @apply rounded-[1.5rem] border-2 border-bgi-ink/10 bg-white transition-all duration-300 ease-bounce;
+  }
+
+  .card-hover {
+    @apply hover:-translate-y-1.5 hover:border-bgi-ink hover:shadow-pop;
+  }
+
+  .input-field {
+    @apply w-full rounded-2xl border-2 border-bgi-ink/15 bg-white px-3.5 py-2.5 text-bgi-ink
+      transition-all duration-200 focus:border-bgi-ink focus:outline-none focus:ring-4
+      focus:ring-bgi-glow/30;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-bold;
+  }
+
+  .banner-caution {
+    @apply rounded-2xl border-2 border-bgi-coral/40 bg-bgi-coral/10 px-4 py-3 text-sm text-bgi-ink;
+  }
+}
+
+input[type='range'] {
+  accent-color: theme('colors.bgi.coral');
+}
+
+::selection {
+  background-color: theme('colors.bgi.glow');
+  color: theme('colors.bgi.ink');
+}

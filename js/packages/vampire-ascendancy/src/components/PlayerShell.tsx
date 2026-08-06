@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { getMe, getToken, clearToken, ApiError } from '../api';
 import type { MeResponse } from '../types';
 import { Summons } from './Summons';
@@ -38,6 +38,8 @@ const KNOWN_VIEWS: View[] = ['summons', ...TABS.map((t) => t.id)];
 // PlayerShell owns the token, the /me poll, and the top navigation. The screens
 // are presentational and read from the shared state.
 export const PlayerShell = () => {
+  const { instanceId } = useParams();
+  const loginPath = `/e/${instanceId}/login`;
   const token = getToken();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export const PlayerShell = () => {
   }, [token]);
 
   // No token (or it just went stale) → send them to the login page.
-  if (!token || error === 'invalid-token') return <Navigate to="/login" replace />;
+  if (!token || error === 'invalid-token') return <Navigate to={loginPath} replace />;
 
   if (loading) return <Centered>Summoning your dossier…</Centered>;
   if (error || !me) {
@@ -111,7 +113,7 @@ export const PlayerShell = () => {
 
   const logout = () => {
     clearToken();
-    navigate('/login', { replace: true });
+    navigate(loginPath, { replace: true });
   };
 
   // Show a GM broadcast as a takeover until this player dismisses it.

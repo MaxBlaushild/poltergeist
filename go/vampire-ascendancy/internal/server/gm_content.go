@@ -2,16 +2,18 @@ package server
 
 import (
 	"net/http"
-	"strings"
 
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-// GET /gm/characters/:id — a character's full editable content (bios, secrets,
-// missions, portrait) plus the real player name from its active slot.
+// GET /gm/characters/:id — a character's full content (bios, secrets,
+// missions — shared, edited only by super users, see GET
+// /admin/characters/:id) plus this Toast's portrait/sigil and the real
+// player name from its active slot, both of which ARE per-instance and
+// editable here.
 func (s *server) gmGetCharacter(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
@@ -28,8 +30,18 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		return
 	}
 
+	ic, err := v.GetInstanceCharacter(ctx, instanceID, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sigil, imageURL := "", ""
+	if ic != nil {
+		sigil, imageURL = ic.Sigil, ic.ImageURL
+	}
+
 	playerName := ""
-	if slot, _ := v.GetActivePlayerByCharacterID(ctx, id); slot != nil {
+	if slot, _ := v.GetActivePlayerByCharacterID(ctx, instanceID, id); slot != nil {
 		playerName = slot.GuestLabel
 	}
 
@@ -57,139 +69,36 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"houseId":         c.HouseID,
 		"preEventInfo":    c.PreEventInfo,
 		"postAct1Context": c.PostAct1Context,
-		"imageUrl":        c.ImageURL,
-		"sigil":           c.Password,
+		"imageUrl":        imageURL,
+		"sigil":           sigil,
 		"playerName":      playerName,
 		"secrets":         secrets,
 		"missions":        missions,
 	})
 }
 
-// PUT /gm/characters/:id — save the character editor: core fields, secrets and
-// missions (replaced wholesale), and the player name on its active slot.
-func (s *server) gmUpdateCharacter(ctx *gin.Context) {
+// PUT /gm/characters/:id/portrait — set this Toast's portrait for a
+// character. The only character edit a Host/Co-Host can make directly; bios,
+// secrets, and missions are shared content edited only by super users (see
+// PUT /admin/characters/:id).
+func (s *server) gmSetCharacterPortrait(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
 		return
 	}
-
 	var body struct {
-		Name            string  `json:"name"`
-		Title           string  `json:"title"`
-		RoleType        string  `json:"roleType"`
-		HouseID         *string `json:"houseId"`
-		PreEventInfo    string  `json:"preEventInfo"`
-		PostAct1Context string  `json:"postAct1Context"`
-		ImageURL        string  `json:"imageUrl"`
-		PlayerName      string  `json:"playerName"`
-		Secrets         []string `json:"secrets"`
-		Missions        []struct {
-			Tier         string `json:"tier"`
-			RewardBt     int    `json:"rewardBt"`
-			Prompt       string `json:"prompt"`
-			AnswerFormat string `json:"answerFormat"`
-		} `json:"missions"`
+		ImageURL string `json:"imageUrl"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(body.Name) == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
-	}
-
-	v := s.dbClient.Vampire()
-	fields := map[string]interface{}{
-		"name":              body.Name,
-		"title":             body.Title,
-		"role_type":         body.RoleType,
-		"pre_event_info":    body.PreEventInfo,
-		"post_act1_context": body.PostAct1Context,
-		"image_url":         body.ImageURL,
-	}
-	if body.HouseID != nil {
-		if *body.HouseID == "" {
-			fields["house_id"] = nil
-		} else {
-			hid, err := uuid.Parse(*body.HouseID)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid house id"})
-				return
-			}
-			fields["house_id"] = hid
-		}
-	}
-	if err := v.UpdateCharacter(ctx, id, fields); err != nil {
+	if err := s.dbClient.Vampire().SetInstanceCharacterImageURL(ctx, instanceID, id, body.ImageURL); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	secrets := make([]models.VampireSecret, 0, len(body.Secrets))
-	for _, b := range body.Secrets {
-		if strings.TrimSpace(b) == "" {
-			continue
-		}
-		secrets = append(secrets, models.VampireSecret{Ordinal: len(secrets) + 1, Body: b})
-	}
-	if err := v.ReplaceSecrets(ctx, id, secrets); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	missions := make([]models.VampireMission, 0, len(body.Missions))
-	for _, m := range body.Missions {
-		if strings.TrimSpace(m.Prompt) == "" {
-			continue
-		}
-		tier := m.Tier
-		if tier == "" {
-			tier = "easy"
-		}
-		missions = append(missions, models.VampireMission{
-			Ordinal:      len(missions) + 1,
-			Tier:         tier,
-			RewardBT:     m.RewardBt,
-			Prompt:       m.Prompt,
-			AnswerFormat: m.AnswerFormat,
-		})
-	}
-	if err := v.ReplaceMissions(ctx, id, missions); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Player name lives on the character's active login slot.
-	if slot, _ := v.GetActivePlayerByCharacterID(ctx, id); slot != nil && body.PlayerName != slot.GuestLabel {
-		if err := v.UpdatePlayerAssignment(ctx, slot.ID, slot.CharacterID, body.PlayerName, slot.Active); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	s.logGM(ctx, "update_character", map[string]interface{}{"characterId": id.String(), "name": body.Name})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-// PUT /gm/houses/:id — edit a house's tagline.
-func (s *server) gmUpdateHouse(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid house id"})
-		return
-	}
-	var body struct {
-		Tagline string `json:"tagline"`
-	}
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.dbClient.Vampire().UpdateHouseTagline(ctx, id, body.Tagline); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.logGM(ctx, "update_house", map[string]interface{}{"houseId": id.String()})
+	s.logGM(ctx, "set_character_portrait", map[string]interface{}{"characterId": id.String()})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }

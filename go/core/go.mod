@@ -22,6 +22,8 @@ replace github.com/MaxBlaushild/poltergeist/vampire-ascendancy => ../vampire-asc
 
 replace github.com/MaxBlaushild/poltergeist/reef-site => ../reef-site
 
+replace github.com/MaxBlaushild/poltergeist/bgi-site => ../bgi-site
+
 replace github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
 
 replace github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
@@ -69,6 +71,7 @@ replace github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 replace github.com/MaxBlaushild/poltergeist/pkg/reef => ../pkg/reef
 
 require (
+	github.com/MaxBlaushild/poltergeist/bgi-site v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0
@@ -181,8 +184,6 @@ require (
 	github.com/redis/go-redis/v9 v9.14.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
-	github.com/sendgrid/rest v2.6.9+incompatible // indirect
-	github.com/sendgrid/sendgrid-go v3.13.0+incompatible // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect

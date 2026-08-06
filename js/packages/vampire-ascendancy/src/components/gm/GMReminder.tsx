@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { getGMAuth, gmListGames } from '../../gmApi';
+import { gmListGames } from '../../gmApi';
 import type { GMGame } from '../../gmApi';
 import { formatClock } from '../../theme';
+import { useUserAuth } from '../../userAuth';
 
 const LEAD_MINUTES = 7; // warn this many minutes before a game starts
 const FIRED_KEY = 'vampireGMFired';
@@ -14,7 +15,8 @@ const nowMinutes = () => {
 // minutes out (through the end of its slot), it shows a banner and — if the GM
 // granted permission — fires a browser notification even if the tab is backgrounded.
 export const GMReminder = () => {
-  const { name } = getGMAuth();
+  const { auth } = useUserAuth();
+  const name = auth?.user.name;
   const [games, setGames] = useState<GMGame[]>([]);
   const [, tick] = useState(0);
   const firedRef = useRef<Set<string>>(

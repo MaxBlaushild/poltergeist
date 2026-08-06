@@ -11,6 +11,12 @@ type SecretConfig struct {
 	DbPassword          string
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	// ReefStripeSecretKey/ReefStripeWebhookSecret are reef-site's own,
+	// separate Stripe account — everything else in this service (currently
+	// just travel-angels) keeps using StripeSecretKey/StripeWebhookSecret
+	// above unchanged. See PaymentCheckoutSessionParams.Platform.
+	ReefStripeSecretKey     string
+	ReefStripeWebhookSecret string
 }
 
 type PublicConfig struct {
@@ -56,9 +62,11 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword:          os.Getenv("DB_PASSWORD"),
-			StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
-			StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+			DbPassword:              os.Getenv("DB_PASSWORD"),
+			StripeSecretKey:         os.Getenv("STRIPE_SECRET_KEY"),
+			StripeWebhookSecret:     os.Getenv("STRIPE_WEBHOOK_SECRET"),
+			ReefStripeSecretKey:     os.Getenv("REEF_STRIPE_SECRET_KEY"),
+			ReefStripeWebhookSecret: os.Getenv("REEF_STRIPE_WEBHOOK_SECRET"),
 		},
 		Public: publicCfg,
 	}, nil

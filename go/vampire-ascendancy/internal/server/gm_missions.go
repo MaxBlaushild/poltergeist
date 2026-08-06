@@ -10,13 +10,14 @@ import (
 
 // GET /gm/submissions?status=submitted — the queue GMs work from.
 func (s *server) gmListSubmissions(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	status := ctx.Query("status")
-	details, err := s.dbClient.Vampire().ListSubmissionsDetailed(ctx, status)
+	details, err := s.dbClient.Vampire().ListSubmissionsDetailed(ctx, instanceID, status)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	photoMap, err := s.photoIDsBySubmission(ctx)
+	photoMap, err := s.photoIDsBySubmission(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -52,13 +53,14 @@ func (s *server) gmListSubmissions(ctx *gin.Context) {
 // Blood Bank, where a GM marks it redeemed. Sabotage House Favor is applied once,
 // on the transition into approved.
 func (s *server) gmApproveSubmission(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	subID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission id"})
 		return
 	}
 
-	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, subID)
+	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, instanceID, subID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -89,7 +91,7 @@ func (s *server) gmApproveSubmission(ctx *gin.Context) {
 	}
 
 	gmName := gmNameFromContext(ctx)
-	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, subID, "approved", awarded, gmName); err != nil {
+	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, instanceID, subID, "approved", awarded, gmName); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -99,11 +101,12 @@ func (s *server) gmApproveSubmission(ctx *gin.Context) {
 		// Sabotage missions deduct House Favor from a target house.
 		if mission.SabotageHouseID != nil && mission.SabotageHF > 0 {
 			if err := s.dbClient.Vampire().AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-				HouseID: *mission.SabotageHouseID,
-				Delta:   -float64(mission.SabotageHF),
-				Reason:  "Sabotage mission confirmed",
-				GMName:  gmName,
-				Source:  "mission",
+				InstanceID: instanceID,
+				HouseID:    *mission.SabotageHouseID,
+				Delta:      -float64(mission.SabotageHF),
+				Reason:     "Sabotage mission confirmed",
+				GMName:     gmName,
+				Source:     "mission",
 			}); err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -113,12 +116,13 @@ func (s *server) gmApproveSubmission(ctx *gin.Context) {
 		// Direct the player to the Blood Bank for their payout.
 		pid := sub.PlayerID
 		if err := s.dbClient.Vampire().CreateNotification(ctx, &models.VampireNotification{
-			Title:     "Payout Ready",
-			Body:      "One of your missions has been approved. Visit Ivara at the Blood Bank to collect your Blood Tokens.",
-			Scope:     "player",
-			TargetID:  &pid,
-			CreatedBy: gmName,
-			Active:    true,
+			InstanceID: instanceID,
+			Title:      "Payout Ready",
+			Body:       "One of your missions has been approved. Visit Ivara at the Blood Bank to collect your Blood Tokens.",
+			Scope:      "player",
+			TargetID:   &pid,
+			CreatedBy:  gmName,
+			Active:     true,
 		}); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -136,13 +140,14 @@ func (s *server) gmApproveSubmission(ctx *gin.Context) {
 // Blood Bank. This is where the Blood Tokens are actually logged, so the digital
 // total matches the physical vials handed over. Idempotent.
 func (s *server) gmRedeemSubmission(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	subID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission id"})
 		return
 	}
 
-	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, subID)
+	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, instanceID, subID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -161,16 +166,17 @@ func (s *server) gmRedeemSubmission(ctx *gin.Context) {
 	}
 
 	gmName := gmNameFromContext(ctx)
-	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, subID, "redeemed", sub.AwardedBT, gmName); err != nil {
+	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, instanceID, subID, "redeemed", sub.AwardedBT, gmName); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if err := s.dbClient.Vampire().AddBloodTokens(ctx, &models.VampireBloodTokenLog{
-		PlayerID: sub.PlayerID,
-		Delta:    sub.AwardedBT,
-		Reason:   "mission redeemed",
-		Source:   "mission",
-		GMName:   gmName,
+		InstanceID: instanceID,
+		PlayerID:   sub.PlayerID,
+		Delta:      sub.AwardedBT,
+		Reason:     "mission redeemed",
+		Source:     "mission",
+		GMName:     gmName,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -185,13 +191,14 @@ func (s *server) gmRedeemSubmission(ctx *gin.Context) {
 
 // POST /gm/submissions/:id/reject — send a submission back. Does not touch BT.
 func (s *server) gmRejectSubmission(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	subID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission id"})
 		return
 	}
 
-	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, subID)
+	sub, err := s.dbClient.Vampire().GetSubmissionByID(ctx, instanceID, subID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -202,7 +209,7 @@ func (s *server) gmRejectSubmission(ctx *gin.Context) {
 	}
 
 	gmName := gmNameFromContext(ctx)
-	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, subID, "rejected", 0, gmName); err != nil {
+	if err := s.dbClient.Vampire().UpdateSubmissionStatus(ctx, instanceID, subID, "rejected", 0, gmName); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

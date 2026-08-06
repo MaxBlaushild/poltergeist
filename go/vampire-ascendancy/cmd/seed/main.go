@@ -110,11 +110,21 @@ func main() {
 	filePath := flag.String("file", "seed/characters.json", "Path to the characters.json seed file.")
 	quizFile := flag.String("quiz-file", "seed/quiz.json", "Path to the quiz.json seed file (optional).")
 	itemsFile := flag.String("items-file", "seed/items.json", "Path to the items.json seed file (optional).")
-	fresh := flag.Bool("fresh", false, "Wipe all existing characters and roster before seeding (from-scratch re-upload). Score ledgers are archived first.")
+	fresh := flag.Bool("fresh", false, "Wipe the shared character library before seeding (from-scratch re-upload). Score ledgers are archived first. Affects every instance built on this library.")
+	instanceIDFlag := flag.String("instance-id", "", "Instance (Toast) to provision player slots + sigils for. Character/quiz/item content always seeds the shared library regardless of this flag; player slots and sigils are per-instance and are skipped entirely if this is omitted.")
 
 	cfg, err := config.ParseFlagsAndGetConfig()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	var instanceID *uuid.UUID
+	if *instanceIDFlag != "" {
+		id, err := uuid.Parse(*instanceIDFlag)
+		if err != nil {
+			log.Fatalf("invalid --instance-id: %v", err)
+		}
+		instanceID = &id
 	}
 
 	raw, err := os.ReadFile(*filePath)
@@ -161,17 +171,23 @@ func main() {
 	}
 	log.Printf("upserted %d houses", len(seed.Houses))
 
-	// Existing player slots keyed by character, so slot seeding is idempotent and
-	// never duplicates a slot a GM has since marked inactive (a lookup filtered on
-	// active=true would miss those and re-create them).
-	existingPlayers, err := v.ListPlayers(ctx)
-	if err != nil {
-		log.Fatalf("failed to list players: %v", err)
-	}
+	// Player slots and sigils are per-instance (see MULTI_TENANT_REQUIREMENTS.md);
+	// this seed command only ever touches the shared character/quiz/item library.
+	// Roster seeding from the spreadsheet only runs when --instance-id names
+	// which Toast to provision it for.
 	slotByChar := map[uuid.UUID]models.VampirePlayer{}
-	for _, p := range existingPlayers {
-		if p.CharacterID != nil {
-			slotByChar[*p.CharacterID] = p
+	if instanceID != nil {
+		// Existing player slots keyed by character, so slot seeding is idempotent
+		// and never duplicates a slot a GM has since marked inactive (a lookup
+		// filtered on active=true would miss those and re-create them).
+		existingPlayers, err := v.ListPlayers(ctx, *instanceID)
+		if err != nil {
+			log.Fatalf("failed to list players: %v", err)
+		}
+		for _, p := range existingPlayers {
+			if p.CharacterID != nil {
+				slotByChar[*p.CharacterID] = p
+			}
 		}
 	}
 	slotsCreated, slotsFilled := 0, 0
@@ -190,7 +206,6 @@ func main() {
 			IsOptional:      c.IsOptional,
 			PreEventInfo:    c.PreEventInfo,
 			PostAct1Context: c.PostAct1Context,
-			ImageURL:        c.ImageURL,
 		})
 		if err != nil {
 			log.Fatalf("failed to upsert character %q: %v", c.Name, err)
@@ -226,11 +241,11 @@ func main() {
 			log.Fatalf("failed to replace missions for %q: %v", c.Name, err)
 		}
 
-		// Roster: seed the GM Players tab from the spreadsheet assignment. Create
-		// one login slot per character that has a player name, so GMs open the tab
-		// pre-populated. The name lands in the GM-only guest-label field — it is
-		// never sent to the player app.
-		if c.PlayerName != "" {
+		// Roster (per-instance): seed the GM Players tab from the spreadsheet
+		// assignment, and carry the seed file's default portrait into this
+		// instance if it doesn't already have one. Skipped entirely without
+		// --instance-id, since player slots and portraits are per-instance.
+		if instanceID != nil && c.PlayerName != "" {
 			active := true
 			if c.Active != nil {
 				active = *c.Active
@@ -238,7 +253,7 @@ func main() {
 			if slot, ok := slotByChar[character.ID]; ok {
 				// Only fill an empty label, so we never clobber a day-of GM edit.
 				if slot.GuestLabel == "" {
-					if err := v.UpdatePlayerAssignment(ctx, slot.ID, slot.CharacterID, c.PlayerName, slot.Active); err != nil {
+					if err := v.UpdatePlayerAssignment(ctx, *instanceID, slot.ID, slot.CharacterID, c.PlayerName, slot.Active); err != nil {
 						log.Fatalf("failed to update player slot for %q: %v", c.Name, err)
 					}
 					slotsFilled++
@@ -250,6 +265,7 @@ func main() {
 				}
 				cid := character.ID
 				if err := v.CreatePlayer(ctx, &models.VampirePlayer{
+					InstanceID:  *instanceID,
 					Token:       token,
 					CharacterID: &cid,
 					GuestLabel:  c.PlayerName,
@@ -260,30 +276,40 @@ func main() {
 				slotsCreated++
 			}
 		}
+		if instanceID != nil && c.ImageURL != "" {
+			if ic, err := v.GetInstanceCharacter(ctx, *instanceID, character.ID); err == nil && (ic == nil || ic.ImageURL == "") {
+				if err := v.SetInstanceCharacterImageURL(ctx, *instanceID, character.ID, c.ImageURL); err != nil {
+					log.Fatalf("failed to set default portrait for %q: %v", c.Name, err)
+				}
+			}
+		}
 	}
 
-	// Assign a unique sigil (4-digit PIN) to any character that lacks one.
-	// Existing sigils are preserved so re-running the seed never changes a PIN
-	// the GMs have already handed out.
-	allChars, err := v.ListCharacters(ctx)
-	if err != nil {
-		log.Fatalf("failed to list characters: %v", err)
-	}
-	used := map[string]bool{}
-	for _, c := range allChars {
-		if c.Password != "" {
-			used[c.Password] = true
-		}
-	}
+	// Assign a unique sigil (4-digit PIN) to any of this instance's characters
+	// that lacks one. Existing sigils are preserved so re-running the seed
+	// never changes a PIN the GMs have already handed out. Per-instance, so
+	// skipped without --instance-id.
 	assigned := 0
-	for _, c := range allChars {
-		if c.Password != "" {
-			continue
+	if instanceID != nil {
+		libraryChars, err := v.ListLibraryCharacters(ctx, *instanceID)
+		if err != nil {
+			log.Fatalf("failed to list library characters: %v", err)
 		}
-		if err := v.SetCharacterPassword(ctx, c.ID, uniquePIN(used)); err != nil {
-			log.Fatalf("failed to set sigil for %q: %v", c.Name, err)
+		used := map[string]bool{}
+		for _, c := range libraryChars {
+			if c.Sigil != "" {
+				used[c.Sigil] = true
+			}
 		}
-		assigned++
+		for _, c := range libraryChars {
+			if c.Sigil != "" {
+				continue
+			}
+			if err := v.SetInstanceCharacterSigil(ctx, *instanceID, c.ID, uniquePIN(used)); err != nil {
+				log.Fatalf("failed to set sigil for %q: %v", c.Name, err)
+			}
+			assigned++
+		}
 	}
 
 	// Quiz questions (optional). Authored as a set, so this wholesale-replaces

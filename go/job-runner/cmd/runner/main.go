@@ -131,6 +131,7 @@ func main() {
 	shuffleZoneSeedChallengeProcessor := processors.NewShuffleZoneSeedChallengeProcessor(dbClient)
 	backfillContentZoneKindsProcessor := processors.NewBackfillContentZoneKindsProcessor(dbClient, redisClient, deepPriestClient)
 	generateReefFullProcessor := processors.NewGenerateReefFullProcessor(dbClient, awsClient, cfg.Public)
+	generateBgiSetProcessor := processors.NewGenerateBgiSetProcessor(dbClient, awsClient, cfg.Public)
 
 	// logPolymarketConfiguration(cfg)
 	// polymarketConfigHint := buildPolymarketConfigHint(cfg)
@@ -232,6 +233,7 @@ func main() {
 	mux.Handle(jobs.ShuffleZoneSeedChallengeTaskType, &shuffleZoneSeedChallengeProcessor)
 	mux.Handle(jobs.BackfillContentZoneKindsTaskType, &backfillContentZoneKindsProcessor)
 	mux.Handle(jobs.GenerateReefFullTaskType, generateReefFullProcessor)
+	mux.Handle(jobs.GenerateBgiSetTaskType, generateBgiSetProcessor)
 	mux.Handle(jobs.MonitorPolymarketTradesTaskType, asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		log.Printf("Discarding legacy task %s because Polymarket monitoring is disabled", t.Type())
 		return nil

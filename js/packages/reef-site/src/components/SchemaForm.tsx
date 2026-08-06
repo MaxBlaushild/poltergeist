@@ -7,12 +7,14 @@ interface Props {
   tanks?: TankProfile[];
   errors?: Record<string, string>;
   derived?: Record<string, string>; // read-only computed values (R-4.5), keyed by property name
+  derivedMax?: Record<string, number>; // live-recomputed ceiling for x-derivedBoundFrom fields
+  derivedMin?: Record<string, number>; // live-recomputed floor for the inverse relationship
 }
 
 // R-4.4: "A parameter added to the schema must appear in the UI with no
 // frontend change." This renders entirely from the schema document fetched
 // at runtime — no per-product form is hand-written anywhere in this app.
-export default function SchemaForm({ schema, values, onChange, tanks, errors, derived }: Props) {
+export default function SchemaForm({ schema, values, onChange, tanks, errors, derived, derivedMax, derivedMin }: Props) {
   const propertyNames = Object.keys(schema.properties);
 
   return (
@@ -89,28 +91,44 @@ export default function SchemaForm({ schema, values, onChange, tanks, errors, de
         }
 
         if (typeName === 'number' || typeName === 'integer') {
+          const liveMax = derivedMax?.[name];
+          const liveMin = derivedMin?.[name];
+          const effectiveMax = liveMax !== undefined ? Math.min(prop.maximum ?? liveMax, liveMax) : prop.maximum;
+          const effectiveMin = liveMin !== undefined ? Math.max(prop.minimum ?? liveMin, liveMin) : prop.minimum;
+          const maxConstrained = liveMax !== undefined && effectiveMax === liveMax && liveMax < (prop.maximum ?? Infinity);
+          const minConstrained = liveMin !== undefined && effectiveMin === liveMin && liveMin > (prop.minimum ?? -Infinity);
           return (
             <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
               <div className="flex items-center gap-2">
                 <input
                   type="range"
-                  min={prop.minimum}
-                  max={prop.maximum}
+                  min={effectiveMin}
+                  max={effectiveMax}
                   step={typeName === 'integer' ? 1 : 0.5}
-                  value={Number(values[name] ?? prop.minimum ?? 0)}
+                  value={Number(values[name] ?? effectiveMin ?? 0)}
                   onChange={(e) => onChange(name, Number(e.target.value))}
                   className="flex-1"
                 />
                 <span className="w-20 text-right text-sm tabular-nums">
-                  {Number(values[name] ?? prop.minimum ?? 0)}
+                  {Number(values[name] ?? effectiveMin ?? 0)}
                   {prop['x-unit'] ?? ''}
                 </span>
               </div>
-              {(prop.minimum !== undefined || prop.maximum !== undefined) && (
-                <p className="text-xs text-reef-ink/50 mt-1">
-                  Range: {prop.minimum ?? '–'} to {prop.maximum ?? '–'}
-                  {prop['x-unit'] ?? ''}
+              {maxConstrained || minConstrained ? (
+                <p className="text-xs text-reef-teal mt-1">
+                  {maxConstrained && minConstrained
+                    ? `Between ${liveMin} and ${liveMax} with your other settings.`
+                    : maxConstrained
+                      ? `Max ${liveMax} with your other settings.`
+                      : `Min ${liveMin} with your other settings.`}
                 </p>
+              ) : (
+                (prop.minimum !== undefined || prop.maximum !== undefined) && (
+                  <p className="text-xs text-reef-ink/50 mt-1">
+                    Range: {prop.minimum ?? '–'} to {prop.maximum ?? '–'}
+                    {prop['x-unit'] ?? ''}
+                  </p>
+                )
               )}
             </Field>
           );

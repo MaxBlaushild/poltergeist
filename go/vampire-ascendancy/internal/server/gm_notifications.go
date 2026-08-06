@@ -13,6 +13,7 @@ var validScopes = map[string]bool{"all": true, "house": true, "player": true}
 // POST /gm/notifications — push a full-screen broadcast to everyone, one house,
 // or one player. Becomes the active notification.
 func (s *server) gmPushNotification(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	var body struct {
 		Title    string `json:"title"`
 		Body     string `json:"body"`
@@ -43,19 +44,20 @@ func (s *server) gmPushNotification(ctx *gin.Context) {
 	}
 
 	notif := &models.VampireNotification{
-		Title:     body.Title,
-		Body:      body.Body,
-		Scope:     body.Scope,
-		TargetID:  target,
-		CreatedBy: gmNameFromContext(ctx),
-		Active:    true,
+		InstanceID: instanceID,
+		Title:      body.Title,
+		Body:       body.Body,
+		Scope:      body.Scope,
+		TargetID:   target,
+		CreatedBy:  gmNameFromContext(ctx),
+		Active:     true,
 	}
 	if err := s.dbClient.Vampire().CreateNotification(ctx, notif); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if _, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{
+	if _, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceID, map[string]interface{}{
 		"active_notification_id": notif.ID,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -72,11 +74,12 @@ func (s *server) gmPushNotification(ctx *gin.Context) {
 
 // POST /gm/notifications/clear — dismiss the active broadcast for everyone.
 func (s *server) gmClearNotifications(ctx *gin.Context) {
-	if err := s.dbClient.Vampire().DeactivateAllNotifications(ctx); err != nil {
+	instanceID := instanceIDFromContext(ctx)
+	if err := s.dbClient.Vampire().DeactivateAllNotifications(ctx, instanceID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if _, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{
+	if _, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceID, map[string]interface{}{
 		"active_notification_id": nil,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

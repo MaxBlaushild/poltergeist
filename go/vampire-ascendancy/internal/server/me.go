@@ -14,7 +14,7 @@ import (
 func (s *server) getMe(ctx *gin.Context) {
 	player := playerFromContext(ctx)
 
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := s.dbClient.Vampire().GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -42,7 +42,7 @@ func (s *server) getMe(ctx *gin.Context) {
 	if player.Character != nil {
 		houseID = player.Character.HouseID
 	}
-	notif, err := s.dbClient.Vampire().GetActiveNotificationForPlayer(ctx, player.ID, houseID)
+	notif, err := s.dbClient.Vampire().GetActiveNotificationForPlayer(ctx, player.InstanceID, player.ID, houseID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -74,6 +74,10 @@ func (s *server) getMe(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, resp)
 		return
 	}
+	imageURL := ""
+	if ic, _ := s.dbClient.Vampire().GetInstanceCharacter(ctx, player.InstanceID, character.ID); ic != nil {
+		imageURL = ic.ImageURL
+	}
 
 	charResp := gin.H{
 		"id":           character.ID,
@@ -81,7 +85,7 @@ func (s *server) getMe(ctx *gin.Context) {
 		"title":        character.Title,
 		"roleType":     character.RoleType,
 		"preEventInfo": character.PreEventInfo,
-		"imageUrl":     character.ImageURL,
+		"imageUrl":     imageURL,
 	}
 	if character.House != nil {
 		charResp["house"] = gin.H{"id": character.House.ID, "name": character.House.Name, "tagline": character.House.Tagline}
@@ -98,7 +102,7 @@ func (s *server) getMe(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		photoMap, err := s.photoIDsBySubmission(ctx)
+		photoMap, err := s.photoIDsBySubmission(ctx, player.InstanceID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

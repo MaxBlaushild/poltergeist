@@ -226,7 +226,7 @@ func TestResolveTally_StripResistanceOverridesImmune(t *testing.T) {
 func TestResolveTally_OmitsInactiveIncludesTargeted(t *testing.T) {
 	att := mkPlayer("Attacker", "Ashvale")
 	silent := mkPlayer("Silent", "Ashvale") // no submission, but gets stolen from
-	ghost := mkPlayer("Ghost", "Ashvale")    // no submission, no items -> omitted
+	ghost := mkPlayer("Ghost", "Ashvale")   // no submission, no items -> omitted
 	subs := []db.QuizSubmissionDetail{onHandSub(att.ID, "0")}
 	craven := models.VampireItem{Name: "Craven Edge", BTFromTarget: 8}
 	rows := resolveTally([]models.VampirePlayer{att, silent, ghost}, subs, nil,

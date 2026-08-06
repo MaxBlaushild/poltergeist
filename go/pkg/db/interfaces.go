@@ -191,6 +191,24 @@ type DbClient interface {
 	ReefOrder() ReefOrderHandle
 	ReefEvent() ReefEventHandle
 
+	// bgi-site (go/bgi-site) — same reasoning as reef-site's block above:
+	// these live here, not in the bgi module's own internal package, so
+	// go/job-runner can also reach them.
+	BgiGame() BgiGameHandle
+	BgiExpansion() BgiExpansionHandle
+	BgiBoxProfile() BgiBoxProfileHandle
+	BgiSleeveProfile() BgiSleeveProfileHandle
+	BgiComponentManifest() BgiComponentManifestHandle
+	BgiTrayTemplate() BgiTrayTemplateHandle
+	BgiProduct() BgiProductHandle
+	BgiParameterSchema() BgiParameterSchemaHandle
+	BgiConfiguration() BgiConfigurationHandle
+	BgiSetResolution() BgiSetResolutionHandle
+	BgiTraySliceResult() BgiTraySliceResultHandle
+	BgiGenerationJob() BgiGenerationJobHandle
+	BgiOrder() BgiOrderHandle
+	BgiEvent() BgiEventHandle
+
 	Exec(ctx context.Context, q string) error
 }
 
@@ -253,116 +271,265 @@ type ReefEventHandle interface {
 	CountRejectionsByRule(ctx context.Context, since time.Time) ([]RuleRejectionCount, error)
 }
 
+type BgiGameHandle interface {
+	FindBySlug(ctx context.Context, slug string) (*models.BgiGame, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiGame, error)
+	FindActive(ctx context.Context) ([]models.BgiGame, error)
+}
+
+type BgiExpansionHandle interface {
+	FindByGameID(ctx context.Context, gameID uuid.UUID) ([]models.BgiExpansion, error)
+}
+
+type BgiBoxProfileHandle interface {
+	FindByGameID(ctx context.Context, gameID uuid.UUID) ([]models.BgiBoxProfile, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiBoxProfile, error)
+}
+
+type BgiSleeveProfileHandle interface {
+	FindAll(ctx context.Context) ([]models.BgiSleeveProfile, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiSleeveProfile, error)
+}
+
+type BgiComponentManifestHandle interface {
+	FindByGameID(ctx context.Context, gameID uuid.UUID, expansionIDs []uuid.UUID) ([]models.BgiComponentManifest, error)
+}
+
+type BgiTrayTemplateHandle interface {
+	FindBySlug(ctx context.Context, slug string) (*models.BgiTrayTemplate, error)
+	FindByComponentType(ctx context.Context, componentType string) (*models.BgiTrayTemplate, error)
+}
+
+type BgiProductHandle interface {
+	FindBySlug(ctx context.Context, slug string) (*models.BgiProduct, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiProduct, error)
+	FindByGameID(ctx context.Context, gameID uuid.UUID) (*models.BgiProduct, error)
+	FindActive(ctx context.Context) ([]models.BgiProduct, error)
+}
+
+type BgiParameterSchemaHandle interface {
+	FindActiveByProductID(ctx context.Context, productID uuid.UUID) (*models.BgiParameterSchema, error)
+}
+
+type BgiConfigurationHandle interface {
+	Create(ctx context.Context, cfg *models.BgiConfiguration) (*models.BgiConfiguration, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiConfiguration, error)
+	Update(ctx context.Context, cfg *models.BgiConfiguration) error
+}
+
+type BgiSetResolutionHandle interface {
+	FindByConfigHash(ctx context.Context, configHash string) (*models.BgiSetResolution, error)
+	Create(ctx context.Context, res *models.BgiSetResolution) error
+}
+
+type BgiTraySliceResultHandle interface {
+	FindByGeometryHash(ctx context.Context, geometryHash string) (*models.BgiTraySliceResult, error)
+	Create(ctx context.Context, result *models.BgiTraySliceResult) error
+	Upsert(ctx context.Context, result *models.BgiTraySliceResult) error
+}
+
+type BgiGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.BgiGenerationJob) (*models.BgiGenerationJob, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiGenerationJob, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status string, errMsg string) error
+	IncrementAttempts(ctx context.Context, id uuid.UUID) error
+}
+
+type BgiOrderHandle interface {
+	Create(ctx context.Context, order *models.BgiOrder) (*models.BgiOrder, error)
+	FindByToken(ctx context.Context, token string) (*models.BgiOrder, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BgiOrder, error)
+	FindByStripeSessionID(ctx context.Context, sessionID string) (*models.BgiOrder, error)
+	Update(ctx context.Context, order *models.BgiOrder) error
+}
+
+type BgiEventHandle interface {
+	Create(ctx context.Context, event *models.BgiEvent) error
+}
+
 type TradesARGlassesLeadHandle interface {
 	CreateOrGetByEmail(ctx context.Context, lead *models.TradesARGlassesLead) (bool, error)
 	ListRecent(ctx context.Context, limit int) ([]models.TradesARGlassesLead, error)
 }
 
 // VampireHandle is the consolidated data access for the Vampire Ascendancy
-// (The Crimson Toast) event app. All vampire_* table access goes through here.
+// (The Crimson Toast) event app. All vampire_* table access goes through
+// here. See go/vampire-ascendancy/docs/MULTI_TENANT_REQUIREMENTS.md: an
+// "instance" is one group's run of the event ("Toast" in user-facing copy).
+// The content library (houses, characters, secrets, missions, items, quiz
+// questions) is shared and global; everything else is scoped to one
+// instance via an instanceID parameter.
 type VampireHandle interface {
-	// Houses
+	// Instances ("Toasts")
+	CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID) (*models.VampireInstance, error)
+	GetInstanceByID(ctx context.Context, id uuid.UUID) (*models.VampireInstance, error)
+	ListInstancesForUser(ctx context.Context, userID uuid.UUID) ([]models.VampireInstance, error)
+	// SeedInstanceLibrary includes everything currently in the shared library
+	// for an instance. Idempotent.
+	SeedInstanceLibrary(ctx context.Context, instanceID uuid.UUID) error
+
+	// Administrators ("Host" = owner, "Co-Host" = admin)
+	AddInstanceAdmin(ctx context.Context, instanceID, userID uuid.UUID, role string) (*models.VampireInstanceAdmin, error)
+	ListInstanceAdmins(ctx context.Context, instanceID uuid.UUID) ([]models.VampireInstanceAdmin, error)
+	GetInstanceAdmin(ctx context.Context, instanceID, userID uuid.UUID) (*models.VampireInstanceAdmin, error)
+	// RemoveInstanceAdmin returns a *ConflictError if userID is the Host.
+	RemoveInstanceAdmin(ctx context.Context, instanceID, userID uuid.UUID) error
+	// TransferInstanceOwnership returns a *ConflictError if fromUserID isn't
+	// the current Host or toUserID isn't already a Co-Host.
+	TransferInstanceOwnership(ctx context.Context, instanceID, fromUserID, toUserID uuid.UUID) error
+
+	// Admin invites ("Invite a Co-Host")
+	CreateInstanceAdminInvite(ctx context.Context, instanceID uuid.UUID, email string, invitedBy uuid.UUID, token string, expiresAt time.Time) (*models.VampireInstanceAdminInvite, error)
+	GetInstanceAdminInviteByToken(ctx context.Context, token string) (*models.VampireInstanceAdminInvite, error)
+	ListPendingInstanceAdminInvites(ctx context.Context, instanceID uuid.UUID) ([]models.VampireInstanceAdminInvite, error)
+	DeleteInstanceAdminInvite(ctx context.Context, id uuid.UUID) error
+	// AcceptInstanceAdminInvite returns a *ConflictError if the token is
+	// unknown, already used, or expired. Returns the instance id on success.
+	AcceptInstanceAdminInvite(ctx context.Context, token string, userID uuid.UUID) (uuid.UUID, error)
+
+	// Super users — the only accounts allowed to edit the shared content
+	// library (characters, houses, items, quiz questions).
+	AddSuperUser(ctx context.Context, userID uuid.UUID, createdBy *uuid.UUID) error
+	RemoveSuperUser(ctx context.Context, userID uuid.UUID) error
+	IsSuperUser(ctx context.Context, userID uuid.UUID) (bool, error)
+	ListSuperUsers(ctx context.Context) ([]models.VampireSuperUser, error)
+	LogSuperUserAction(ctx context.Context, userID uuid.UUID, action string, payload []byte) error
+
+	// Houses — shared global content; not toggled per instance (a house is
+	// implicitly "in" an instance if any of its characters are included).
 	ListHouses(ctx context.Context) ([]models.VampireHouse, error)
 	GetHouseByID(ctx context.Context, id uuid.UUID) (*models.VampireHouse, error)
-	ListCharactersByHouse(ctx context.Context, houseID uuid.UUID) ([]models.VampireCharacter, error)
-	ListHouseFavorLog(ctx context.Context, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error)
+	ListCharactersByHouse(ctx context.Context, instanceID, houseID uuid.UUID) ([]models.VampireCharacter, error)
+	ListHouseFavorLog(ctx context.Context, instanceID, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error)
 	UpsertHouse(ctx context.Context, name string, sortOrder int, tagline string) (*models.VampireHouse, error)
 	UpdateHouseTagline(ctx context.Context, id uuid.UUID, tagline string) error
 
-	// Characters / secrets / missions
+	// Characters / secrets / missions — shared global content; authoring
+	// methods below are global/ops-only. Per-instance inclusion + sigil +
+	// portrait are the "Content library: characters" methods further down.
 	UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error)
 	UpdateCharacter(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error
 	GetCharacterByName(ctx context.Context, name string) (*models.VampireCharacter, error)
 	GetCharacterByID(ctx context.Context, id uuid.UUID) (*models.VampireCharacter, error)
 	ListCharacters(ctx context.Context) ([]models.VampireCharacter, error)
-	SetCharacterPassword(ctx context.Context, characterID uuid.UUID, password string) error
-	GetActivePlayerByCharacterID(ctx context.Context, characterID uuid.UUID) (*models.VampirePlayer, error)
+	GetActivePlayerByCharacterID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampirePlayer, error)
 	ReplaceSecrets(ctx context.Context, characterID uuid.UUID, secrets []models.VampireSecret) error
 	ReplaceMissions(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error
 	GetMissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMission, error)
+	// WipeCharactersAndRoster clears the global character library (cascades
+	// secrets/missions and every instance's inclusion rows for them) for a
+	// from-scratch content re-seed. Score ledgers are archived first.
+	WipeCharactersAndRoster(ctx context.Context) error
+
+	// Content library: characters — per-instance inclusion, sigil, portrait.
+	ListLibraryCharacters(ctx context.Context, instanceID uuid.UUID) ([]LibraryCharacter, error)
+	ListIncludedCharacters(ctx context.Context, instanceID uuid.UUID) ([]models.VampireCharacter, error)
+	GetIncludedCharacterByID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireCharacter, error)
+	GetInstanceCharacter(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampireInstanceCharacter, error)
+	SetInstanceCharacterSigil(ctx context.Context, instanceID, characterID uuid.UUID, sigil string) error
+	SetInstanceCharacterImageURL(ctx context.Context, instanceID, characterID uuid.UUID, url string) error
+	// SetCharacterIncluded returns a *ConflictError when un-including a
+	// character that has an active player assigned in this instance.
+	SetCharacterIncluded(ctx context.Context, instanceID, characterID uuid.UUID, included bool) error
 
 	// Players
 	CreatePlayer(ctx context.Context, p *models.VampirePlayer) error
+	// GetPlayerByToken is deliberately not instance-scoped — tokens are
+	// globally unique; callers must check the returned player's InstanceID
+	// against the request's instance themselves.
 	GetPlayerByToken(ctx context.Context, token string) (*models.VampirePlayer, error)
-	GetPlayerByID(ctx context.Context, id uuid.UUID) (*models.VampirePlayer, error)
-	ListPlayers(ctx context.Context) ([]models.VampirePlayer, error)
-	UpdatePlayerAssignment(ctx context.Context, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
+	GetPlayerByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampirePlayer, error)
+	ListPlayers(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayer, error)
+	UpdatePlayerAssignment(ctx context.Context, instanceID, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
 
 	// Mission submissions
-	UpsertMissionSubmission(ctx context.Context, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error)
+	UpsertMissionSubmission(ctx context.Context, instanceID, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error)
 	ListSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireMissionSubmission, error)
-	ListSubmissions(ctx context.Context, statusFilter string) ([]models.VampireMissionSubmission, error)
-	ListSubmissionsDetailed(ctx context.Context, statusFilter string) ([]SubmissionDetail, error)
-	GetSubmissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMissionSubmission, error)
-	UpdateSubmissionStatus(ctx context.Context, id uuid.UUID, status string, awardedBT int, verifiedBy string) error
+	ListSubmissions(ctx context.Context, instanceID uuid.UUID, statusFilter string) ([]models.VampireMissionSubmission, error)
+	ListSubmissionsDetailed(ctx context.Context, instanceID uuid.UUID, statusFilter string) ([]SubmissionDetail, error)
+	GetSubmissionByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampireMissionSubmission, error)
+	UpdateSubmissionStatus(ctx context.Context, instanceID, id uuid.UUID, status string, awardedBT int, verifiedBy string) error
 
-	// Submission photos
+	// Submission photos — not directly instance-scoped; resolve the owning
+	// submission via GetSubmissionByID first if a scoping check is needed.
 	AddSubmissionPhoto(ctx context.Context, submissionID uuid.UUID, contentType string, data []byte) (uuid.UUID, error)
 	DeletePhotosForSubmission(ctx context.Context, submissionID uuid.UUID) error
 	GetPhoto(ctx context.Context, id uuid.UUID) (*models.VampireSubmissionPhoto, error)
-	ListPhotoRefs(ctx context.Context) ([]PhotoRef, error)
+	ListPhotoRefs(ctx context.Context, instanceID uuid.UUID) ([]PhotoRef, error)
 
 	// House Favor
 	AddHouseFavor(ctx context.Context, entry *models.VampireHouseFavorLedger) error
-	Leaderboard(ctx context.Context) ([]HouseFavorStanding, error)
+	Leaderboard(ctx context.Context, instanceID uuid.UUID) ([]HouseFavorStanding, error)
 
 	// Blood Tokens
 	AddBloodTokens(ctx context.Context, entry *models.VampireBloodTokenLog) error
-	BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodTokenTotal, error)
-	BloodTokenTotalsBySource(ctx context.Context, source string) ([]BloodTokenTotal, error)
-	HouseFavorBySource(ctx context.Context) ([]HouseFavorSourceTotal, error)
+	BloodTokenTotalsByPlayer(ctx context.Context, instanceID uuid.UUID) ([]BloodTokenTotal, error)
+	BloodTokenTotalsBySource(ctx context.Context, instanceID uuid.UUID, source string) ([]BloodTokenTotal, error)
+	HouseFavorBySource(ctx context.Context, instanceID uuid.UUID) ([]HouseFavorSourceTotal, error)
 
-	// Game state
-	GetGameState(ctx context.Context) (*models.VampireGameState, error)
-	UpdateGameState(ctx context.Context, updates map[string]interface{}) (*models.VampireGameState, error)
+	// Game state — one row per instance (instance_id is the primary key).
+	GetGameState(ctx context.Context, instanceID uuid.UUID) (*models.VampireGameState, error)
+	UpdateGameState(ctx context.Context, instanceID uuid.UUID, updates map[string]interface{}) (*models.VampireGameState, error)
 
 	// Notifications
 	CreateNotification(ctx context.Context, n *models.VampireNotification) error
-	DeactivateAllNotifications(ctx context.Context) error
-	ListActiveNotifications(ctx context.Context) ([]models.VampireNotification, error)
-	GetActiveNotificationForPlayer(ctx context.Context, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error)
+	DeactivateAllNotifications(ctx context.Context, instanceID uuid.UUID) error
+	ListActiveNotifications(ctx context.Context, instanceID uuid.UUID) ([]models.VampireNotification, error)
+	GetActiveNotificationForPlayer(ctx context.Context, instanceID, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error)
 
-	// Quiz
+	// Quiz — questions are shared global content (authoring below stays
+	// global/ops-only); per-instance inclusion is the "Content library: quiz
+	// questions" methods further down. Submissions are instance-scoped.
 	ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error)
 	ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	// GetPart1Question is unscoped (content-editor use — see
+	// GetIncludedPart1Question for the play-time equivalent).
 	GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error)
 	ReplaceQuizQuestions(ctx context.Context, questions []models.VampireQuizQuestion) error
 	GetQuizQuestionByID(ctx context.Context, id uuid.UUID) (*models.VampireQuizQuestion, error)
-	ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error)
-	UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
+	ListQuizSubmissionsDetailed(ctx context.Context, instanceID uuid.UUID) ([]QuizSubmissionDetail, error)
+	UpsertQuizSubmission(ctx context.Context, instanceID, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
 	UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error
 	SetQuizSubmissionRationale(ctx context.Context, id uuid.UUID, rationale string) error
 	SetQuizGradeStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error
 	MarkQuizGradeStarted(ctx context.Context, id uuid.UUID) error
 	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
-	ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error)
-	ListPart2Answers(ctx context.Context) ([]Part2Answer, error)
-	DeleteHouseFavorBySource(ctx context.Context, source string) error
+	ListQuizSubmissions(ctx context.Context, instanceID uuid.UUID) ([]models.VampireQuizSubmission, error)
+	ListPart2Answers(ctx context.Context, instanceID uuid.UUID) ([]Part2Answer, error)
+	DeleteHouseFavorBySource(ctx context.Context, instanceID uuid.UUID, source string) error
 	DeleteBloodTokensBySourceForPlayer(ctx context.Context, playerID uuid.UUID, source string) error
 
-	// GM audit log
-	LogGMAction(ctx context.Context, gmName, action string, payload []byte) error
+	// Content library: quiz questions — per-instance inclusion.
+	ListLibraryQuizQuestions(ctx context.Context, instanceID uuid.UUID) ([]LibraryQuizQuestion, error)
+	ListIncludedQuizQuestions(ctx context.Context, instanceID uuid.UUID, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	ListIncludedQuizQuestionsByPart(ctx context.Context, instanceID uuid.UUID, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	GetIncludedPart1Question(ctx context.Context, instanceID uuid.UUID) (*models.VampireQuizQuestion, error)
+	// SetQuizQuestionIncluded returns a *ConflictError when un-including a
+	// question a player has already answered in this instance.
+	SetQuizQuestionIncluded(ctx context.Context, instanceID, questionID uuid.UUID, included bool) error
 
-	// Playtest reset
-	ResetGameProgress(ctx context.Context) error
-	// WipeCharactersAndRoster clears all characters, secrets, missions, and player
-	// slots for a from-scratch content re-seed. Score ledgers are archived first.
-	WipeCharactersAndRoster(ctx context.Context) error
+	// GM audit log
+	LogGMAction(ctx context.Context, instanceID uuid.UUID, gmName, action string, payload []byte) error
+
+	// Playtest reset — scoped to one instance.
+	ResetGameProgress(ctx context.Context, instanceID uuid.UUID) error
 
 	// Physical games
-	ListGames(ctx context.Context) ([]models.VampireGame, error)
-	GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error)
-	UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error)
-	SetGameResult(ctx context.Context, id uuid.UUID, first, second, third []uuid.UUID) error
-	UpdateGame(ctx context.Context, id uuid.UUID, name string, ordinal int) error
-	SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location, assignedGM, runNotes string) error
-	DeleteGame(ctx context.Context, id uuid.UUID) error
-	ClearGameResult(ctx context.Context, id uuid.UUID) error
+	ListGames(ctx context.Context, instanceID uuid.UUID) ([]models.VampireGame, error)
+	GetGameByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampireGame, error)
+	UpsertGame(ctx context.Context, instanceID uuid.UUID, ordinal int, name string) (*models.VampireGame, error)
+	SetGameResult(ctx context.Context, instanceID, id uuid.UUID, first, second, third []uuid.UUID) error
+	UpdateGame(ctx context.Context, instanceID, id uuid.UUID, name string, ordinal int) error
+	SetGameSchedule(ctx context.Context, instanceID, id uuid.UUID, start, end *int, location, assignedGM, runNotes string) error
+	DeleteGame(ctx context.Context, instanceID, id uuid.UUID) error
+	ClearGameResult(ctx context.Context, instanceID, id uuid.UUID) error
 	// DeleteGameAwards reverses the Blood Token / House Favor ledger entries a game
-	// wrote when it was recorded (matched by the game's name).
-	DeleteGameAwards(ctx context.Context, gameName string) error
+	// wrote when it was recorded (matched by the game's name), within one instance.
+	DeleteGameAwards(ctx context.Context, instanceID uuid.UUID, gameName string) error
 
-	// Inventory
+	// Inventory (item catalog) — shared global content; authoring below
+	// stays global/ops-only. Per-instance inclusion is the "Content library:
+	// items" methods further down.
 	ListItems(ctx context.Context) ([]models.VampireItem, error)
 	UpsertItem(ctx context.Context, item *models.VampireItem) error
 	CreateItem(ctx context.Context, item *models.VampireItem) error
@@ -373,11 +540,18 @@ type VampireHandle interface {
 	DeleteItemPhoto(ctx context.Context, itemID uuid.UUID) error
 	ItemPhotoIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListPlayerItems(ctx context.Context, playerID uuid.UUID) ([]models.VampirePlayerItem, error)
-	ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error)
+	ListAllPlayerItems(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayerItem, error)
 	AssignItem(ctx context.Context, playerID, itemID uuid.UUID) (*models.VampirePlayerItem, error)
 	DeletePlayerItem(ctx context.Context, id uuid.UUID) error
 	TransferPlayerItem(ctx context.Context, id, newPlayerID uuid.UUID) error
 	SetPlayerItemTarget(ctx context.Context, id uuid.UUID, targetPlayerID *uuid.UUID) error
+
+	// Content library: items — per-instance inclusion.
+	ListLibraryItems(ctx context.Context, instanceID uuid.UUID) ([]LibraryItem, error)
+	ListIncludedItems(ctx context.Context, instanceID uuid.UUID) ([]models.VampireItem, error)
+	// SetItemIncluded returns a *ConflictError when un-including an item
+	// currently assigned to a player in this instance.
+	SetItemIncluded(ctx context.Context, instanceID, itemID uuid.UUID, included bool) error
 }
 
 type ScoreHandle interface {

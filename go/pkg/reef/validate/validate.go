@@ -15,6 +15,12 @@ type Thresholds struct {
 	MaxWeightG            float64
 	MinDrainPathMm        float64
 	MaxSupportMaterialPct float64
+	// SealedVoidRuleEnabled gates checkSealedVoid. This rule exists for
+	// products where a trapped-air cavity is a real defect (e.g. reef's
+	// magnetic frag rack, which must stay submerged and non-buoyant) — it
+	// is not a universal printability concern the way the other five rules
+	// are, so it must be opted into per product rather than always running.
+	SealedVoidRuleEnabled bool
 }
 
 // Metadata is everything a rule needs to know about one generated,
@@ -155,7 +161,7 @@ func checkWeight(meta Metadata, t Thresholds) *Rejection {
 // must have a drain path of at least MinDrainPathMm, or the generator must
 // report it isn't sealed at all.
 func checkSealedVoid(meta Metadata, t Thresholds) *Rejection {
-	if !meta.HasInternalCavity {
+	if !t.SealedVoidRuleEnabled || !meta.HasInternalCavity {
 		return nil
 	}
 	if !meta.SealedVoid && meta.DrainPathMm >= t.MinDrainPathMm {

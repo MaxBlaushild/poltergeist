@@ -14,7 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/reef/geomhash"
 	"github.com/MaxBlaushild/poltergeist/pkg/reef/procexec"
 	"github.com/MaxBlaushild/poltergeist/pkg/reef/stlbbox"
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/paramschema"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/paramschema"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -296,7 +296,8 @@ func (s *server) configureValidate(c *gin.Context) {
 
 type configurationResponse struct {
 	models.ReefConfiguration
-	PreviewURL string `json:"previewUrl,omitempty"`
+	PreviewURL  string `json:"previewUrl,omitempty"`
+	ProductSlug string `json:"productSlug,omitempty"`
 }
 
 // GET /api/reef/configurations/:id (R-8.1) — what the client polls after
@@ -317,6 +318,9 @@ func (s *server) getConfiguration(c *gin.Context) {
 	}
 
 	resp := configurationResponse{ReefConfiguration: *cfg}
+	if product, err := s.deps.DbClient.ReefProduct().FindByID(ctx, cfg.ProductID); err == nil {
+		resp.ProductSlug = product.Slug
+	}
 	if cfg.GeometryHash != nil {
 		if sliceResult, err := s.deps.DbClient.ReefSliceResult().FindByGeometryHash(ctx, *cfg.GeometryHash); err == nil && sliceResult != nil {
 			// STLKey (the full-resolution slice) is what was actually

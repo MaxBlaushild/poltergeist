@@ -11,19 +11,20 @@ import (
 // totals per player) the GM can download and keep off-system. Combined with the
 // archive-on-reset safety net, this ensures scores are never only in one place.
 func (s *server) gmExportStandings(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	standings, err := v.Leaderboard(ctx)
+	standings, err := v.Leaderboard(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	btTotals, err := v.BloodTokenTotalsByPlayer(ctx)
+	btTotals, err := v.BloodTokenTotalsByPlayer(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	players, err := v.ListPlayers(ctx)
+	players, err := v.ListPlayers(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

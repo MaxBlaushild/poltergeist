@@ -4,6 +4,7 @@ toolchain go1.24.10
 
 use (
 	./go/authenticator
+	./go/bgi-site
 	./go/billing
 	./go/core
 	./go/ethereum-transactor

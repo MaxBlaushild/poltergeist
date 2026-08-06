@@ -7,7 +7,7 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/fulfillment"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/fulfillment"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )

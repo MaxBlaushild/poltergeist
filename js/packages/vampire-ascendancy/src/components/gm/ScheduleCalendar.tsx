@@ -3,7 +3,6 @@ import { gmSetGameSchedule } from '../../gmApi';
 import type { GMGame } from '../../gmApi';
 import { formatClock } from '../../theme';
 import { Card } from './GameSection';
-import { GM_NAMES } from './GMAdmin';
 
 const DAY_START = 18 * 60; // 6 PM
 const DAY_END = 24 * 60; // midnight
@@ -278,14 +277,12 @@ const SlotEditor = ({ game, onClose, onChange }: { game: GMGame; onClose: () => 
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-bone/60">
           Run by (GM)
-          <select className={field} value={assignedGm} onChange={(e) => setAssignedGm(e.target.value)}>
-            <option value="">— unassigned —</option>
-            {GM_NAMES.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <input
+            className={field}
+            value={assignedGm}
+            onChange={(e) => setAssignedGm(e.target.value)}
+            placeholder="— unassigned —"
+          />
         </label>
       </div>
       <label className="flex flex-col gap-1 text-[11px] text-bone/60">

@@ -79,7 +79,7 @@ func testOrder() Order {
 func TestManualAdapter_SubmitOrder_UploadsManifestAndNotifiesOperator(t *testing.T) {
 	awsClient := newFakeAWSClient()
 	emailClient := &fakeEmailClient{}
-	adapter := NewManualAdapter(awsClient, emailClient, "reef-bucket", "operator@example.com", "reef@example.com")
+	adapter := NewManualAdapter(awsClient, emailClient, "reef-bucket", "operator@example.com", "reef@example.com", "reef")
 
 	externalID, err := adapter.SubmitOrder(context.Background(), testOrder())
 	if err != nil {
@@ -125,7 +125,7 @@ func TestManualAdapter_SubmitOrder_FailsIfManifestUploadFails(t *testing.T) {
 	awsClient := newFakeAWSClient()
 	awsClient.failOn = "reef/orders/abc123/manifest.csv"
 	emailClient := &fakeEmailClient{}
-	adapter := NewManualAdapter(awsClient, emailClient, "reef-bucket", "operator@example.com", "reef@example.com")
+	adapter := NewManualAdapter(awsClient, emailClient, "reef-bucket", "operator@example.com", "reef@example.com", "reef")
 
 	if _, err := adapter.SubmitOrder(context.Background(), testOrder()); err == nil {
 		t.Fatal("expected an error when the manifest upload fails")
@@ -136,7 +136,7 @@ func TestManualAdapter_SubmitOrder_FailsIfManifestUploadFails(t *testing.T) {
 }
 
 func TestManualAdapter_GetStatus_AlwaysSubmitted(t *testing.T) {
-	adapter := NewManualAdapter(nil, nil, "", "", "")
+	adapter := NewManualAdapter(nil, nil, "", "", "", "reef")
 	status, err := adapter.GetStatus(context.Background(), "manual-abc123")
 	if err != nil {
 		t.Fatal(err)

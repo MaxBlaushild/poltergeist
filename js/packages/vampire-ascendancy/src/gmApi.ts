@@ -1,34 +1,24 @@
 import { ApiError } from './api';
+import { getUserAuth } from './userAuth';
 import type { GameState, HouseStanding, House } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://api.unclaimedstreets.com';
 
-const PASS_KEY = 'vampireGMPass';
-const NAME_KEY = 'vampireGMName';
-
-export function getGMAuth() {
-  return {
-    pass: sessionStorage.getItem(PASS_KEY) || '',
-    name: sessionStorage.getItem(NAME_KEY) || '',
-  };
-}
-export function setGMAuth(pass: string, name: string) {
-  sessionStorage.setItem(PASS_KEY, pass);
-  sessionStorage.setItem(NAME_KEY, name);
-}
-export function clearGMAuth() {
-  sessionStorage.removeItem(PASS_KEY);
-  sessionStorage.removeItem(NAME_KEY);
+// The GM console (GMAdmin) is always mounted at /e/:instanceId/gm, so it
+// sets this once (from the URL) before any of the calls below run — see
+// setGMInstanceId. Every gm* call targets whichever Toast that was.
+let currentInstanceId = '';
+export function setGMInstanceId(id: string) {
+  currentInstanceId = id;
 }
 
 async function gm<T>(path: string, init?: RequestInit): Promise<T> {
-  const { pass, name } = getGMAuth();
-  const res = await fetch(`${API_BASE}/vampire-ascendancy/gm${path}`, {
+  const token = getUserAuth()?.token;
+  const res = await fetch(`${API_BASE}/vampire-ascendancy/i/${currentInstanceId}/gm${path}`, {
     ...init,
     headers: {
-      'X-GM-Passcode': pass,
-      'X-GM-Name': name,
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
   });
@@ -202,9 +192,8 @@ export interface GMQuizQuestions {
   part1: { prompt: string; rubric: string; maxBt: number };
   part2: GMQuizPart2Edit[];
 }
-export const gmGetQuizQuestions = () => gm<GMQuizQuestions>('/quiz/questions');
-export const gmUpdateQuizQuestions = (body: GMQuizQuestions) =>
-  gm<{ ok: boolean }>('/quiz/questions', { method: 'PUT', body: JSON.stringify(body) });
+// Editing questions moved to the Super Admin dashboard — see
+// adminGetQuizQuestions/adminUpdateQuizQuestions in superAdminApi.ts.
 
 export interface GMQuizSubmission {
   id: string;
@@ -305,10 +294,13 @@ export interface GMCharacterUpdate {
   missions: GMMissionEdit[];
 }
 export const gmGetCharacter = (id: string) => gm<GMCharacterFull>(`/characters/${id}`);
-export const gmUpdateCharacter = (id: string, body: GMCharacterUpdate) =>
-  gm<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-export const gmUpdateHouse = (id: string, tagline: string) =>
-  gm<{ ok: boolean }>(`/houses/${id}`, { method: 'PUT', body: JSON.stringify({ tagline }) });
+// Editing bios/secrets/missions moved to the Super Admin dashboard — see
+// adminGetCharacter/adminUpdateCharacter in superAdminApi.ts. The one
+// character edit a Host/Co-Host can still make directly is this Toast's
+// portrait for that character.
+export const gmSetCharacterPortrait = (id: string, imageUrl: string) =>
+  gm<{ ok: boolean }>(`/characters/${id}/portrait`, { method: 'PUT', body: JSON.stringify({ imageUrl }) });
+// House taglines moved to the Super Admin dashboard — see adminUpdateHouse.
 
 // ---- Inventory ----
 export interface GMItem {
@@ -344,17 +336,10 @@ export interface GMPlayerItem {
   targetsPlayer: boolean;
   targetName: string | null;
 }
+// This Toast's included items — see GET /gm/library/items for the full
+// catalog + toggles, or superAdminApi.ts's adminListItems for the shared
+// catalog editor (create/edit/delete/photo — super users only).
 export const gmListItems = () => gm<{ items: GMItem[] }>('/items');
-export const gmCreateItem = (draft: GMItemDraft) =>
-  gm<{ id: string }>('/items', { method: 'POST', body: JSON.stringify(draft) });
-export const gmUpdateItem = (id: string, draft: GMItemDraft) =>
-  gm<{ ok: boolean }>(`/items/${id}`, { method: 'PUT', body: JSON.stringify(draft) });
-export const gmDeleteItem = (id: string) =>
-  gm<{ ok: boolean }>(`/items/${id}`, { method: 'DELETE' });
-export const gmSetItemPhoto = (id: string, dataUrl: string) =>
-  gm<{ ok: boolean }>(`/items/${id}/photo`, { method: 'POST', body: JSON.stringify({ dataUrl }) });
-export const gmDeleteItemPhoto = (id: string) =>
-  gm<{ ok: boolean }>(`/items/${id}/photo`, { method: 'DELETE' });
 export const gmListPlayerItems = () => gm<{ playerItems: GMPlayerItem[] }>('/player-items');
 export const gmAssignItem = (playerId: string, itemId: string) =>
   gm<{ id: string }>('/player-items', { method: 'POST', body: JSON.stringify({ playerId, itemId }) });
@@ -362,3 +347,84 @@ export const gmRemovePlayerItem = (id: string) =>
   gm<{ ok: boolean }>(`/player-items/${id}`, { method: 'DELETE' });
 export const gmTransferPlayerItem = (id: string, playerId: string) =>
   gm<{ ok: boolean }>(`/player-items/${id}/owner`, { method: 'PUT', body: JSON.stringify({ playerId }) });
+
+// ---- Player-seat provisioning ----
+export interface GMProvisionedSeat {
+  characterName: string;
+  characterId: string;
+  sigil: string;
+}
+export const gmProvisionPlayers = (includeOptional = false) =>
+  gm<{ created: GMProvisionedSeat[] }>('/players/provision', {
+    method: 'POST',
+    body: JSON.stringify({ includeOptional }),
+  });
+
+// ---- Co-Hosts tab: Host/Co-Host management ----
+export interface GMAdminRow {
+  userId: string;
+  role: 'owner' | 'admin'; // owner -> Host, admin -> Co-Host
+  name?: string;
+  email?: string;
+}
+export interface GMPendingInvite {
+  id: string;
+  email: string;
+  expiresAt: string;
+}
+export const gmListAdmins = () =>
+  gm<{ admins: GMAdminRow[]; pendingInvites: GMPendingInvite[] }>('/admins');
+export const gmInviteAdmin = (email: string) =>
+  gm<{ id: string; token: string; expiresAt: string }>('/admins/invite', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+export const gmDeleteAdminInvite = (id: string) =>
+  gm<{ ok: boolean }>(`/admins/invites/${id}`, { method: 'DELETE' });
+export const gmRemoveAdmin = (userId: string) =>
+  gm<{ ok: boolean }>(`/admins/${userId}`, { method: 'DELETE' });
+export const gmTransferOwnership = (toUserId: string) =>
+  gm<{ ok: boolean }>('/admins/transfer', { method: 'POST', body: JSON.stringify({ toUserId }) });
+
+// ---- Content tab: shared-library inclusion toggles ----
+export interface GMLibraryCharacter {
+  id: string;
+  name: string;
+  title: string;
+  houseId: string | null;
+  houseName: string;
+  roleType: string;
+  isOptional: boolean;
+  included: boolean;
+  sigil?: string;
+  imageUrl: string;
+}
+export interface GMLibraryItem {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  included: boolean;
+}
+export interface GMLibraryQuizQuestion {
+  id: string;
+  part: number;
+  ordinal: number;
+  prompt: string;
+  questionType: string;
+  included: boolean;
+}
+export const gmListLibraryCharacters = () =>
+  gm<{ characters: GMLibraryCharacter[] }>('/library/characters');
+export const gmSetCharacterIncluded = (id: string, included: boolean) =>
+  gm<{ ok: boolean }>(`/library/characters/${id}`, { method: 'PUT', body: JSON.stringify({ included }) });
+export const gmListLibraryItems = () => gm<{ items: GMLibraryItem[] }>('/library/items');
+export const gmSetItemIncluded = (id: string, included: boolean) =>
+  gm<{ ok: boolean }>(`/library/items/${id}`, { method: 'PUT', body: JSON.stringify({ included }) });
+export const gmListLibraryQuizQuestions = () =>
+  gm<{ questions: GMLibraryQuizQuestion[] }>('/library/quiz-questions');
+export const gmSetQuizQuestionIncluded = (id: string, included: boolean) =>
+  gm<{ ok: boolean }>(`/library/quiz-questions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ included }),
+  });

@@ -7,52 +7,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const gmNameContextKey = "vampireGMName"
-
-// withGM guards the admin surface with a shared passcode. The GM also identifies
-// themselves by name (Ali / Max / Ngozi / Jon) so every mutation is attributable
-// in the audit log.
-func (s *server) withGM(ctx *gin.Context) {
-	if s.gmPasscode == "" {
-		ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "GM access is not configured"})
-		return
-	}
-	passcode := ctx.GetHeader("X-GM-Passcode")
-	if passcode != s.gmPasscode {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid GM passcode"})
-		return
-	}
-
-	gmName := ctx.GetHeader("X-GM-Name")
-	if gmName == "" {
-		gmName = "unknown"
-	}
-	ctx.Set(gmNameContextKey, gmName)
-	ctx.Next()
-}
-
-func gmNameFromContext(ctx *gin.Context) string {
-	v, ok := ctx.Get(gmNameContextKey)
-	if !ok {
-		return "unknown"
-	}
-	name, _ := v.(string)
-	return name
-}
-
-// logGM writes an audit entry. Failures to log are swallowed so they never block
-// the action the GM was performing.
+// logGM writes an audit entry for the instance in the URL, attributed to the
+// signed-in admin. Failures to log are swallowed so they never block the
+// action the admin was performing.
 func (s *server) logGM(ctx *gin.Context, action string, payload map[string]interface{}) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		raw = []byte("{}")
 	}
-	_ = s.dbClient.Vampire().LogGMAction(ctx, gmNameFromContext(ctx), action, raw)
+	_ = s.dbClient.Vampire().LogGMAction(ctx, instanceIDFromContext(ctx), gmNameFromContext(ctx), action, raw)
 }
 
 // GET /gm/state — current game state for the admin controls.
 func (s *server) gmGetState(ctx *gin.Context) {
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := s.dbClient.Vampire().GetGameState(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -71,7 +39,7 @@ func (s *server) gmSetUnlock(ctx *gin.Context) {
 		return
 	}
 
-	state, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{
+	state, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceIDFromContext(ctx), map[string]interface{}{
 		"content_unlocked": body.Unlocked,
 	})
 	if err != nil {
@@ -83,9 +51,10 @@ func (s *server) gmSetUnlock(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gameStateResponse(state))
 }
 
-// POST /gm/reset — wipe all play progress for a clean playtest. Requires an
-// explicit confirmation so it can't be triggered by accident.
+// POST /gm/reset — wipe this instance's play progress for a clean playtest.
+// Requires an explicit confirmation so it can't be triggered by accident.
 func (s *server) gmResetGame(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	var body struct {
 		Confirm string `json:"confirm"`
 		Force   bool   `json:"force"`
@@ -100,7 +69,7 @@ func (s *server) gmResetGame(ctx *gin.Context) {
 	// explicitly forces it. This stops a live game's scores from being wiped by an
 	// accidental click; a deliberate reset must roll back to pre-event or pass force.
 	// (Either way, ResetGameProgress archives the score ledgers first.)
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	state, err := s.dbClient.Vampire().GetGameState(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -112,7 +81,7 @@ func (s *server) gmResetGame(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.Vampire().ResetGameProgress(ctx); err != nil {
+	if err := s.dbClient.Vampire().ResetGameProgress(ctx, instanceID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -141,7 +110,7 @@ func (s *server) gmSetAct(ctx *gin.Context) {
 		return
 	}
 
-	state, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{
+	state, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceIDFromContext(ctx), map[string]interface{}{
 		"current_act": body.Act,
 	})
 	if err != nil {

@@ -39,6 +39,8 @@ module "ecs" {
         aws_secretsmanager_secret.slant_api_key.arn,
         aws_secretsmanager_secret.google_client_id.arn,
         aws_secretsmanager_secret.google_client_secret.arn,
+        aws_secretsmanager_secret.reef_stripe_secret_key.arn,
+        aws_secretsmanager_secret.reef_stripe_webhook_secret.arn,
       ]
 
       tasks_iam_role_statements = [
@@ -53,6 +55,18 @@ module "ecs" {
           effect    = "Allow"
           actions   = ["s3:ListBucket"]
           resources = ["arn:aws:s3:::reef-site-artifacts"]
+        },
+        {
+          sid       = "BgiSiteArtifactsObjectAccess"
+          effect    = "Allow"
+          actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+          resources = ["arn:aws:s3:::bgi-site-artifacts/*"]
+        },
+        {
+          sid       = "BgiSiteArtifactsBucketAccess"
+          effect    = "Allow"
+          actions   = ["s3:ListBucket"]
+          resources = ["arn:aws:s3:::bgi-site-artifacts"]
         }
       ]
 
@@ -465,6 +479,12 @@ module "ecs" {
           }, {
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "REEF_STRIPE_SECRET_KEY",
+            valueFrom = "${aws_secretsmanager_secret.reef_stripe_secret_key.arn}"
+          }, {
+            name      = "REEF_STRIPE_WEBHOOK_SECRET",
+            valueFrom = "${aws_secretsmanager_secret.reef_stripe_webhook_secret.arn}"
           }]
           image = "${aws_ecr_repository.billing.repository_url}:latest"
           portMappings = [

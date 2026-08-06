@@ -22,13 +22,14 @@ func gameStateResponse(state *models.VampireGameState) gin.H {
 // plus any active broadcast notifications. The client polls this to react to
 // unlocks, act changes, and announcements without a manual refresh.
 func (s *server) getState(ctx *gin.Context) {
-	state, err := s.dbClient.Vampire().GetGameState(ctx)
+	player := playerFromContext(ctx)
+	state, err := s.dbClient.Vampire().GetGameState(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	notifs, err := s.dbClient.Vampire().ListActiveNotifications(ctx)
+	notifs, err := s.dbClient.Vampire().ListActiveNotifications(ctx, player.InstanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

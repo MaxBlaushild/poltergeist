@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { MeResponse, Secret } from '../types';
 import { accentFor, houseLabel, advantageFor } from '../theme';
 import { VampireMark } from './VampireMark';
+import { getSessionInstanceId } from '../api';
 
 type Segment = 'bio' | 'postAct' | 'secrets';
 
@@ -40,7 +41,7 @@ export const Dossier = ({ me }: { me: MeResponse }) => {
         {character.house && (
           <>
             <Link
-              to={`/house/${character.house.id}`}
+              to={`/e/${getSessionInstanceId()}/house/${character.house.id}`}
               className="inline-block mt-3 px-3 py-1 rounded-full text-xs uppercase tracking-[0.25em] border transition-colors hover:bg-white/5"
               style={{ color: accent, borderColor: accent }}
             >

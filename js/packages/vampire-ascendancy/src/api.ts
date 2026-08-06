@@ -2,18 +2,29 @@ import type { MeResponse, HouseStanding, QuizResponse, HouseOverview, Game } fro
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://api.unclaimedstreets.com';
 
+// A player's token is only ever valid for the one Toast (instance) it was
+// issued for, so the two are stored and read together — every call site that
+// already just passed a `token` keeps working unchanged; the instance id
+// rides along invisibly.
 const TOKEN_KEY = 'vampireToken';
+const INSTANCE_KEY = 'vampireInstanceId';
 
-export function saveToken(token: string) {
+export function saveToken(token: string, instanceId: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(INSTANCE_KEY, instanceId);
 }
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function getSessionInstanceId(): string | null {
+  return localStorage.getItem(INSTANCE_KEY);
+}
+
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(INSTANCE_KEY);
 }
 
 export class ApiError extends Error {
@@ -25,7 +36,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}/vampire-ascendancy${path}`, {
+  const instanceId = getSessionInstanceId();
+  const res = await fetch(`${API_BASE}/vampire-ascendancy/i/${instanceId}${path}`, {
     ...init,
     headers: {
       'X-Player-Token': token,
@@ -50,7 +62,7 @@ export function getMe(token: string): Promise<MeResponse> {
   return request<MeResponse>('/me', token);
 }
 
-// ---- Public login endpoints (no token) ----
+// ---- Public login endpoints (no token, but scoped to one Toast) ----
 
 export interface PublicCharacter {
   id: string;
@@ -59,30 +71,34 @@ export interface PublicCharacter {
   house?: string;
 }
 
-async function publicGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}/vampire-ascendancy${path}`);
+async function publicGet<T>(instanceId: string, path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}/vampire-ascendancy/i/${instanceId}${path}`);
   if (!res.ok) throw new ApiError(res.statusText, res.status);
   return res.json() as Promise<T>;
 }
 
-export function getCharacterPublic(id: string): Promise<PublicCharacter> {
-  return publicGet<PublicCharacter>(`/characters/${id}`);
+export function getCharacterPublic(instanceId: string, id: string): Promise<PublicCharacter> {
+  return publicGet<PublicCharacter>(instanceId, `/characters/${id}`);
 }
 
-export function listCharacters(): Promise<{ characters: PublicCharacter[] }> {
-  return publicGet<{ characters: PublicCharacter[] }>('/characters');
+export function listCharacters(instanceId: string): Promise<{ characters: PublicCharacter[] }> {
+  return publicGet<{ characters: PublicCharacter[] }>(instanceId, '/characters');
 }
 
 // ---- Public projector feed (no auth) ----
-export function getBroadcastStandings(): Promise<{ standings: HouseStanding[] }> {
-  return publicGet<{ standings: HouseStanding[] }>('/broadcast/standings');
+export function getBroadcastStandings(instanceId: string): Promise<{ standings: HouseStanding[] }> {
+  return publicGet<{ standings: HouseStanding[] }>(instanceId, '/broadcast/standings');
 }
-export function getBroadcastGames(): Promise<{ games: Game[] }> {
-  return publicGet<{ games: Game[] }>('/broadcast/games');
+export function getBroadcastGames(instanceId: string): Promise<{ games: Game[] }> {
+  return publicGet<{ games: Game[] }>(instanceId, '/broadcast/games');
 }
 
-export async function login(characterId: string, password: string): Promise<{ token: string }> {
-  const res = await fetch(`${API_BASE}/vampire-ascendancy/login`, {
+export async function login(
+  instanceId: string,
+  characterId: string,
+  password: string
+): Promise<{ token: string }> {
+  const res = await fetch(`${API_BASE}/vampire-ascendancy/i/${instanceId}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ characterId, password }),

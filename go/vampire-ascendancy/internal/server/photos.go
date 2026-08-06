@@ -64,7 +64,7 @@ func (s *server) getPhoto(ctx *gin.Context) {
 
 // savePhotos applies a submission's photo edits: optional clear, then append the
 // provided data-URLs up to the per-submission cap.
-func (s *server) savePhotos(ctx *gin.Context, submissionID uuid.UUID, dataURLs []string, clear bool) error {
+func (s *server) savePhotos(ctx *gin.Context, instanceID, submissionID uuid.UUID, dataURLs []string, clear bool) error {
 	v := s.dbClient.Vampire()
 	if clear {
 		if err := v.DeletePhotosForSubmission(ctx, submissionID); err != nil {
@@ -73,7 +73,7 @@ func (s *server) savePhotos(ctx *gin.Context, submissionID uuid.UUID, dataURLs [
 	}
 
 	// Count what's already there so appends respect the cap.
-	refs, err := v.ListPhotoRefs(ctx)
+	refs, err := v.ListPhotoRefs(ctx, instanceID)
 	if err != nil {
 		return err
 	}
@@ -101,8 +101,8 @@ func (s *server) savePhotos(ctx *gin.Context, submissionID uuid.UUID, dataURLs [
 }
 
 // photoIDsBySubmission builds submissionID -> [photo url-id] for the views.
-func (s *server) photoIDsBySubmission(ctx *gin.Context) (map[string][]string, error) {
-	refs, err := s.dbClient.Vampire().ListPhotoRefs(ctx)
+func (s *server) photoIDsBySubmission(ctx *gin.Context, instanceID uuid.UUID) (map[string][]string, error) {
+	refs, err := s.dbClient.Vampire().ListPhotoRefs(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ func (s *server) gmSetPart1Open(ctx *gin.Context) {
 		updates["quiz_part1_opened_at"] = now
 		updates["quiz_part2_open"] = false // the two parts are never open at once
 	}
-	state, err := s.dbClient.Vampire().UpdateGameState(ctx, updates)
+	state, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceIDFromContext(ctx), updates)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -55,7 +55,7 @@ func (s *server) gmSetPart2Open(ctx *gin.Context) {
 
 	// Part 2 can open independently of Part 1's state, so GMs can start the MC
 	// round while they finish reviewing Part 1 scores.
-	state, err := s.dbClient.Vampire().UpdateGameState(ctx, map[string]interface{}{"quiz_part2_open": body.Open})
+	state, err := s.dbClient.Vampire().UpdateGameState(ctx, instanceIDFromContext(ctx), map[string]interface{}{"quiz_part2_open": body.Open})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -80,7 +80,7 @@ func (s *server) gmRescorePart2(ctx *gin.Context) {
 		return
 	}
 	s.logGM(ctx, "rescore_quiz_part2", map[string]interface{}{})
-	standings, _ := s.dbClient.Vampire().Leaderboard(ctx)
+	standings, _ := s.dbClient.Vampire().Leaderboard(ctx, instanceIDFromContext(ctx))
 	ctx.JSON(http.StatusOK, gin.H{"standings": standings})
 }
 
@@ -93,20 +93,21 @@ func (s *server) gmRescorePart2(ctx *gin.Context) {
 // Participants = players in the house who submitted ≥1 answer. A house with zero
 // participants earns 0 (and gets no entry).
 func (s *server) scorePart2(ctx *gin.Context) error {
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	questions, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	questions, err := v.ListIncludedQuizQuestionsByPart(ctx, instanceID, 2, true)
 	if err != nil {
 		return err
 	}
-	answers, err := v.ListPart2Answers(ctx)
+	answers, err := v.ListPart2Answers(ctx, instanceID)
 	if err != nil {
 		return err
 	}
 
 	favorByHouse := scorePart2Favor(questions, answers)
 
-	if err := v.DeleteHouseFavorBySource(ctx, "quiz_part2"); err != nil {
+	if err := v.DeleteHouseFavorBySource(ctx, instanceID, "quiz_part2"); err != nil {
 		return err
 	}
 
@@ -115,11 +116,12 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 			continue
 		}
 		if err := v.AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-			HouseID: houseID,
-			Delta:   total,
-			Reason:  "End quiz (Part 2)",
-			GMName:  "quiz",
-			Source:  "quiz_part2",
+			InstanceID: instanceID,
+			HouseID:    houseID,
+			Delta:      total,
+			Reason:     "End quiz (Part 2)",
+			GMName:     "quiz",
+			Source:     "quiz_part2",
 		}); err != nil {
 			return err
 		}
@@ -252,8 +254,9 @@ func (s *server) gradePart1(ctx *gin.Context, incompleteOnly bool, only *uuid.UU
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "grading queue is not configured"})
 		return
 	}
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
-	p1q, err := v.GetPart1Question(ctx)
+	p1q, err := v.GetIncludedPart1Question(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -266,7 +269,7 @@ func (s *server) gradePart1(ctx *gin.Context, incompleteOnly bool, only *uuid.UU
 	if maxBT <= 0 {
 		maxBT = 6
 	}
-	subs, err := v.ListQuizSubmissions(ctx)
+	subs, err := v.ListQuizSubmissions(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -310,8 +313,9 @@ func (s *server) gmOverridePart1BT(ctx *gin.Context) {
 		return
 	}
 
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
-	subs, err := v.ListQuizSubmissions(ctx)
+	subs, err := v.ListQuizSubmissions(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -336,11 +340,12 @@ func (s *server) gmOverridePart1BT(ctx *gin.Context) {
 	_ = v.DeleteBloodTokensBySourceForPlayer(ctx, *playerID, "quiz_part1")
 	if body.AwardedBT > 0 {
 		_ = v.AddBloodTokens(ctx, &models.VampireBloodTokenLog{
-			PlayerID: *playerID,
-			Delta:    body.AwardedBT,
-			Reason:   "End quiz (Part 1, GM-adjusted)",
-			Source:   "quiz_part1",
-			GMName:   gmNameFromContext(ctx),
+			InstanceID: instanceID,
+			PlayerID:   *playerID,
+			Delta:      body.AwardedBT,
+			Reason:     "End quiz (Part 1, GM-adjusted)",
+			Source:     "quiz_part1",
+			GMName:     gmNameFromContext(ctx),
 		})
 	}
 	s.logGM(ctx, "override_quiz_part1_bt", map[string]interface{}{"submissionId": body.SubmissionID, "awardedBt": body.AwardedBT})
@@ -349,11 +354,10 @@ func (s *server) gmOverridePart1BT(ctx *gin.Context) {
 
 // GET /gm/quiz/submissions — all quiz answers (both parts) with context.
 func (s *server) gmListQuizSubmissions(ctx *gin.Context) {
-	details, err := s.dbClient.Vampire().ListQuizSubmissionsDetailed(ctx)
+	details, err := s.dbClient.Vampire().ListQuizSubmissionsDetailed(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"submissions": details})
 }
-

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getLeaderboard, getToken } from '../api';
+import { getLeaderboard, getToken, getSessionInstanceId } from '../api';
 import type { HouseStanding } from '../types';
 import { accentFor, houseInfoFor, formatHF, taglineFor, houseLabel } from '../theme';
 
@@ -64,7 +64,7 @@ export const StandingsList = ({
         </>
       );
       return linkHouses ? (
-        <Link key={h.houseId} to={`/house/${h.houseId}`} className={cls}>
+        <Link key={h.houseId} to={`/e/${getSessionInstanceId()}/house/${h.houseId}`} className={cls}>
           {inner}
         </Link>
       ) : (

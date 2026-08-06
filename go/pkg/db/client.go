@@ -195,6 +195,21 @@ type client struct {
 	reefGenerationJobHandle   *reefGenerationJobHandle
 	reefOrderHandle           *reefOrderHandle
 	reefEventHandle           *reefEventHandle
+
+	bgiGameHandle              *bgiGameHandle
+	bgiExpansionHandle         *bgiExpansionHandle
+	bgiBoxProfileHandle        *bgiBoxProfileHandle
+	bgiSleeveProfileHandle     *bgiSleeveProfileHandle
+	bgiComponentManifestHandle *bgiComponentManifestHandle
+	bgiTrayTemplateHandle      *bgiTrayTemplateHandle
+	bgiProductHandle           *bgiProductHandle
+	bgiParameterSchemaHandle   *bgiParameterSchemaHandle
+	bgiConfigurationHandle     *bgiConfigurationHandle
+	bgiSetResolutionHandle     *bgiSetResolutionHandle
+	bgiTraySliceResultHandle   *bgiTraySliceResultHandle
+	bgiGenerationJobHandle     *bgiGenerationJobHandle
+	bgiOrderHandle             *bgiOrderHandle
+	bgiEventHandle             *bgiEventHandle
 }
 
 type ClientConfig struct {
@@ -473,6 +488,21 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		reefGenerationJobHandle:   &reefGenerationJobHandle{db: db},
 		reefOrderHandle:           &reefOrderHandle{db: db},
 		reefEventHandle:           &reefEventHandle{db: db},
+
+		bgiGameHandle:              &bgiGameHandle{db: db},
+		bgiExpansionHandle:         &bgiExpansionHandle{db: db},
+		bgiBoxProfileHandle:        &bgiBoxProfileHandle{db: db},
+		bgiSleeveProfileHandle:     &bgiSleeveProfileHandle{db: db},
+		bgiComponentManifestHandle: &bgiComponentManifestHandle{db: db},
+		bgiTrayTemplateHandle:      &bgiTrayTemplateHandle{db: db},
+		bgiProductHandle:           &bgiProductHandle{db: db},
+		bgiParameterSchemaHandle:   &bgiParameterSchemaHandle{db: db},
+		bgiConfigurationHandle:     &bgiConfigurationHandle{db: db},
+		bgiSetResolutionHandle:     &bgiSetResolutionHandle{db: db},
+		bgiTraySliceResultHandle:   &bgiTraySliceResultHandle{db: db},
+		bgiGenerationJobHandle:     &bgiGenerationJobHandle{db: db},
+		bgiOrderHandle:             &bgiOrderHandle{db: db},
+		bgiEventHandle:             &bgiEventHandle{db: db},
 	}, nil
 }
 
@@ -1186,4 +1216,60 @@ func (c *client) ReefOrder() ReefOrderHandle {
 
 func (c *client) ReefEvent() ReefEventHandle {
 	return c.reefEventHandle
+}
+
+func (c *client) BgiGame() BgiGameHandle {
+	return c.bgiGameHandle
+}
+
+func (c *client) BgiExpansion() BgiExpansionHandle {
+	return c.bgiExpansionHandle
+}
+
+func (c *client) BgiBoxProfile() BgiBoxProfileHandle {
+	return c.bgiBoxProfileHandle
+}
+
+func (c *client) BgiSleeveProfile() BgiSleeveProfileHandle {
+	return c.bgiSleeveProfileHandle
+}
+
+func (c *client) BgiComponentManifest() BgiComponentManifestHandle {
+	return c.bgiComponentManifestHandle
+}
+
+func (c *client) BgiTrayTemplate() BgiTrayTemplateHandle {
+	return c.bgiTrayTemplateHandle
+}
+
+func (c *client) BgiProduct() BgiProductHandle {
+	return c.bgiProductHandle
+}
+
+func (c *client) BgiParameterSchema() BgiParameterSchemaHandle {
+	return c.bgiParameterSchemaHandle
+}
+
+func (c *client) BgiConfiguration() BgiConfigurationHandle {
+	return c.bgiConfigurationHandle
+}
+
+func (c *client) BgiSetResolution() BgiSetResolutionHandle {
+	return c.bgiSetResolutionHandle
+}
+
+func (c *client) BgiTraySliceResult() BgiTraySliceResultHandle {
+	return c.bgiTraySliceResultHandle
+}
+
+func (c *client) BgiGenerationJob() BgiGenerationJobHandle {
+	return c.bgiGenerationJobHandle
+}
+
+func (c *client) BgiOrder() BgiOrderHandle {
+	return c.bgiOrderHandle
+}
+
+func (c *client) BgiEvent() BgiEventHandle {
+	return c.bgiEventHandle
 }

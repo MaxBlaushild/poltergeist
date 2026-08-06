@@ -5,6 +5,7 @@ import (
 
 	"github.com/MaxBlaushild/core/internal/config"
 	"github.com/MaxBlaushild/core/internal/server"
+	bgisite "github.com/MaxBlaushild/poltergeist/bgi-site/pkg"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
@@ -99,7 +100,8 @@ func main() {
 	vampireAscendancyServer := vampireascendancy.NewServerFromDependencies(authClient, dbClient)
 	tradesARGlassesServer := tradesarglasses.NewServerFromDependencies(dbClient)
 	reefServer := reefsite.NewServerFromDependencies(dbClient)
+	bgiServer := bgisite.NewServerFromDependencies(dbClient)
 
-	srv := server.NewServer(sonarServer, travelAngelsServer, verifiableSnServer, vampireAscendancyServer, tradesARGlassesServer, reefServer, texterClient)
+	srv := server.NewServer(sonarServer, travelAngelsServer, verifiableSnServer, vampireAscendancyServer, tradesARGlassesServer, reefServer, bgiServer, texterClient)
 	srv.ListenAndServe("8080")
 }

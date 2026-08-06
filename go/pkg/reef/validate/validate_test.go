@@ -26,6 +26,7 @@ func defaultThresholds() Thresholds {
 		MaxWeightG:            250,
 		MinDrainPathMm:        4,
 		MaxSupportMaterialPct: 10.0,
+		SealedVoidRuleEnabled: true,
 	}
 }
 
@@ -101,6 +102,20 @@ func TestValidate_SealedVoidRule_IgnoredWhenNoCavityExists(t *testing.T) {
 	meta.DrainPathMm = 0
 	if rejection := Validate(meta, defaultThresholds()); rejection != nil {
 		t.Fatalf("expected no rejection when HasInternalCavity is false, got %+v", rejection)
+	}
+}
+
+// A product with no submerged-buoyancy concern (e.g. a board-game tray)
+// opts out of this rule entirely via Thresholds.SealedVoidRuleEnabled —
+// even a real sealed cavity must not reject when the rule is disabled.
+func TestValidate_SealedVoidRule_DisabledByThreshold(t *testing.T) {
+	meta := healthyMetadata()
+	meta.SealedVoid = true
+	meta.DrainPathMm = 0
+	thresholds := defaultThresholds()
+	thresholds.SealedVoidRuleEnabled = false
+	if rejection := Validate(meta, thresholds); rejection != nil {
+		t.Fatalf("expected no rejection when SealedVoidRuleEnabled is false, got %+v", rejection)
 	}
 }
 

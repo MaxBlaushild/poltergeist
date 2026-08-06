@@ -38,11 +38,12 @@ func (s *server) gmAwardBloodTokens(ctx *gin.Context) {
 
 	gmName := gmNameFromContext(ctx)
 	if err := s.dbClient.Vampire().AddBloodTokens(ctx, &models.VampireBloodTokenLog{
-		PlayerID: playerID,
-		Delta:    body.Delta,
-		Reason:   body.Reason,
-		Source:   source,
-		GMName:   gmName,
+		InstanceID: instanceIDFromContext(ctx),
+		PlayerID:   playerID,
+		Delta:      body.Delta,
+		Reason:     body.Reason,
+		Source:     source,
+		GMName:     gmName,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

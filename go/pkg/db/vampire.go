@@ -39,13 +39,14 @@ type HouseFavorSourceTotal struct {
 }
 
 // HouseFavorBySource sums each house's ledger House Favor grouped by source
-// (excluding "item", which is a live overlay computed from current ownership).
-func (h *vampireHandler) HouseFavorBySource(ctx context.Context) ([]HouseFavorSourceTotal, error) {
+// (excluding "item", which is a live overlay computed from current ownership),
+// scoped to one instance.
+func (h *vampireHandler) HouseFavorBySource(ctx context.Context, instanceID uuid.UUID) ([]HouseFavorSourceTotal, error) {
 	var out []HouseFavorSourceTotal
 	if err := h.db.WithContext(ctx).
 		Table("vampire_house_favor_ledger").
 		Select("house_id, source, COALESCE(SUM(delta), 0) AS total").
-		Where("source <> 'item'").
+		Where("instance_id = ? AND source <> 'item'", instanceID).
 		Group("house_id, source").
 		Scan(&out).Error; err != nil {
 		return nil, err
@@ -64,6 +65,11 @@ type vampireHandler struct {
 }
 
 // ---- Houses ----
+//
+// Houses are part of the shared global content library, same as characters
+// and items — they are not toggled per instance (a house is implicitly
+// "in" an instance if any of its characters are included there). Authoring
+// (UpsertHouse/UpdateHouseTagline) stays an ops-only, global operation.
 
 func (h *vampireHandler) ListHouses(ctx context.Context) ([]models.VampireHouse, error) {
 	var houses []models.VampireHouse
@@ -84,23 +90,27 @@ func (h *vampireHandler) GetHouseByID(ctx context.Context, id uuid.UUID) (*model
 	return &house, nil
 }
 
-// ListCharactersByHouse returns the playable members of a house.
-func (h *vampireHandler) ListCharactersByHouse(ctx context.Context, houseID uuid.UUID) ([]models.VampireCharacter, error) {
+// ListCharactersByHouse returns the playable members of a house, filtered to
+// those included in the given instance.
+func (h *vampireHandler) ListCharactersByHouse(ctx context.Context, instanceID, houseID uuid.UUID) ([]models.VampireCharacter, error) {
 	var chars []models.VampireCharacter
 	if err := h.db.WithContext(ctx).
-		Where("house_id = ? AND role_type = ?", houseID, "player").
-		Order("name ASC").
+		Table("vampire_characters c").
+		Select("c.*").
+		Joins("JOIN vampire_instance_characters ic ON ic.character_id = c.id AND ic.instance_id = ? AND ic.included", instanceID).
+		Where("c.house_id = ? AND c.role_type = ?", houseID, "player").
+		Order("c.name ASC").
 		Find(&chars).Error; err != nil {
 		return nil, err
 	}
 	return chars, nil
 }
 
-// ListHouseFavorLog returns a house's House Favor ledger, newest first.
-func (h *vampireHandler) ListHouseFavorLog(ctx context.Context, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error) {
+// ListHouseFavorLog returns a house's House Favor ledger for one instance, newest first.
+func (h *vampireHandler) ListHouseFavorLog(ctx context.Context, instanceID, houseID uuid.UUID) ([]models.VampireHouseFavorLedger, error) {
 	var entries []models.VampireHouseFavorLedger
 	if err := h.db.WithContext(ctx).
-		Where("house_id = ?", houseID).
+		Where("instance_id = ? AND house_id = ?", instanceID, houseID).
 		Order("created_at DESC").
 		Find(&entries).Error; err != nil {
 		return nil, err
@@ -133,6 +143,12 @@ func (h *vampireHandler) UpdateHouseTagline(ctx context.Context, id uuid.UUID, t
 }
 
 // ---- Characters ----
+//
+// The character roster (name, title, house, story text, secrets, missions)
+// is shared global content, authored once and reused by every instance.
+// Authoring methods (Upsert/Update/Replace*) stay global/ops-only. What is
+// per-instance — inclusion, sigil, portrait — lives in
+// vampire_instance.go's library-inclusion methods.
 
 func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireCharacter) (*models.VampireCharacter, error) {
 	if err := h.db.WithContext(ctx).
@@ -149,7 +165,7 @@ func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireC
 	return h.GetCharacterByName(ctx, c.Name)
 }
 
-// UpdateCharacter patches a character's columns by id (used by the GM editor).
+// UpdateCharacter patches a character's columns by id (used by the GM content editor).
 func (h *vampireHandler) UpdateCharacter(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error {
 	fields["updated_at"] = time.Now()
 	return h.db.WithContext(ctx).Model(&models.VampireCharacter{}).Where("id = ?", id).Updates(fields).Error
@@ -181,6 +197,10 @@ func (h *vampireHandler) GetCharacterByID(ctx context.Context, id uuid.UUID) (*m
 	return &c, nil
 }
 
+// ListCharacters returns the full global roster (every character in the
+// library, regardless of any instance). Used by content authoring and by
+// the library-inclusion editor, not by player- or GM-facing instance views —
+// see ListIncludedCharacters in vampire_instance.go for those.
 func (h *vampireHandler) ListCharacters(ctx context.Context) ([]models.VampireCharacter, error) {
 	var chars []models.VampireCharacter
 	if err := h.db.WithContext(ctx).Preload("House").Order("name ASC").Find(&chars).Error; err != nil {
@@ -189,18 +209,13 @@ func (h *vampireHandler) ListCharacters(ctx context.Context) ([]models.VampireCh
 	return chars, nil
 }
 
-func (h *vampireHandler) SetCharacterPassword(ctx context.Context, characterID uuid.UUID, password string) error {
-	return h.db.WithContext(ctx).Model(&models.VampireCharacter{}).
-		Where("id = ?", characterID).
-		Updates(map[string]interface{}{"password": password, "updated_at": time.Now()}).Error
-}
-
-// GetActivePlayerByCharacterID returns the active player assigned to a character
-// (the holder of the session token for that character's guest).
-func (h *vampireHandler) GetActivePlayerByCharacterID(ctx context.Context, characterID uuid.UUID) (*models.VampirePlayer, error) {
+// GetActivePlayerByCharacterID returns the active player assigned to a
+// character within one instance (the holder of the session token for that
+// character's guest in that instance).
+func (h *vampireHandler) GetActivePlayerByCharacterID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampirePlayer, error) {
 	var p models.VampirePlayer
 	if err := h.db.WithContext(ctx).
-		Where("character_id = ? AND active = ?", characterID, true).
+		Where("instance_id = ? AND character_id = ? AND active = ?", instanceID, characterID, true).
 		First(&p).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -255,10 +270,16 @@ func (h *vampireHandler) GetMissionByID(ctx context.Context, id uuid.UUID) (*mod
 
 // ---- Players ----
 
+// CreatePlayer inserts a player slot. p.InstanceID must be set by the caller.
 func (h *vampireHandler) CreatePlayer(ctx context.Context, p *models.VampirePlayer) error {
 	return h.db.WithContext(ctx).Create(p).Error
 }
 
+// GetPlayerByToken looks a player up by their opaque token. Tokens are
+// globally unique (see MULTI_TENANT_REQUIREMENTS.md), so this is
+// deliberately not instance-scoped — callers must check the returned
+// player's InstanceID against the instance in the request URL themselves
+// (see withPlayer in the server) as defense in depth.
 func (h *vampireHandler) GetPlayerByToken(ctx context.Context, token string) (*models.VampirePlayer, error) {
 	var p models.VampirePlayer
 	if err := h.db.WithContext(ctx).
@@ -272,9 +293,11 @@ func (h *vampireHandler) GetPlayerByToken(ctx context.Context, token string) (*m
 	return &p, nil
 }
 
-func (h *vampireHandler) GetPlayerByID(ctx context.Context, id uuid.UUID) (*models.VampirePlayer, error) {
+func (h *vampireHandler) GetPlayerByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampirePlayer, error) {
 	var p models.VampirePlayer
-	if err := h.db.WithContext(ctx).Preload("Character").First(&p, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("Character").
+		First(&p, "instance_id = ? AND id = ?", instanceID, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -283,11 +306,12 @@ func (h *vampireHandler) GetPlayerByID(ctx context.Context, id uuid.UUID) (*mode
 	return &p, nil
 }
 
-func (h *vampireHandler) ListPlayers(ctx context.Context) ([]models.VampirePlayer, error) {
+func (h *vampireHandler) ListPlayers(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayer, error) {
 	var players []models.VampirePlayer
 	if err := h.db.WithContext(ctx).
 		Preload("Character").
 		Preload("Character.House").
+		Where("instance_id = ?", instanceID).
 		Order("guest_label ASC").
 		Find(&players).Error; err != nil {
 		return nil, err
@@ -295,9 +319,9 @@ func (h *vampireHandler) ListPlayers(ctx context.Context) ([]models.VampirePlaye
 	return players, nil
 }
 
-func (h *vampireHandler) UpdatePlayerAssignment(ctx context.Context, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error {
+func (h *vampireHandler) UpdatePlayerAssignment(ctx context.Context, instanceID, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error {
 	return h.db.WithContext(ctx).Model(&models.VampirePlayer{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{
 			"character_id": characterID,
 			"guest_label":  guestLabel,
@@ -309,8 +333,9 @@ func (h *vampireHandler) UpdatePlayerAssignment(ctx context.Context, id uuid.UUI
 // ---- Mission submissions ----
 
 // UpsertMissionSubmission records a player's answer and (re)sets status to submitted.
-func (h *vampireHandler) UpsertMissionSubmission(ctx context.Context, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error) {
+func (h *vampireHandler) UpsertMissionSubmission(ctx context.Context, instanceID, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error) {
 	sub := models.VampireMissionSubmission{
+		InstanceID:   instanceID,
 		PlayerID:     playerID,
 		MissionID:    missionID,
 		Status:       "submitted",
@@ -343,9 +368,9 @@ func (h *vampireHandler) ListSubmissionsForPlayer(ctx context.Context, playerID 
 	return subs, nil
 }
 
-func (h *vampireHandler) ListSubmissions(ctx context.Context, statusFilter string) ([]models.VampireMissionSubmission, error) {
+func (h *vampireHandler) ListSubmissions(ctx context.Context, instanceID uuid.UUID, statusFilter string) ([]models.VampireMissionSubmission, error) {
 	var subs []models.VampireMissionSubmission
-	q := h.db.WithContext(ctx).Order("created_at ASC")
+	q := h.db.WithContext(ctx).Where("instance_id = ?", instanceID).Order("created_at ASC")
 	if statusFilter != "" {
 		q = q.Where("status = ?", statusFilter)
 	}
@@ -375,7 +400,7 @@ type SubmissionDetail struct {
 	RewardBT            int       `json:"rewardBt"`
 }
 
-func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, statusFilter string) ([]SubmissionDetail, error) {
+func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, instanceID uuid.UUID, statusFilter string) ([]SubmissionDetail, error) {
 	details := []SubmissionDetail{}
 	q := h.db.WithContext(ctx).
 		Table("vampire_mission_submissions s").
@@ -390,6 +415,7 @@ func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, statusFilt
 		Joins("JOIN vampire_missions m ON m.id = s.mission_id").
 		Joins("LEFT JOIN vampire_characters c ON c.id = p.character_id").
 		Joins("LEFT JOIN vampire_houses h ON h.id = c.house_id").
+		Where("s.instance_id = ?", instanceID).
 		Order("s.created_at ASC")
 	if statusFilter != "" {
 		q = q.Where("s.status = ?", statusFilter)
@@ -400,9 +426,9 @@ func (h *vampireHandler) ListSubmissionsDetailed(ctx context.Context, statusFilt
 	return details, nil
 }
 
-func (h *vampireHandler) GetSubmissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMissionSubmission, error) {
+func (h *vampireHandler) GetSubmissionByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampireMissionSubmission, error) {
 	var sub models.VampireMissionSubmission
-	if err := h.db.WithContext(ctx).First(&sub, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&sub, "instance_id = ? AND id = ?", instanceID, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -412,6 +438,11 @@ func (h *vampireHandler) GetSubmissionByID(ctx context.Context, id uuid.UUID) (*
 }
 
 // ---- Submission photos ----
+//
+// Not directly instance-scoped (no instance_id column) — a photo belongs to
+// a submission, which belongs to a player, which belongs to an instance.
+// Callers that need the scoping check (e.g. the GM approve/reject flow)
+// resolve the submission through GetSubmissionByID first.
 
 func (h *vampireHandler) AddSubmissionPhoto(ctx context.Context, submissionID uuid.UUID, contentType string, data []byte) (uuid.UUID, error) {
 	photo := models.VampireSubmissionPhoto{
@@ -448,23 +479,25 @@ type PhotoRef struct {
 	SubmissionID uuid.UUID `json:"submissionId"`
 }
 
-// ListPhotoRefs returns photo ids grouped by submission (no image data), for
-// attaching to the player and GM submission views.
-func (h *vampireHandler) ListPhotoRefs(ctx context.Context) ([]PhotoRef, error) {
+// ListPhotoRefs returns photo ids grouped by submission (no image data) for
+// one instance's submissions, for attaching to the player and GM views.
+func (h *vampireHandler) ListPhotoRefs(ctx context.Context, instanceID uuid.UUID) ([]PhotoRef, error) {
 	out := []PhotoRef{}
 	if err := h.db.WithContext(ctx).
-		Table("vampire_submission_photos").
-		Select("id, submission_id").
-		Order("created_at ASC").
+		Table("vampire_submission_photos ph").
+		Select("ph.id, ph.submission_id").
+		Joins("JOIN vampire_mission_submissions s ON s.id = ph.submission_id").
+		Where("s.instance_id = ?", instanceID).
+		Order("ph.created_at ASC").
 		Scan(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (h *vampireHandler) UpdateSubmissionStatus(ctx context.Context, id uuid.UUID, status string, awardedBT int, verifiedBy string) error {
+func (h *vampireHandler) UpdateSubmissionStatus(ctx context.Context, instanceID, id uuid.UUID, status string, awardedBT int, verifiedBy string) error {
 	return h.db.WithContext(ctx).Model(&models.VampireMissionSubmission{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{
 			"status":      status,
 			"awarded_bt":  awardedBT,
@@ -475,18 +508,19 @@ func (h *vampireHandler) UpdateSubmissionStatus(ctx context.Context, id uuid.UUI
 
 // ---- House Favor ----
 
+// AddHouseFavor inserts a ledger entry. entry.InstanceID must be set by the caller.
 func (h *vampireHandler) AddHouseFavor(ctx context.Context, entry *models.VampireHouseFavorLedger) error {
 	return h.db.WithContext(ctx).Create(entry).Error
 }
 
-func (h *vampireHandler) Leaderboard(ctx context.Context) ([]HouseFavorStanding, error) {
+func (h *vampireHandler) Leaderboard(ctx context.Context, instanceID uuid.UUID) ([]HouseFavorStanding, error) {
 	var standings []HouseFavorStanding
 	if err := h.db.WithContext(ctx).
 		Table("vampire_houses h").
 		Select("h.id AS house_id, h.name AS name, h.sort_order AS sort_order, COALESCE(SUM(l.delta), 0) AS favor").
 		// Item House Favor is shown as a live "+X" overlay (computed from current
 		// item ownership), so it is deliberately excluded from the ledger base.
-		Joins("LEFT JOIN vampire_house_favor_ledger l ON l.house_id = h.id AND l.source <> 'item'").
+		Joins("LEFT JOIN vampire_house_favor_ledger l ON l.house_id = h.id AND l.source <> 'item' AND l.instance_id = ?", instanceID).
 		Group("h.id, h.name, h.sort_order").
 		Order("favor DESC, h.sort_order ASC").
 		Scan(&standings).Error; err != nil {
@@ -497,15 +531,17 @@ func (h *vampireHandler) Leaderboard(ctx context.Context) ([]HouseFavorStanding,
 
 // ---- Blood Tokens ----
 
+// AddBloodTokens inserts a log entry. entry.InstanceID must be set by the caller.
 func (h *vampireHandler) AddBloodTokens(ctx context.Context, entry *models.VampireBloodTokenLog) error {
 	return h.db.WithContext(ctx).Create(entry).Error
 }
 
-func (h *vampireHandler) BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodTokenTotal, error) {
+func (h *vampireHandler) BloodTokenTotalsByPlayer(ctx context.Context, instanceID uuid.UUID) ([]BloodTokenTotal, error) {
 	var totals []BloodTokenTotal
 	if err := h.db.WithContext(ctx).
 		Table("vampire_blood_token_log").
 		Select("player_id, COALESCE(SUM(delta), 0) AS total").
+		Where("instance_id = ?", instanceID).
 		Group("player_id").
 		Scan(&totals).Error; err != nil {
 		return nil, err
@@ -515,12 +551,12 @@ func (h *vampireHandler) BloodTokenTotalsByPlayer(ctx context.Context) ([]BloodT
 
 // BloodTokenTotalsBySource sums each player's BT for a single source (e.g. "game"),
 // used by the tally engine to double game winnings.
-func (h *vampireHandler) BloodTokenTotalsBySource(ctx context.Context, source string) ([]BloodTokenTotal, error) {
+func (h *vampireHandler) BloodTokenTotalsBySource(ctx context.Context, instanceID uuid.UUID, source string) ([]BloodTokenTotal, error) {
 	var totals []BloodTokenTotal
 	if err := h.db.WithContext(ctx).
 		Table("vampire_blood_token_log").
 		Select("player_id, COALESCE(SUM(delta), 0) AS total").
-		Where("source = ?", source).
+		Where("instance_id = ? AND source = ?", instanceID, source).
 		Group("player_id").
 		Scan(&totals).Error; err != nil {
 		return nil, err
@@ -529,13 +565,16 @@ func (h *vampireHandler) BloodTokenTotalsBySource(ctx context.Context, source st
 }
 
 // ---- Game state ----
+//
+// One row per instance (instance_id is the primary key) since 000455 —
+// previously a singleton row with id always 1.
 
-func (h *vampireHandler) GetGameState(ctx context.Context) (*models.VampireGameState, error) {
+func (h *vampireHandler) GetGameState(ctx context.Context, instanceID uuid.UUID) (*models.VampireGameState, error) {
 	var state models.VampireGameState
-	if err := h.db.WithContext(ctx).First(&state, "id = ?", 1).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&state, "instance_id = ?", instanceID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Lazily create the singleton if the seed insert was missed.
-			state = models.VampireGameState{ID: 1, CurrentAct: "pre_event"}
+			// Lazily create the row if it wasn't seeded when the instance was created.
+			state = models.VampireGameState{InstanceID: instanceID, CurrentAct: "pre_event"}
 			if cerr := h.db.WithContext(ctx).Create(&state).Error; cerr != nil {
 				return nil, cerr
 			}
@@ -546,30 +585,31 @@ func (h *vampireHandler) GetGameState(ctx context.Context) (*models.VampireGameS
 	return &state, nil
 }
 
-func (h *vampireHandler) UpdateGameState(ctx context.Context, updates map[string]interface{}) (*models.VampireGameState, error) {
+func (h *vampireHandler) UpdateGameState(ctx context.Context, instanceID uuid.UUID, updates map[string]interface{}) (*models.VampireGameState, error) {
 	updates["updated_at"] = time.Now()
-	if err := h.db.WithContext(ctx).Model(&models.VampireGameState{}).Where("id = ?", 1).Updates(updates).Error; err != nil {
+	if err := h.db.WithContext(ctx).Model(&models.VampireGameState{}).Where("instance_id = ?", instanceID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	return h.GetGameState(ctx)
+	return h.GetGameState(ctx, instanceID)
 }
 
 // ---- Notifications ----
 
+// CreateNotification inserts a notification. n.InstanceID must be set by the caller.
 func (h *vampireHandler) CreateNotification(ctx context.Context, n *models.VampireNotification) error {
 	return h.db.WithContext(ctx).Create(n).Error
 }
 
-func (h *vampireHandler) DeactivateAllNotifications(ctx context.Context) error {
+func (h *vampireHandler) DeactivateAllNotifications(ctx context.Context, instanceID uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.VampireNotification{}).
-		Where("active = ?", true).
+		Where("instance_id = ? AND active = ?", instanceID, true).
 		Update("active", false).Error
 }
 
 // GetActiveNotificationForPlayer returns the most recent active notification
 // that applies to this player: broadcast to all, to their house, or to them.
-func (h *vampireHandler) GetActiveNotificationForPlayer(ctx context.Context, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error) {
-	q := h.db.WithContext(ctx).Where("active = ?", true)
+func (h *vampireHandler) GetActiveNotificationForPlayer(ctx context.Context, instanceID, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error) {
+	q := h.db.WithContext(ctx).Where("instance_id = ? AND active = ?", instanceID, true)
 	if houseID != nil {
 		q = q.Where(
 			"scope = 'all' OR (scope = 'house' AND target_id = ?) OR (scope = 'player' AND target_id = ?)",
@@ -588,10 +628,10 @@ func (h *vampireHandler) GetActiveNotificationForPlayer(ctx context.Context, pla
 	return &n, nil
 }
 
-func (h *vampireHandler) ListActiveNotifications(ctx context.Context) ([]models.VampireNotification, error) {
+func (h *vampireHandler) ListActiveNotifications(ctx context.Context, instanceID uuid.UUID) ([]models.VampireNotification, error) {
 	var notifs []models.VampireNotification
 	if err := h.db.WithContext(ctx).
-		Where("active = ?", true).
+		Where("instance_id = ? AND active = ?", instanceID, true).
 		Order("created_at DESC").
 		Find(&notifs).Error; err != nil {
 		return nil, err
@@ -600,6 +640,12 @@ func (h *vampireHandler) ListActiveNotifications(ctx context.Context) ([]models.
 }
 
 // ---- Quiz ----
+//
+// Questions are shared global content, same as characters/items — authoring
+// (ReplaceQuizQuestions, the seed importer) stays global/ops-only. Which
+// questions are live for a given instance is the included flag in
+// vampire_instance_quiz_questions (see ListIncludedQuizQuestions* in
+// vampire_instance.go). Submissions are instance-scoped.
 
 func (h *vampireHandler) ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error) {
 	var qs []models.VampireQuizQuestion
@@ -651,7 +697,7 @@ type QuizSubmissionDetail struct {
 	QuestionType  string    `json:"questionType"`
 }
 
-func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]QuizSubmissionDetail, error) {
+func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context, instanceID uuid.UUID) ([]QuizSubmissionDetail, error) {
 	out := []QuizSubmissionDetail{}
 	if err := h.db.WithContext(ctx).
 		Table("vampire_quiz_submissions s").
@@ -667,11 +713,29 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context) ([]Qui
 		Joins("JOIN vampire_quiz_questions q ON q.id = s.question_id").
 		Joins("LEFT JOIN vampire_characters c ON c.id = p.character_id").
 		Joins("LEFT JOIN vampire_houses h ON h.id = c.house_id").
+		Where("s.instance_id = ?", instanceID).
 		Order("q.part ASC, q.ordinal ASC, character_name ASC").
 		Scan(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// GetPart1Question returns the library's single active Part 1 (open-end)
+// question, unscoped — used by the content editor (which edits the shared
+// library, not one instance's play state). See GetIncludedPart1Question for
+// the play-time, instance-scoped equivalent.
+func (h *vampireHandler) GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error) {
+	var qq models.VampireQuizQuestion
+	if err := h.db.WithContext(ctx).
+		Where("part = ? AND active = ?", 1, true).
+		Order("ordinal ASC").First(&qq).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &qq, nil
 }
 
 func (h *vampireHandler) ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error) {
@@ -684,20 +748,6 @@ func (h *vampireHandler) ListQuizQuestionsByPart(ctx context.Context, part int, 
 		return nil, err
 	}
 	return qs, nil
-}
-
-// GetPart1Question returns the single active Part 1 (open-end) question.
-func (h *vampireHandler) GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error) {
-	var qq models.VampireQuizQuestion
-	if err := h.db.WithContext(ctx).
-		Where("part = ? AND active = ?", 1, true).
-		Order("ordinal ASC").First(&qq).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &qq, nil
 }
 
 func (h *vampireHandler) UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error {
@@ -752,7 +802,7 @@ type Part2Answer struct {
 	Answer     string    `json:"answer"`
 }
 
-func (h *vampireHandler) ListPart2Answers(ctx context.Context) ([]Part2Answer, error) {
+func (h *vampireHandler) ListPart2Answers(ctx context.Context, instanceID uuid.UUID) ([]Part2Answer, error) {
 	out := []Part2Answer{}
 	if err := h.db.WithContext(ctx).
 		Table("vampire_quiz_submissions s").
@@ -760,17 +810,19 @@ func (h *vampireHandler) ListPart2Answers(ctx context.Context) ([]Part2Answer, e
 		Joins("JOIN vampire_quiz_questions q ON q.id = s.question_id AND q.part = 2").
 		Joins("JOIN vampire_players p ON p.id = s.player_id").
 		Joins("JOIN vampire_characters c ON c.id = p.character_id").
-		Where("c.house_id IS NOT NULL").
+		Where("s.instance_id = ? AND c.house_id IS NOT NULL", instanceID).
 		Scan(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// DeleteHouseFavorBySource removes ledger entries of a given source (used to
-// idempotently re-score Part 2).
-func (h *vampireHandler) DeleteHouseFavorBySource(ctx context.Context, source string) error {
-	return h.db.WithContext(ctx).Where("source = ?", source).Delete(&models.VampireHouseFavorLedger{}).Error
+// DeleteHouseFavorBySource removes one instance's ledger entries of a given
+// source (used to idempotently re-score Part 2).
+func (h *vampireHandler) DeleteHouseFavorBySource(ctx context.Context, instanceID uuid.UUID, source string) error {
+	return h.db.WithContext(ctx).
+		Where("instance_id = ? AND source = ?", instanceID, source).
+		Delete(&models.VampireHouseFavorLedger{}).Error
 }
 
 // DeleteBloodTokensBySourceForPlayer removes a player's BT entries of a given
@@ -792,8 +844,9 @@ func (h *vampireHandler) GetQuizQuestionByID(ctx context.Context, id uuid.UUID) 
 	return &qq, nil
 }
 
-func (h *vampireHandler) UpsertQuizSubmission(ctx context.Context, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error) {
+func (h *vampireHandler) UpsertQuizSubmission(ctx context.Context, instanceID, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error) {
 	sub := models.VampireQuizSubmission{
+		InstanceID: instanceID,
 		PlayerID:   playerID,
 		QuestionID: questionID,
 		Answer:     answer,
@@ -828,32 +881,40 @@ func (h *vampireHandler) ListQuizSubmissionsForPlayer(ctx context.Context, playe
 	return subs, nil
 }
 
-func (h *vampireHandler) ListQuizSubmissions(ctx context.Context) ([]models.VampireQuizSubmission, error) {
+func (h *vampireHandler) ListQuizSubmissions(ctx context.Context, instanceID uuid.UUID) ([]models.VampireQuizSubmission, error) {
 	var subs []models.VampireQuizSubmission
-	if err := h.db.WithContext(ctx).Order("created_at ASC").Find(&subs).Error; err != nil {
+	if err := h.db.WithContext(ctx).Where("instance_id = ?", instanceID).Order("created_at ASC").Find(&subs).Error; err != nil {
 		return nil, err
 	}
 	return subs, nil
 }
 
-// ResetGameProgress wipes all play progress for a clean playtest run: mission
-// submissions, both ledgers, quiz submissions, notifications, and the audit log,
-// then resets the game state to a sealed pre-event. The roster (houses,
-// characters, secrets, missions, players + their token assignments) and quiz
-// questions are preserved.
-func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
+// ResetGameProgress wipes all play progress for one instance's clean playtest
+// run: mission submissions, both ledgers, quiz submissions, notifications,
+// and the audit log, then resets that instance's game state to a sealed
+// pre-event. The roster (houses, characters, secrets, missions), the
+// instance's player slots + token assignments, and quiz questions are
+// preserved.
+func (h *vampireHandler) ResetGameProgress(ctx context.Context, instanceID uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Snapshot the score ledgers before wiping them, so a reset is always
-		// recoverable. Same transaction as the delete, so archive and wipe are
-		// atomic — we never delete without a durable copy landing first.
-		archives := map[string]string{
-			"vampire_house_favor_ledger": "vampire_house_favor_ledger_archive",
-			"vampire_blood_token_log":    "vampire_blood_token_log_archive",
+		// Snapshot this instance's score ledgers before wiping them, so a reset
+		// is always recoverable. Same transaction as the delete, so archive and
+		// wipe are atomic — we never delete without a durable copy landing
+		// first. Explicit column lists (not SELECT *) so the live and archive
+		// tables' column orders never have to match.
+		if err := tx.Exec(`
+			INSERT INTO vampire_house_favor_ledger_archive
+				(id, created_at, instance_id, house_id, delta, reason, gm_name, source, archived_at)
+			SELECT id, created_at, instance_id, house_id, delta, reason, gm_name, source, now()
+			FROM vampire_house_favor_ledger WHERE instance_id = ?`, instanceID).Error; err != nil {
+			return err
 		}
-		for src, dst := range archives {
-			if err := tx.Exec("INSERT INTO " + dst + " SELECT *, now() FROM " + src).Error; err != nil {
-				return err
-			}
+		if err := tx.Exec(`
+			INSERT INTO vampire_blood_token_log_archive
+				(id, created_at, instance_id, player_id, delta, reason, source, gm_name, archived_at)
+			SELECT id, created_at, instance_id, player_id, delta, reason, source, gm_name, now()
+			FROM vampire_blood_token_log WHERE instance_id = ?`, instanceID).Error; err != nil {
+			return err
 		}
 
 		tables := []string{
@@ -865,11 +926,11 @@ func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
 			"vampire_gm_action_log",
 		}
 		for _, table := range tables {
-			if err := tx.Exec("DELETE FROM " + table).Error; err != nil {
+			if err := tx.Exec("DELETE FROM "+table+" WHERE instance_id = ?", instanceID).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Model(&models.VampireGameState{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		return tx.Model(&models.VampireGameState{}).Where("instance_id = ?", instanceID).Updates(map[string]interface{}{
 			"current_act":            "pre_event",
 			"content_unlocked":       false,
 			"quiz_part1_open":        false,
@@ -881,51 +942,57 @@ func (h *vampireHandler) ResetGameProgress(ctx context.Context) error {
 	})
 }
 
-// WipeCharactersAndRoster clears the roster and all character content so a seed
-// run can rebuild from scratch (used for the --fresh re-seed). Deleting players
-// cascades their submissions, blood-token log, and quiz answers; deleting
-// characters cascades their secrets and missions. Score ledgers are archived
-// first so the wipe is recoverable, and houses / game state are left intact.
+// WipeCharactersAndRoster clears the global character library (and cascades
+// their secrets/missions) so a seed run can rebuild it from scratch (used
+// for the --fresh re-seed). Score ledgers are archived first so the wipe is
+// recoverable, and houses are left intact.
+//
+// Multi-tenant caveat: characters are now shared library content, referenced
+// by every instance's vampire_instance_characters rows (ON DELETE CASCADE).
+// Wiping the library therefore drops every instance's inclusion/sigil/
+// portrait rows for the deleted characters too — this is a global content
+// operation, not a per-instance one, and re-seeding immediately after
+// re-creates the characters but NOT each instance's inclusion rows (those
+// only get seeded when an instance is created). Only run --fresh when you
+// mean to affect every instance built on this library.
 func (h *vampireHandler) WipeCharactersAndRoster(ctx context.Context) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		archives := map[string]string{
-			"vampire_house_favor_ledger": "vampire_house_favor_ledger_archive",
-			"vampire_blood_token_log":    "vampire_blood_token_log_archive",
+		if err := tx.Exec(`
+			INSERT INTO vampire_house_favor_ledger_archive
+				(id, created_at, instance_id, house_id, delta, reason, gm_name, source, archived_at)
+			SELECT id, created_at, instance_id, house_id, delta, reason, gm_name, source, now()
+			FROM vampire_house_favor_ledger`).Error; err != nil {
+			return err
 		}
-		for src, dst := range archives {
-			if err := tx.Exec("INSERT INTO " + dst + " SELECT *, now() FROM " + src).Error; err != nil {
-				return err
-			}
+		if err := tx.Exec(`
+			INSERT INTO vampire_blood_token_log_archive
+				(id, created_at, instance_id, player_id, delta, reason, source, gm_name, archived_at)
+			SELECT id, created_at, instance_id, player_id, delta, reason, source, gm_name, now()
+			FROM vampire_blood_token_log`).Error; err != nil {
+			return err
 		}
-		// Notifications first (may reference players), then players (cascades their
-		// play data), then characters (cascades secrets + missions).
-		stmts := []string{
-			"DELETE FROM vampire_notifications",
-			"DELETE FROM vampire_players",
-			"DELETE FROM vampire_characters",
-		}
-		for _, s := range stmts {
-			if err := tx.Exec(s).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		// Characters only — secrets/missions cascade via FK. Players are now
+		// per-instance data and are deliberately left alone by a content wipe.
+		return tx.Exec("DELETE FROM vampire_characters").Error
 	})
 }
 
 // ---- Physical games ----
 
-func (h *vampireHandler) ListGames(ctx context.Context) ([]models.VampireGame, error) {
+func (h *vampireHandler) ListGames(ctx context.Context, instanceID uuid.UUID) ([]models.VampireGame, error) {
 	var games []models.VampireGame
-	if err := h.db.WithContext(ctx).Order("ordinal ASC, created_at ASC").Find(&games).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Where("instance_id = ?", instanceID).
+		Order("ordinal ASC, created_at ASC").
+		Find(&games).Error; err != nil {
 		return nil, err
 	}
 	return games, nil
 }
 
-func (h *vampireHandler) GetGameByID(ctx context.Context, id uuid.UUID) (*models.VampireGame, error) {
+func (h *vampireHandler) GetGameByID(ctx context.Context, instanceID, id uuid.UUID) (*models.VampireGame, error) {
 	var g models.VampireGame
-	if err := h.db.WithContext(ctx).First(&g, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&g, "instance_id = ? AND id = ?", instanceID, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -934,27 +1001,27 @@ func (h *vampireHandler) GetGameByID(ctx context.Context, id uuid.UUID) (*models
 	return &g, nil
 }
 
-// UpsertGame creates or updates a game by name (idempotent seeding).
-func (h *vampireHandler) UpsertGame(ctx context.Context, ordinal int, name string) (*models.VampireGame, error) {
-	game := models.VampireGame{Name: name, Ordinal: ordinal}
+// UpsertGame creates or updates a game by (instance, name) — idempotent seeding.
+func (h *vampireHandler) UpsertGame(ctx context.Context, instanceID uuid.UUID, ordinal int, name string) (*models.VampireGame, error) {
+	game := models.VampireGame{InstanceID: instanceID, Name: name, Ordinal: ordinal}
 	if err := h.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "name"}},
+			Columns:   []clause.Column{{Name: "instance_id"}, {Name: "name"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{"ordinal": ordinal, "updated_at": time.Now()}),
 		}).
 		Create(&game).Error; err != nil {
 		return nil, err
 	}
 	var out models.VampireGame
-	if err := h.db.WithContext(ctx).First(&out, "name = ?", name).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&out, "instance_id = ? AND name = ?", instanceID, name).Error; err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first, second, third []uuid.UUID) error {
+func (h *vampireHandler) SetGameResult(ctx context.Context, instanceID, id uuid.UUID, first, second, third []uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{
 			"status":               "played",
 			"first_character_ids":  jsonUUIDs(first),
@@ -966,9 +1033,9 @@ func (h *vampireHandler) SetGameResult(ctx context.Context, id uuid.UUID, first,
 
 // SetGameSchedule sets (or clears, with nil times) a game's slot, location,
 // assigned GM, and GM-only run notes.
-func (h *vampireHandler) SetGameSchedule(ctx context.Context, id uuid.UUID, start, end *int, location, assignedGM, runNotes string) error {
+func (h *vampireHandler) SetGameSchedule(ctx context.Context, instanceID, id uuid.UUID, start, end *int, location, assignedGM, runNotes string) error {
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{
 			"start_minutes": start,
 			"end_minutes":   end,
@@ -979,21 +1046,21 @@ func (h *vampireHandler) SetGameSchedule(ctx context.Context, id uuid.UUID, star
 		}).Error
 }
 
-func (h *vampireHandler) UpdateGame(ctx context.Context, id uuid.UUID, name string, ordinal int) error {
+func (h *vampireHandler) UpdateGame(ctx context.Context, instanceID, id uuid.UUID, name string, ordinal int) error {
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{"name": name, "ordinal": ordinal, "updated_at": time.Now()}).Error
 }
 
-func (h *vampireHandler) DeleteGame(ctx context.Context, id uuid.UUID) error {
-	return h.db.WithContext(ctx).Delete(&models.VampireGame{}, "id = ?", id).Error
+func (h *vampireHandler) DeleteGame(ctx context.Context, instanceID, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampireGame{}, "instance_id = ? AND id = ?", instanceID, id).Error
 }
 
 // ClearGameResult resets a game to pending and drops its recorded finishers.
-func (h *vampireHandler) ClearGameResult(ctx context.Context, id uuid.UUID) error {
+func (h *vampireHandler) ClearGameResult(ctx context.Context, instanceID, id uuid.UUID) error {
 	empty := datatypes.JSON([]byte("[]"))
 	return h.db.WithContext(ctx).Model(&models.VampireGame{}).
-		Where("id = ?", id).
+		Where("instance_id = ? AND id = ?", instanceID, id).
 		Updates(map[string]interface{}{
 			"status":               "pending",
 			"first_character_ids":  empty,
@@ -1003,22 +1070,28 @@ func (h *vampireHandler) ClearGameResult(ctx context.Context, id uuid.UUID) erro
 		}).Error
 }
 
-func (h *vampireHandler) DeleteGameAwards(ctx context.Context, gameName string) error {
+func (h *vampireHandler) DeleteGameAwards(ctx context.Context, instanceID uuid.UUID, gameName string) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(
-			"DELETE FROM vampire_house_favor_ledger WHERE source = 'game' AND reason = ?",
-			"Game: "+gameName,
+			"DELETE FROM vampire_house_favor_ledger WHERE instance_id = ? AND source = 'game' AND reason = ?",
+			instanceID, "Game: "+gameName,
 		).Error; err != nil {
 			return err
 		}
 		return tx.Exec(
-			"DELETE FROM vampire_blood_token_log WHERE source = 'game' AND reason IN (?, ?)",
-			"Game: "+gameName, "Game participation: "+gameName,
+			"DELETE FROM vampire_blood_token_log WHERE instance_id = ? AND source = 'game' AND reason IN (?, ?)",
+			instanceID, "Game: "+gameName, "Game participation: "+gameName,
 		).Error
 	})
 }
 
-// ---- Inventory ----
+// ---- Inventory (item catalog) ----
+//
+// The catalog is shared global content, same as characters — authoring
+// stays global/ops-only. Per-instance inclusion lives in
+// vampire_instance_items (see vampire_instance.go). Player *ownership* of
+// an item (VampirePlayerItem) is scoped implicitly through the owning
+// player's instance.
 
 func (h *vampireHandler) ListItems(ctx context.Context) ([]models.VampireItem, error) {
 	var items []models.VampireItem
@@ -1127,9 +1200,14 @@ func (h *vampireHandler) ListPlayerItems(ctx context.Context, playerID uuid.UUID
 	return pis, nil
 }
 
-func (h *vampireHandler) ListAllPlayerItems(ctx context.Context) ([]models.VampirePlayerItem, error) {
+// ListAllPlayerItems returns every item assignment for players in one instance.
+func (h *vampireHandler) ListAllPlayerItems(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayerItem, error) {
 	var pis []models.VampirePlayerItem
-	if err := h.db.WithContext(ctx).Preload("Item").Find(&pis).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("Item").
+		Joins("JOIN vampire_players p ON p.id = vampire_player_items.player_id").
+		Where("p.instance_id = ?", instanceID).
+		Find(&pis).Error; err != nil {
 		return nil, err
 	}
 	return pis, nil
@@ -1166,11 +1244,13 @@ func (h *vampireHandler) SetPlayerItemTarget(ctx context.Context, id uuid.UUID, 
 
 // ---- GM audit log ----
 
-func (h *vampireHandler) LogGMAction(ctx context.Context, gmName, action string, payload []byte) error {
+// LogGMAction records an admin action for one instance.
+func (h *vampireHandler) LogGMAction(ctx context.Context, instanceID uuid.UUID, gmName, action string, payload []byte) error {
 	entry := models.VampireGMActionLog{
-		GMName:  gmName,
-		Action:  action,
-		Payload: payload,
+		InstanceID: instanceID,
+		GMName:     gmName,
+		Action:     action,
+		Payload:    payload,
 	}
 	return h.db.WithContext(ctx).Create(&entry).Error
 }

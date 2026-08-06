@@ -316,3 +316,24 @@ resource "aws_secretsmanager_secret_version" "google_client_secret" {
   secret_id     = aws_secretsmanager_secret.google_client_secret.id
   secret_string = var.google_client_secret
 }
+
+# reef-site's own, separate Stripe account (go/billing routes to this one
+# only when PaymentCheckoutSessionParams.Platform == "reef" — every other
+# caller keeps using travel_angels_stripe_secret_key above unchanged).
+resource "aws_secretsmanager_secret" "reef_stripe_secret_key" {
+  name = "REEF_STRIPE_SECRET_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "reef_stripe_secret_key" {
+  secret_id     = aws_secretsmanager_secret.reef_stripe_secret_key.id
+  secret_string = var.reef_stripe_secret_key
+}
+
+resource "aws_secretsmanager_secret" "reef_stripe_webhook_secret" {
+  name = "REEF_STRIPE_WEBHOOK_SECRET"
+}
+
+resource "aws_secretsmanager_secret_version" "reef_stripe_webhook_secret" {
+  secret_id     = aws_secretsmanager_secret.reef_stripe_webhook_secret.id
+  secret_string = var.reef_stripe_webhook_secret
+}

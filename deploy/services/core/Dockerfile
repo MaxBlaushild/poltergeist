@@ -17,6 +17,7 @@ COPY ./go/travel-angels/go.mod ./go/travel-angels/go.sum ./travel-angels/
 COPY ./go/vampire-ascendancy/go.mod ./go/vampire-ascendancy/go.sum ./vampire-ascendancy/
 COPY ./go/verifiable-sn/go.mod ./go/verifiable-sn/go.sum ./verifiable-sn/
 COPY ./go/reef-site/go.mod ./go/reef-site/go.sum ./reef-site/
+COPY ./go/bgi-site/go.mod ./go/bgi-site/go.sum ./bgi-site/
 
 WORKDIR /usr/home/app/core
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -34,6 +35,7 @@ COPY ./go/travel-angels ./travel-angels
 COPY ./go/vampire-ascendancy ./vampire-ascendancy
 COPY ./go/verifiable-sn ./verifiable-sn
 COPY ./go/reef-site ./reef-site
+COPY ./go/bgi-site ./bgi-site
 
 # RUN cd ./trivai
 # RUN go mod download
@@ -60,6 +62,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 ENV REEF_OPENSCAD_BIN=/usr/bin/openscad
+ENV BGI_OPENSCAD_BIN=/usr/bin/openscad
 
 COPY --from=builder /usr/home/app/core/*.env /etc/core/
 COPY --from=builder /usr/home/app/core/fcm-service-account.json /etc/core/fcm-service-account.json

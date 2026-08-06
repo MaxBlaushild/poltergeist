@@ -1,0 +1,241 @@
+import type { BoxProfile, ParameterSchema, SleeveProfile } from '../api/types';
+
+interface Props {
+  schema: ParameterSchema;
+  values: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+  sleeveProfiles?: SleeveProfile[];
+  boxProfiles?: BoxProfile[];
+  errors?: Record<string, string>;
+  derived?: Record<string, string>;
+  derivedMax?: Record<string, number>;
+  derivedMin?: Record<string, number>;
+}
+
+// R-5.2's direct analog of reef's R-4.4: "A parameter added to the schema
+// must appear in the UI with no frontend change." Renders entirely from the
+// schema document fetched at runtime — same rendering algorithm as reef's
+// SchemaForm.tsx, themed for bgi and with `sleeve-select`/`box-select` in
+// place of reef's one `tank-select` case.
+export default function SchemaForm({
+  schema,
+  values,
+  onChange,
+  sleeveProfiles,
+  boxProfiles,
+  errors,
+  derived,
+  derivedMax,
+  derivedMin,
+}: Props) {
+  const propertyNames = Object.keys(schema.properties);
+
+  return (
+    <div className="space-y-6">
+      {propertyNames.map((name) => {
+        const prop = schema.properties[name];
+        const label = prop['x-label'] ?? name;
+        const helpText = prop['x-helpText'];
+        const diagram = prop['x-diagramAsset'];
+        const error = errors?.[name];
+        const derivedValue = derived?.[name];
+
+        if (derivedValue !== undefined) {
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <div className="rounded-xl border border-bgi-teal/20 bg-bgi-foam px-3 py-2 text-bgi-ink/70">
+                {derivedValue} <span className="text-xs">(derived)</span>
+              </div>
+            </Field>
+          );
+        }
+
+        if (prop['x-control'] === 'sleeve-select') {
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <select
+                className="input-field"
+                value={(values[name] as string) ?? ''}
+                onChange={(e) => onChange(name, e.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a sleeve class…
+                </option>
+                {(sleeveProfiles ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                    {!s.verified ? ' (unverified)' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          );
+        }
+
+        if (prop['x-control'] === 'box-select') {
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <select
+                className="input-field"
+                value={(values[name] as string) ?? ''}
+                onChange={(e) => onChange(name, e.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a box…
+                </option>
+                {(boxProfiles ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label} ({b.source}){!b.verified ? ' — unverified' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          );
+        }
+
+        const typeName = normalizeType(prop.type);
+
+        if (typeName === 'boolean') {
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <input
+                type="checkbox"
+                checked={Boolean(values[name])}
+                onChange={(e) => onChange(name, e.target.checked)}
+                className="h-5 w-5"
+              />
+            </Field>
+          );
+        }
+
+        if (prop.enum && prop.enum.length > 0) {
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <select
+                className="input-field"
+                value={String(values[name] ?? prop.default ?? '')}
+                onChange={(e) => onChange(name, coerceEnumValue(prop.enum!, e.target.value))}
+              >
+                {prop.enum.map((option) => (
+                  <option key={String(option)} value={String(option)}>
+                    {displayEnumOption(option)}
+                    {prop['x-unit'] ? prop['x-unit'] : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          );
+        }
+
+        if (typeName === 'number' || typeName === 'integer') {
+          const liveMax = derivedMax?.[name];
+          const liveMin = derivedMin?.[name];
+          const effectiveMax = liveMax !== undefined ? Math.min(prop.maximum ?? liveMax, liveMax) : prop.maximum;
+          const effectiveMin = liveMin !== undefined ? Math.max(prop.minimum ?? liveMin, liveMin) : prop.minimum;
+          const maxConstrained = liveMax !== undefined && effectiveMax === liveMax && liveMax < (prop.maximum ?? Infinity);
+          const minConstrained = liveMin !== undefined && effectiveMin === liveMin && liveMin > (prop.minimum ?? -Infinity);
+          return (
+            <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={effectiveMin}
+                  max={effectiveMax}
+                  step={typeName === 'integer' ? 1 : 0.5}
+                  value={Number(values[name] ?? effectiveMin ?? 0)}
+                  onChange={(e) => onChange(name, Number(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="w-20 text-right text-sm tabular-nums">
+                  {Number(values[name] ?? effectiveMin ?? 0)}
+                  {prop['x-unit'] ?? ''}
+                </span>
+              </div>
+              {maxConstrained || minConstrained ? (
+                <p className="text-xs text-bgi-teal mt-1">
+                  {maxConstrained && minConstrained
+                    ? `Between ${liveMin} and ${liveMax} with your other settings.`
+                    : maxConstrained
+                      ? `Max ${liveMax} with your other settings.`
+                      : `Min ${liveMin} with your other settings.`}
+                </p>
+              ) : (
+                (prop.minimum !== undefined || prop.maximum !== undefined) && (
+                  <p className="text-xs text-bgi-ink/50 mt-1">
+                    Range: {prop.minimum ?? '–'} to {prop.maximum ?? '–'}
+                    {prop['x-unit'] ?? ''}
+                  </p>
+                )
+              )}
+            </Field>
+          );
+        }
+
+        return (
+          <Field key={name} label={label} helpText={helpText} diagram={diagram} error={error}>
+            <input
+              type="text"
+              className="w-full border border-bgi-teal/30 rounded px-3 py-2"
+              value={String(values[name] ?? '')}
+              onChange={(e) => onChange(name, e.target.value)}
+            />
+          </Field>
+        );
+      })}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  helpText,
+  diagram,
+  error,
+  children,
+}: {
+  label: string;
+  helpText?: string;
+  diagram?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <label className="text-sm font-medium text-bgi-ink">{label}</label>
+        {diagram && (
+          <a
+            href={diagram}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-medium text-bgi-teal underline decoration-bgi-teal/40 underline-offset-2 hover:text-bgi-coral"
+          >
+            where to measure
+          </a>
+        )}
+      </div>
+      {children}
+      {helpText && <p className="text-xs text-bgi-ink/50 mt-1">{helpText}</p>}
+      {error && (
+        <p className="text-xs text-red-600 mt-1">
+          {label}: {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function normalizeType(t: string | (string | null)[]): string {
+  if (typeof t === 'string') return t;
+  return t.find((v) => v && v !== 'null') ?? '';
+}
+
+function coerceEnumValue(enumValues: (string | number)[], raw: string): string | number {
+  const numeric = enumValues.find((v) => typeof v === 'number' && String(v) === raw);
+  return numeric !== undefined ? numeric : raw;
+}
+
+function displayEnumOption(option: string | number): string {
+  const s = String(option);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

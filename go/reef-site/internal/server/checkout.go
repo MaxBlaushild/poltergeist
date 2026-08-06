@@ -16,7 +16,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/reef/pricing"
-	"github.com/MaxBlaushild/poltergeist/reef-site/internal/fulfillment"
+	"github.com/MaxBlaushild/poltergeist/pkg/reef/fulfillment"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -142,11 +142,16 @@ func (s *server) postCheckout(c *gin.Context) {
 	successURL := strings.ReplaceAll(req.SuccessURL, ":orderToken:", order.OrderToken)
 
 	session, err := s.deps.BillingClient.NewPaymentCheckoutSession(ctx, &billing.PaymentCheckoutSessionParams{
-		SessionSuccessRedirectUrl:  successURL,
-		SessionCancelRedirectUrl:   req.CancelURL,
-		LineItems:                  lineItems,
-		AutomaticTax:               true,
+		SessionSuccessRedirectUrl: successURL,
+		SessionCancelRedirectUrl:  req.CancelURL,
+		LineItems:                 lineItems,
+		// TODO: re-enable once the Forteus sandbox Stripe account has a
+		// Tax origin address configured — until then, every checkout
+		// session creation 400s with "You must have a valid head office
+		// address to enable automatic tax calculation in test mode."
+		AutomaticTax:               false,
 		CollectShippingAddress:     true,
+		Platform:                   "reef",
 		PaymentCompleteCallbackUrl: s.deps.Config.Public.BaseURL + "/api/reef/webhooks/stripe",
 		Metadata: map[string]string{
 			"reef_order_id":    order.ID.String(),
@@ -355,6 +360,7 @@ func (s *server) fulfillmentAdapter() (fulfillment.Adapter, error) {
 			s.deps.Config.Public.S3Bucket,
 			s.deps.Config.Public.OperatorEmail,
 			s.deps.Config.Public.EmailFromAddress,
+			"reef",
 		), nil
 	default:
 		// R-7.3: SlantAdapter is v1.1, deliberately not implemented until

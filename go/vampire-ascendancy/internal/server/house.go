@@ -11,6 +11,11 @@ import (
 // Favor log. Names and houses are already public (login dropdown, leaderboard),
 // so there is no secret content here.
 func (s *server) getHouseOverview(ctx *gin.Context) {
+	instanceID, err := instanceIDParam(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid instance id"})
+		return
+	}
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid house id"})
@@ -27,12 +32,12 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 		return
 	}
 
-	members, err := s.dbClient.Vampire().ListCharactersByHouse(ctx, id)
+	members, err := s.dbClient.Vampire().ListCharactersByHouse(ctx, instanceID, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log, err := s.dbClient.Vampire().ListHouseFavorLog(ctx, id)
+	log, err := s.dbClient.Vampire().ListHouseFavorLog(ctx, instanceID, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -56,7 +61,7 @@ func (s *server) getHouseOverview(ctx *gin.Context) {
 			"createdAt": e.CreatedAt,
 		})
 	}
-	itemFavor := s.houseItemFavor(ctx)[id.String()]
+	itemFavor := s.houseItemFavor(ctx, instanceID)[id.String()]
 
 	memberOut := make([]gin.H, 0, len(members))
 	for _, m := range members {

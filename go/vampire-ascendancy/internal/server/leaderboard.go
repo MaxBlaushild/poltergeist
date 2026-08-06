@@ -12,12 +12,13 @@ import (
 )
 
 // houseItemFavor computes, per house id, the live House Favor contributed by
-// items players currently hold. It is NOT written to the ledger, so it updates
-// the instant an HF item is assigned — shown as a "+X" overlay on the standings.
-func (s *server) houseItemFavor(ctx context.Context) map[string]float64 {
+// items players in this instance currently hold. It is NOT written to the
+// ledger, so it updates the instant an HF item is assigned — shown as a "+X"
+// overlay on the standings.
+func (s *server) houseItemFavor(ctx context.Context, instanceID uuid.UUID) map[string]float64 {
 	v := s.dbClient.Vampire()
 	out := map[string]float64{}
-	players, err := v.ListPlayers(ctx)
+	players, err := v.ListPlayers(ctx, instanceID)
 	if err != nil {
 		return out
 	}
@@ -27,7 +28,7 @@ func (s *server) houseItemFavor(ctx context.Context) map[string]float64 {
 			houseOf[p.ID.String()] = p.Character.HouseID
 		}
 	}
-	pis, err := v.ListAllPlayerItems(ctx)
+	pis, err := v.ListAllPlayerItems(ctx, instanceID)
 	if err != nil {
 		return out
 	}
@@ -44,12 +45,12 @@ func (s *server) houseItemFavor(ctx context.Context) map[string]float64 {
 
 // leaderboardWithItems attaches the live item-HF overlay and ranks by the
 // combined total (base ledger + item overlay).
-func (s *server) leaderboardWithItems(ctx context.Context) ([]db.HouseFavorStanding, error) {
-	standings, err := s.dbClient.Vampire().Leaderboard(ctx)
+func (s *server) leaderboardWithItems(ctx context.Context, instanceID uuid.UUID) ([]db.HouseFavorStanding, error) {
+	standings, err := s.dbClient.Vampire().Leaderboard(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
-	itemFavor := s.houseItemFavor(ctx)
+	itemFavor := s.houseItemFavor(ctx, instanceID)
 	for i := range standings {
 		standings[i].ItemFavor = itemFavor[standings[i].HouseID.String()]
 	}
@@ -68,13 +69,14 @@ func (s *server) leaderboardWithItems(ctx context.Context) ([]db.HouseFavorStand
 // games, missions, GM awards) plus the itemized item contributions. Used on the
 // final results screen so the GM can see exactly where each house's favor came from.
 func (s *server) gmStandingsBreakdown(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
 	houses, err := v.ListHouses(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	bySource, err := v.HouseFavorBySource(ctx)
+	bySource, err := v.HouseFavorBySource(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -88,7 +90,7 @@ func (s *server) gmStandingsBreakdown(ctx *gin.Context) {
 	}
 
 	// Itemize the live item HF per house (name + holder + amount).
-	players, _ := v.ListPlayers(ctx)
+	players, _ := v.ListPlayers(ctx, instanceID)
 	houseOf := map[string]*uuid.UUID{}
 	pName := map[string]string{}
 	for _, p := range players {
@@ -97,7 +99,7 @@ func (s *server) gmStandingsBreakdown(ctx *gin.Context) {
 			pName[p.ID.String()] = p.Character.Name
 		}
 	}
-	pis, _ := v.ListAllPlayerItems(ctx)
+	pis, _ := v.ListAllPlayerItems(ctx, instanceID)
 	itemsByHouse := map[string][]gin.H{}
 	itemTotal := map[string]float64{}
 	for _, pi := range pis {
@@ -141,9 +143,17 @@ func (s *server) gmStandingsBreakdown(ctx *gin.Context) {
 }
 
 // getLeaderboard returns House Favor standings — always visible to players, even
-// before content is unlocked. It is the authoritative live standing.
+// before content is unlocked. It is the authoritative live standing. Used by
+// the public broadcast feed, the player view, and the GM standings tab alike,
+// so it resolves the instance straight from the URL rather than from a
+// specific auth context.
 func (s *server) getLeaderboard(ctx *gin.Context) {
-	standings, err := s.leaderboardWithItems(ctx)
+	instanceID, err := instanceIDParam(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid instance id"})
+		return
+	}
+	standings, err := s.leaderboardWithItems(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -154,6 +164,7 @@ func (s *server) getLeaderboard(ctx *gin.Context) {
 // POST /gm/hf — award or deduct House Favor. Appends to the ledger; the
 // leaderboard is the running sum.
 func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	var body struct {
 		HouseID string  `json:"houseId"`
 		Delta   float64 `json:"delta"`
@@ -175,11 +186,12 @@ func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
 
 	gmName := gmNameFromContext(ctx)
 	if err := s.dbClient.Vampire().AddHouseFavor(ctx, &models.VampireHouseFavorLedger{
-		HouseID: houseID,
-		Delta:   body.Delta,
-		Reason:  body.Reason,
-		GMName:  gmName,
-		Source:  "manual",
+		InstanceID: instanceID,
+		HouseID:    houseID,
+		Delta:      body.Delta,
+		Reason:     body.Reason,
+		GMName:     gmName,
+		Source:     "manual",
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -191,7 +203,7 @@ func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
 		"reason":  body.Reason,
 	})
 
-	standings, err := s.leaderboardWithItems(ctx)
+	standings, err := s.leaderboardWithItems(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -199,7 +211,7 @@ func (s *server) gmAwardHouseFavor(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"standings": standings})
 }
 
-// getHouses lists the houses (for GM award dropdowns).
+// getHouses lists the houses (for GM award dropdowns) — shared global content.
 func (s *server) getHouses(ctx *gin.Context) {
 	houses, err := s.dbClient.Vampire().ListHouses(ctx)
 	if err != nil {

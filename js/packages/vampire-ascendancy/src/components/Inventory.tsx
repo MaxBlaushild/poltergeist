@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getInventory, setInventoryTarget, getToken } from '../api';
-import type { InventoryItem, InventoryTarget } from '../types';
+import type { InventoryItem, InventoryTarget } from '../api';
 import { VampireMark } from './VampireMark';
 
 // "What you own." Lists the player's items; targeting items get a target picker,

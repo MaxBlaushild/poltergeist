@@ -66,9 +66,9 @@ func TestScorePart2Favor_SkipsNumericAndOmitsZero(t *testing.T) {
 	got := scorePart2Favor(
 		[]models.VampireQuizQuestion{q1, qNum},
 		[]db.Part2Answer{
-			ans(p1, h1, q1.ID, "A"),      // h1: 1/1 * 4 = 4.0
-			ans(p2, h2, q1.ID, "wrong"),  // h2: all wrong -> omitted
-			ans(p3, h3, qNum.ID, "99"),   // h3: only numeric -> not a participant -> omitted
+			ans(p1, h1, q1.ID, "A"),     // h1: 1/1 * 4 = 4.0
+			ans(p2, h2, q1.ID, "wrong"), // h2: all wrong -> omitted
+			ans(p3, h3, qNum.ID, "99"),  // h3: only numeric -> not a participant -> omitted
 		},
 	)
 	if !approx(got[h1], 4.0) {

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 
+	bgisite "github.com/MaxBlaushild/poltergeist/bgi-site/pkg"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	reefsite "github.com/MaxBlaushild/poltergeist/reef-site/pkg"
 	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
@@ -26,11 +27,12 @@ type server struct {
 	vampireAscendancyServer vampireascendancy.Server
 	tradesARGlassesServer   tradesarglasses.Server
 	reefServer              reefsite.Server
+	bgiServer               bgisite.Server
 	texterClient            texter.Client
 }
 
 // NewServer creates a new server instance
-func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, vampireAscendancyServer vampireascendancy.Server, tradesARGlassesServer tradesarglasses.Server, reefServer reefsite.Server, texterClient texter.Client) *server {
+func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, vampireAscendancyServer vampireascendancy.Server, tradesARGlassesServer tradesarglasses.Server, reefServer reefsite.Server, bgiServer bgisite.Server, texterClient texter.Client) *server {
 	return &server{
 		// finalFeteServer:    finalFeteServer,
 		sonarServer:             sonarServer,
@@ -39,6 +41,7 @@ func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server,
 		vampireAscendancyServer: vampireAscendancyServer,
 		tradesARGlassesServer:   tradesARGlassesServer,
 		reefServer:              reefServer,
+		bgiServer:               bgiServer,
 		texterClient:            texterClient,
 	}
 }
@@ -97,6 +100,9 @@ func (s *server) ListenAndServe(port string) {
 	s.tradesARGlassesServer.SetupRoutes(router)
 	if s.reefServer != nil {
 		s.reefServer.SetupRoutes(router)
+	}
+	if s.bgiServer != nil {
+		s.bgiServer.SetupRoutes(router)
 	}
 
 	// Champagne endpoint - sends celebratory text

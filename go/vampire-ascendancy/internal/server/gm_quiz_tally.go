@@ -34,24 +34,24 @@ var digits = regexp.MustCompile(`[^0-9]`)
 
 // computeBtTally loads the data the resolution engine needs and delegates the
 // (pure) computation to resolveTally.
-func (s *server) computeBtTally(ctx context.Context) ([]tallyRow, error) {
+func (s *server) computeBtTally(ctx context.Context, instanceID uuid.UUID) ([]tallyRow, error) {
 	v := s.dbClient.Vampire()
 
-	players, err := v.ListPlayers(ctx)
+	players, err := v.ListPlayers(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
-	subs, err := v.ListQuizSubmissionsDetailed(ctx)
+	subs, err := v.ListQuizSubmissionsDetailed(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 	gameBt := map[string]int{}
-	if totals, err := v.BloodTokenTotalsBySource(ctx, "game"); err == nil {
+	if totals, err := v.BloodTokenTotalsBySource(ctx, instanceID, "game"); err == nil {
 		for _, t := range totals {
 			gameBt[t.PlayerID.String()] = t.Total
 		}
 	}
-	pis, err := v.ListAllPlayerItems(ctx)
+	pis, err := v.ListAllPlayerItems(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func resolveTally(
 
 // GET /gm/quiz/tally — per-character final Blood Token tally with item effects.
 func (s *server) gmQuizTally(ctx *gin.Context) {
-	rows, err := s.computeBtTally(ctx)
+	rows, err := s.computeBtTally(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

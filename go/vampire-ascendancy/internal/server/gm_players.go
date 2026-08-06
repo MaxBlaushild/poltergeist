@@ -1,8 +1,6 @@
 package server
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"net/http"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -11,22 +9,20 @@ import (
 )
 
 func genPlayerToken() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return genOpaqueToken()
 }
 
 // GET /gm/players — every player slot with its assignment and current (recorded)
 // Blood Token total, for the assignment editor and BT-award panel.
 func (s *server) gmListPlayers(ctx *gin.Context) {
-	players, err := s.dbClient.Vampire().ListPlayers(ctx)
+	instanceID := instanceIDFromContext(ctx)
+	v := s.dbClient.Vampire()
+	players, err := v.ListPlayers(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	totals, err := s.dbClient.Vampire().BloodTokenTotalsByPlayer(ctx)
+	totals, err := v.BloodTokenTotalsByPlayer(ctx, instanceID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -34,6 +30,17 @@ func (s *server) gmListPlayers(ctx *gin.Context) {
 	btByPlayer := map[string]int{}
 	for _, t := range totals {
 		btByPlayer[t.PlayerID.String()] = t.Total
+	}
+	// This Toast's sigils, per character (moved off the global character
+	// row — see MULTI_TENANT_REQUIREMENTS.md).
+	libraryChars, err := v.ListLibraryCharacters(ctx, instanceID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sigilByChar := map[string]string{}
+	for _, c := range libraryChars {
+		sigilByChar[c.ID.String()] = c.Sigil
 	}
 
 	out := make([]gin.H, 0, len(players))
@@ -50,7 +57,7 @@ func (s *server) gmListPlayers(ctx *gin.Context) {
 				"id":       p.Character.ID,
 				"name":     p.Character.Name,
 				"roleType": p.Character.RoleType,
-				"sigil":    p.Character.Password, // GM needs this to hand out
+				"sigil":    sigilByChar[p.Character.ID.String()], // GM needs this to hand out
 			}
 			if p.Character.House != nil {
 				ch["house"] = p.Character.House.Name
@@ -66,6 +73,7 @@ func (s *server) gmListPlayers(ctx *gin.Context) {
 
 // POST /gm/players — create a new player slot with a fresh token.
 func (s *server) gmCreatePlayer(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	var body struct {
 		GuestLabel  string  `json:"guestLabel"`
 		CharacterID *string `json:"characterId"`
@@ -89,6 +97,7 @@ func (s *server) gmCreatePlayer(ctx *gin.Context) {
 	}
 
 	player := &models.VampirePlayer{
+		InstanceID:  instanceID,
 		Token:       token,
 		CharacterID: characterID,
 		GuestLabel:  body.GuestLabel,
@@ -105,6 +114,7 @@ func (s *server) gmCreatePlayer(ctx *gin.Context) {
 
 // PUT /gm/players/:id — edit a player's character assignment, label, or active flag.
 func (s *server) gmUpdatePlayer(ctx *gin.Context) {
+	instanceID := instanceIDFromContext(ctx)
 	playerID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid player id"})
@@ -131,7 +141,7 @@ func (s *server) gmUpdatePlayer(ctx *gin.Context) {
 		characterID = &id
 	}
 
-	if err := s.dbClient.Vampire().UpdatePlayerAssignment(ctx, playerID, characterID, body.GuestLabel, body.Active); err != nil {
+	if err := s.dbClient.Vampire().UpdatePlayerAssignment(ctx, instanceID, playerID, characterID, body.GuestLabel, body.Active); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -144,9 +154,10 @@ func (s *server) gmUpdatePlayer(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// GET /gm/characters — character roster for the assignment dropdown.
+// GET /gm/characters — this Toast's included character roster, for the
+// assignment dropdown.
 func (s *server) gmListCharacters(ctx *gin.Context) {
-	chars, err := s.dbClient.Vampire().ListCharacters(ctx)
+	chars, err := s.dbClient.Vampire().ListIncludedCharacters(ctx, instanceIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

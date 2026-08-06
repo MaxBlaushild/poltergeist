@@ -180,6 +180,11 @@ func (p *GenerateReefFullProcessor) process(ctx context.Context, payload jobs.Ge
 		MaxWeightG:            p.cfg.ReefMaxWeightG,
 		MinDrainPathMm:        p.cfg.ReefMinDrainPathMm,
 		MaxSupportMaterialPct: p.cfg.ReefMaxSupportMaterialPct,
+		// Reef's magnetic frag rack has real vented-but-blind magnet
+		// pockets — a genuine submerged-buoyancy concern (R-5.3) — so this
+		// stays enabled here. Products with no such concern (e.g. bgi's
+		// open-top trays) opt out via this same flag.
+		SealedVoidRuleEnabled: true,
 	}
 	rejection := validate.Validate(meta, thresholds)
 

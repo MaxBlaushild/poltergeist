@@ -2,18 +2,28 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { reefApi } from '../api/client';
 import type { Order } from '../api/types';
+import { useCart } from '../hooks/useCart';
 
 // R-8.2: /orders/[token] — order status, no login.
 export default function OrderStatus() {
   const { token } = useParams<{ token: string }>();
   const [order, setOrder] = useState<Order | null | undefined>(undefined);
+  const { clear } = useCart();
 
   useEffect(() => {
     if (!token) return;
     reefApi
       .getOrder(token)
-      .then(setOrder)
+      .then((data) => {
+        setOrder(data);
+        // Reaching this page is only possible via Stripe's success
+        // redirect (or revisiting a past order) — either way the cart
+        // that led here is stale and should be emptied, not left behind
+        // for the next visit to accidentally re-checkout.
+        clear();
+      })
       .catch(() => setOrder(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   if (order === undefined) return <p className="text-reef-ink/60">Loading…</p>;
