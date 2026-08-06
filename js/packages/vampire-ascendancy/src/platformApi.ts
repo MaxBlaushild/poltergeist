@@ -38,12 +38,24 @@ export const loginUserWithGoogle = (idToken: string) =>
   request<UserAuth>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) }, false);
 
 // ---- Instances ("Toasts") ----
+// A row is either a Toast this account administers ("admin" — Host/
+// Co-Host, links to the GM console) or one it plays a character in
+// ("player" — links to the player app, with `character` for a preview
+// card). An account that's both gets shown once, as admin.
 export interface MyToast {
   id: string;
   name: string;
   status: string;
   createdAt: string;
-  role: 'owner' | 'admin'; // owner -> Host, admin -> Co-Host
+  kind: 'admin' | 'player';
+  role?: 'owner' | 'admin'; // present when kind === 'admin'; owner -> Host, admin -> Co-Host
+  character?: {
+    id: string;
+    name: string;
+    title: string;
+    house?: string;
+    imageUrl?: string;
+  };
 }
 export const listMyToasts = () => request<{ instances: MyToast[] }>('/instances');
 export const hostToast = (name: string) => request<{ id: string; name: string }>('/instances', {

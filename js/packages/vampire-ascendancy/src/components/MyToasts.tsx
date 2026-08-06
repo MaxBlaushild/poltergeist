@@ -4,9 +4,12 @@ import { listMyToasts, hostToast, type MyToast } from '../platformApi';
 import { ApiError } from '../api';
 import { useUserAuth } from '../userAuth';
 import { VampireMark } from './VampireMark';
+import { accentFor, houseLabel } from '../theme';
 
-// GET /toasts — every Toast the signed-in user Hosts or Co-Hosts, reached
-// from the landing page once signed in. Wrapped in <RequireUser> by App.tsx.
+// GET /toasts — every Toast the signed-in user Hosts, Co-Hosts, or plays a
+// character in, reached from the landing page once signed in. Wrapped in
+// <RequireUser> by App.tsx. An admin card links into the GM console; a
+// player card previews the character and links into the player app.
 export const MyToasts = () => {
   const { auth, logout } = useUserAuth();
   const navigate = useNavigate();
@@ -51,29 +54,93 @@ export const MyToasts = () => {
       {!toasts && !error && <p className="text-bone/50 text-center">Gathering your Toasts…</p>}
       {toasts && toasts.length === 0 && (
         <p className="text-bone/50 text-center text-sm">
-          No Toasts yet — "Host another Toast" above to start your first one.
+          No Toasts yet — "Host another Toast" above to start your first one, or ask whoever's running one
+          to invite you.
         </p>
       )}
 
       <div className="space-y-3">
         {toasts?.map((t) => (
-          <Link
-            key={t.id}
-            to={`/e/${t.id}/gm`}
-            className="block rounded-lg border border-blood/40 bg-black/40 p-4 hover:border-blood transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-heading text-bone font-semibold">{t.name}</p>
-                <p className="text-bone/50 text-xs mt-1">
-                  {t.role === 'owner' ? 'Host' : 'Co-Host'} · {t.status}
-                </p>
-              </div>
-              <span className="text-gold text-xs uppercase tracking-[0.2em]">Open →</span>
-            </div>
-          </Link>
+          <ToastCard key={t.id} toast={t} />
         ))}
       </div>
+    </div>
+  );
+};
+
+const ToastCard = ({ toast }: { toast: MyToast }) => {
+  const href = toast.kind === 'admin' ? `/e/${toast.id}/gm` : `/e/${toast.id}`;
+  const accent = toast.kind === 'player' ? accentFor(toast.character?.house) : undefined;
+
+  return (
+    <Link
+      to={href}
+      className="block rounded-lg border border-blood/40 bg-black/40 p-4 hover:border-blood transition-colors"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          {toast.kind === 'player' && toast.character && (
+            <TeaserPortrait imageUrl={toast.character.imageUrl} name={toast.character.name} accent={accent} />
+          )}
+          <div className="min-w-0">
+            <p className="font-heading text-bone font-semibold truncate">{toast.name}</p>
+            {toast.kind === 'admin' ? (
+              <p className="text-bone/50 text-xs mt-1">
+                <span className="inline-block px-2 py-0.5 rounded-full border border-gold/50 text-gold uppercase tracking-[0.15em] text-[10px] mr-2">
+                  {toast.role === 'owner' ? 'Host' : 'Co-Host'}
+                </span>
+                {toast.status}
+              </p>
+            ) : toast.character ? (
+              <p className="text-xs mt-1">
+                <span className="text-bone/70">You are </span>
+                <span className="font-semibold" style={{ color: accent }}>
+                  {toast.character.name}
+                </span>
+                {toast.character.house && (
+                  <span className="text-bone/40"> · {houseLabel(toast.character.house)}</span>
+                )}
+              </p>
+            ) : (
+              <p className="text-bone/50 text-xs mt-1">Awaiting your seat</p>
+            )}
+          </div>
+        </div>
+        <span className="shrink-0 text-gold text-xs uppercase tracking-[0.2em]">Open →</span>
+      </div>
+    </Link>
+  );
+};
+
+// Small round character portrait for the player-card sneak peek. Falls back
+// to a house-tinted initial when there's no portrait yet.
+const TeaserPortrait = ({
+  imageUrl,
+  name,
+  accent,
+}: {
+  imageUrl?: string;
+  name: string;
+  accent?: string;
+}) => {
+  const [failed, setFailed] = useState(false);
+  if (imageUrl && !failed) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        onError={() => setFailed(true)}
+        className="w-10 h-10 rounded-full object-cover border shrink-0"
+        style={{ borderColor: accent }}
+      />
+    );
+  }
+  return (
+    <div
+      className="w-10 h-10 rounded-full flex items-center justify-center border shrink-0 font-display text-sm"
+      style={{ borderColor: accent, color: accent }}
+    >
+      {name.charAt(0)}
     </div>
   );
 };

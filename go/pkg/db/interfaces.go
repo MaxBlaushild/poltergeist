@@ -437,6 +437,10 @@ type VampireHandle interface {
 	// GetPlayerByUserAndInstance resolves a signed-in account's character
 	// assignment in one instance — used by withPlayer.
 	GetPlayerByUserAndInstance(ctx context.Context, instanceID, userID uuid.UUID) (*models.VampirePlayer, error)
+	// ListPlayerInstancesForUser is the player-side counterpart to
+	// ListInstancesForUser — every Toast the account holds an active
+	// character in, for the "My Toasts" dashboard.
+	ListPlayerInstancesForUser(ctx context.Context, userID uuid.UUID) ([]models.VampirePlayer, error)
 	ListPlayers(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayer, error)
 	UpdatePlayerAssignment(ctx context.Context, instanceID, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
 

@@ -77,29 +77,74 @@ func (s *server) createInstance(ctx *gin.Context) {
 }
 
 // GET /vampire-ascendancy/instances — "My Toasts": every instance the
-// signed-in user Hosts or Co-Hosts.
+// signed-in user administers (Host/Co-Host) *or* plays a character in.
+// Each row is tagged with a "kind" so the dashboard knows where to send
+// them — an admin row links to the GM console, a player row links to the
+// player app and carries the character (with portrait) for a preview
+// card. An instance where the account is both (rare — a Co-Host who's
+// also been invited as a player) is shown once, as admin, since that's
+// the more privileged surface.
 func (s *server) listMyInstances(ctx *gin.Context) {
 	user := userFromContext(ctx)
 	v := s.dbClient.Vampire()
-	instances, err := v.ListInstancesForUser(ctx, user.ID)
+
+	adminInstances, err := v.ListInstancesForUser(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	out := make([]gin.H, 0, len(instances))
-	for _, inst := range instances {
+	out := make([]gin.H, 0, len(adminInstances))
+	seen := make(map[uuid.UUID]bool, len(adminInstances))
+	for _, inst := range adminInstances {
 		role := models.InstanceAdminRoleAdmin
 		if admin, _ := v.GetInstanceAdmin(ctx, inst.ID, user.ID); admin != nil {
 			role = admin.Role
 		}
+		seen[inst.ID] = true
 		out = append(out, gin.H{
 			"id":        inst.ID,
 			"name":      inst.Name,
 			"status":    inst.Status,
 			"createdAt": inst.CreatedAt,
+			"kind":      "admin",
 			"role":      role, // "owner" -> Host, "admin" -> Co-Host
 		})
 	}
+
+	players, err := v.ListPlayerInstancesForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, p := range players {
+		if seen[p.InstanceID] {
+			continue
+		}
+		seen[p.InstanceID] = true
+		inst, err := v.GetInstanceByID(ctx, p.InstanceID)
+		if err != nil || inst == nil {
+			continue
+		}
+		row := gin.H{
+			"id":        inst.ID,
+			"name":      inst.Name,
+			"status":    inst.Status,
+			"createdAt": inst.CreatedAt,
+			"kind":      "player",
+		}
+		if p.Character != nil {
+			ch := gin.H{"id": p.Character.ID, "name": p.Character.Name, "title": p.Character.Title}
+			if p.Character.House != nil {
+				ch["house"] = p.Character.House.Name
+			}
+			if ic, _ := v.GetInstanceCharacter(ctx, p.InstanceID, p.Character.ID); ic != nil && ic.ImageURL != "" {
+				ch["imageUrl"] = ic.ImageURL
+			}
+			row["character"] = ch
+		}
+		out = append(out, row)
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{"instances": out})
 }
 

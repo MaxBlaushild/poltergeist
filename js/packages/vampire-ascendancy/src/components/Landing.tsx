@@ -29,7 +29,10 @@ export const Landing = () => {
 
   const primaryCta = () => {
     if (!auth) {
-      navigate('/signin?next=/toasts/new');
+      // The dashboard itself handles "no Toasts yet" with its own "Host
+      // another Toast" CTA, so this works whether they're new or already
+      // have Toasts waiting (as a Host, Co-Host, or player).
+      navigate('/signin?next=/toasts');
       return;
     }
     if (toastCount && toastCount > 0) {
@@ -76,7 +79,7 @@ export const Landing = () => {
 
       <div className="text-center mt-16">
         <p className="text-bone/40 text-xs uppercase tracking-[0.2em]">
-          Have a character link? Just open it — no account needed.
+          Got a text invite? Open the link to see your character and RSVP.
         </p>
       </div>
     </div>

@@ -187,6 +187,22 @@ func (h *vampireHandler) GetPlayerByUserAndInstance(ctx context.Context, instanc
 	return &p, nil
 }
 
+// ListPlayerInstancesForUser is the player-side counterpart to
+// ListInstancesForUser — every Toast a signed-in account holds an active
+// character in (as opposed to administers). Used by the "My Toasts"
+// dashboard to fold a player's Toasts in alongside the ones they Host/
+// Co-Host, with the character preloaded for the dashboard's teaser card.
+func (h *vampireHandler) ListPlayerInstancesForUser(ctx context.Context, userID uuid.UUID) ([]models.VampirePlayer, error) {
+	var players []models.VampirePlayer
+	if err := h.db.WithContext(ctx).
+		Preload("Character.House").
+		Where("user_id = ? AND active = ?", userID, true).
+		Find(&players).Error; err != nil {
+		return nil, err
+	}
+	return players, nil
+}
+
 // isUniqueViolation reports whether err is a Postgres unique_violation
 // (23505) — used to translate the one-pending-invite-per-character partial
 // unique index into a friendly *ConflictError.
