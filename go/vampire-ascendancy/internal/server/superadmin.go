@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/datatypes"
 )
 
@@ -123,18 +125,65 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		tags = []string{}
 	}
 	ctx.JSON(http.StatusOK, gin.H{
-		"id":              c.ID,
-		"name":            c.Name,
-		"title":           c.Title,
-		"roleType":        c.RoleType,
-		"isOptional":      c.IsOptional,
-		"houseId":         c.HouseID,
-		"preEventInfo":    c.PreEventInfo,
-		"postAct1Context": c.PostAct1Context,
-		"tags":            tags,
-		"secrets":         secrets,
-		"missions":        missions,
+		"id":                   c.ID,
+		"name":                 c.Name,
+		"title":                c.Title,
+		"roleType":             c.RoleType,
+		"isOptional":           c.IsOptional,
+		"houseId":              c.HouseID,
+		"preEventInfo":         c.PreEventInfo,
+		"postAct1Context":      c.PostAct1Context,
+		"tags":                 tags,
+		"tagsGenerationStatus": c.TagsGenerationStatus,
+		"tagsGenerationError":  c.TagsGenerationError,
+		"secrets":              secrets,
+		"missions":             missions,
 	})
+}
+
+// POST /admin/characters/:id/generate-tags — enqueue an LLM job that reads
+// this character's full content (bio, secrets, missions) and proposes
+// personality/trait tags, overwriting the current tag list when it
+// finishes. Same fire-and-poll shape as quiz grading: this call only
+// enqueues and flips the status to "queued"; the Tags field and status
+// update once the job-runner worker finishes (see
+// GenerateCharacterTagsProcessor in job-runner).
+func (s *server) adminGenerateCharacterTags(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "background jobs aren't configured (REDIS_URL unset)"})
+		return
+	}
+	v := s.dbClient.Vampire()
+	c, err := v.GetCharacterByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if c == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.GenerateCharacterTagsTaskPayload{CharacterID: id})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(
+		asynq.NewTask(jobs.GenerateCharacterTagsTaskType, payload),
+		asynq.Queue("grading"),
+		asynq.MaxRetry(2),
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	_ = v.SetCharacterTagsStatus(ctx, id, models.CharacterTagsStatusQueued, "")
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // PUT /admin/characters/:id — save the shared character editor: core

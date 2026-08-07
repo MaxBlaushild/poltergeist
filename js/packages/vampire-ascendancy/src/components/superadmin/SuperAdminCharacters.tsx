@@ -4,10 +4,12 @@ import {
   adminListHouses,
   adminGetCharacter,
   adminUpdateCharacter,
+  adminGenerateCharacterTags,
 } from '../../superAdminApi';
 import type { AdminCharacter } from '../../superAdminApi';
 import type { GMCharacterFull, GMMissionEdit } from '../../gmApi';
 import type { House } from '../../types';
+import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
 
 // The shared character roster: bios, secrets, missions. Sigils, portraits,
@@ -91,14 +93,37 @@ const CharacterEditor = ({
   const [c, setC] = useState<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName'> | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [tagsError, setTagsError] = useState<string | null>(null);
 
   useEffect(() => {
     adminGetCharacter(characterId).then(setC).catch(() => setNote('Could not load character.'));
   }, [characterId]);
 
+  // While a tag-generation job is in flight, poll for its result — same
+  // "enqueue → poll → done" shape as quiz-grading. Stops once the status
+  // leaves queued/generating (generated, failed, or never run).
+  const generating = c?.tagsGenerationStatus === 'queued' || c?.tagsGenerationStatus === 'generating';
+  useEffect(() => {
+    if (!generating) return;
+    const id = setInterval(() => {
+      adminGetCharacter(characterId).then(setC).catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, [generating, characterId]);
+
   if (!c) return <p className="text-bone/50 text-sm">{note || 'Loading character…'}</p>;
 
   const set = <K extends keyof typeof c>(k: K, v: (typeof c)[K]) => setC({ ...c, [k]: v });
+
+  const generateTags = async () => {
+    setTagsError(null);
+    try {
+      await adminGenerateCharacterTags(c.id);
+      setC({ ...c, tagsGenerationStatus: 'queued', tagsGenerationError: '' });
+    } catch (e) {
+      setTagsError(e instanceof ApiError ? e.message : 'Could not start tag generation.');
+    }
+  };
 
   const save = async () => {
     setBusy(true);
@@ -159,7 +184,35 @@ const CharacterEditor = ({
         </Field>
       </div>
       <Field label="Tags — personality/trait labels for the Invites picker (comma-separated)">
-        <TagsInput className={input} tags={c.tags} onChange={(tags) => set('tags', tags)} />
+        <div className="flex flex-col gap-1.5">
+          <div className="flex gap-2 items-center">
+            <TagsInput
+              key={`${c.id}:${c.tags.join('|')}`}
+              className={`${input} flex-1`}
+              tags={c.tags}
+              onChange={(tags) => set('tags', tags)}
+            />
+            <button
+              onClick={generateTags}
+              disabled={generating}
+              className="shrink-0 px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40 whitespace-nowrap"
+            >
+              {generating
+                ? c.tagsGenerationStatus === 'queued'
+                  ? 'Queued…'
+                  : 'Generating…'
+                : '✨ Generate with AI'}
+            </button>
+          </div>
+          <p className="text-[11px] text-bone/40">
+            Reads the saved bio, secrets, and missions — save your other edits first if you've changed
+            them.
+          </p>
+          {c.tagsGenerationStatus === 'failed' && c.tagsGenerationError && (
+            <p className="text-blood-bright text-xs">{c.tagsGenerationError}</p>
+          )}
+          {tagsError && <p className="text-blood-bright text-xs">{tagsError}</p>}
+        </div>
       </Field>
       <Field label="Pre-event bio">
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />

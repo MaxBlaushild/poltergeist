@@ -9,6 +9,7 @@ import (
 
 const (
 	GradeQuizSubmissionTaskType                        = "grade_quiz_submission"
+	GenerateCharacterTagsTaskType                      = "generate_character_tags"
 	GenerateQuestForZoneTaskType                       = "generate_quest_for_zone"
 	QueueQuestGenerationsTaskType                      = "queue_quest_generations"
 	CreateProfilePictureTaskType                       = "create_profile_picture"
@@ -167,6 +168,15 @@ type GradeQuizSubmissionTaskPayload struct {
 	Rubric       string    `json:"rubric"`
 	Answer       string    `json:"answer"`
 	MaxBT        int       `json:"maxBt"`
+}
+
+// GenerateCharacterTagsTaskPayload asks the LLM oracle to read a
+// character's full content (bio, secrets, missions) and propose
+// personality/trait tags. Just the ID — the worker re-fetches the
+// character fresh (with House/Secrets/Missions preloaded) rather than
+// carrying all that content through the queue.
+type GenerateCharacterTagsTaskPayload struct {
+	CharacterID uuid.UUID `json:"characterId"`
 }
 
 type GenerateQuestForZoneTaskPayload struct {

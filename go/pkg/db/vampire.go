@@ -793,6 +793,19 @@ func (h *vampireHandler) MarkQuizGradeStarted(ctx context.Context, id uuid.UUID)
 		}).Error
 }
 
+// SetCharacterTagsStatus records an AI tag-generation state transition
+// (queued / generating / generated / failed) along with any error message —
+// the character equivalent of SetQuizGradeStatus above.
+func (h *vampireHandler) SetCharacterTagsStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireCharacter{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"tags_generation_status": status,
+			"tags_generation_error":  errMsg,
+			"updated_at":             time.Now(),
+		}).Error
+}
+
 // Part2Answer is one player's answer to a Part 2 question, with their house —
 // the raw material for the normalized per-house scoring.
 type Part2Answer struct {

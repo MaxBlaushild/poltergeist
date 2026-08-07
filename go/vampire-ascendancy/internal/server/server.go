@@ -176,6 +176,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.GET("/characters", s.adminListCharacters)
 	admin.GET("/characters/:id", s.adminGetCharacter)
 	admin.PUT("/characters/:id", s.adminUpdateCharacter)
+	admin.POST("/characters/:id/generate-tags", s.adminGenerateCharacterTags)
 	admin.GET("/items", s.adminListItems)
 	admin.POST("/items", s.adminCreateItem)
 	admin.PUT("/items/:id", s.adminUpdateItem)

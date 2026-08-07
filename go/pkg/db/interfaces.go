@@ -512,6 +512,10 @@ type VampireHandle interface {
 	SetQuizSubmissionRationale(ctx context.Context, id uuid.UUID, rationale string) error
 	SetQuizGradeStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error
 	MarkQuizGradeStarted(ctx context.Context, id uuid.UUID) error
+	// SetCharacterTagsStatus records the AI tag-generation job's state for a
+	// character (queued/generating/generated/failed) — see gm_players.go's
+	// Invites picker and superadmin.go's character editor.
+	SetCharacterTagsStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error
 	ListQuizSubmissionsForPlayer(ctx context.Context, playerID uuid.UUID) ([]models.VampireQuizSubmission, error)
 	ListQuizSubmissions(ctx context.Context, instanceID uuid.UUID) ([]models.VampireQuizSubmission, error)
 	ListPart2Answers(ctx context.Context, instanceID uuid.UUID) ([]Part2Answer, error)

@@ -280,6 +280,10 @@ export interface GMCharacterFull {
   sigil: string;
   playerName: string;
   tags: string[];
+  // The AI tag-generation job's last-known state for this character — ''
+  // (never run) | 'queued' | 'generating' | 'generated' | 'failed'.
+  tagsGenerationStatus: string;
+  tagsGenerationError: string;
   secrets: { ordinal: number; body: string }[];
   missions: (GMMissionEdit & { ordinal: number })[];
 }

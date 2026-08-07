@@ -77,6 +77,7 @@ func main() {
 	dungeonmasterClient := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriestClient, locationSeederClient, awsClient, client)
 
 	gradeQuizSubmissionProcessor := processors.NewGradeQuizSubmissionProcessor(dbClient, deepPriestClient)
+	generateCharacterTagsProcessor := processors.NewGenerateCharacterTagsProcessor(dbClient, deepPriestClient)
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	processRecurringQuestsProcessor := processors.NewProcessRecurringQuestsProcessor(dbClient)
@@ -243,13 +244,15 @@ func main() {
 		return nil
 	}))
 
-	// Quiz grading runs on its own dedicated queue + server with a hard
+	// Quiz grading (and other one-off oracle calls, like character tag
+	// generation) run on their own dedicated queue + server with a hard
 	// concurrency cap, so a burst of submissions graded at the reveal can't
 	// exceed the LLM provider's rate limits. The main server does not process the
 	// "grading" queue, so these are the only workers that touch it.
 	gradingMux := asynq.NewServeMux()
 	gradingMux.Use(errLogging)
 	gradingMux.Handle(jobs.GradeQuizSubmissionTaskType, &gradeQuizSubmissionProcessor)
+	gradingMux.Handle(jobs.GenerateCharacterTagsTaskType, &generateCharacterTagsProcessor)
 	gradingSrv := asynq.NewServer(
 		redisConnOpt,
 		asynq.Config{

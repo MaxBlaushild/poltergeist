@@ -55,6 +55,12 @@ export const adminUpdateCharacter = (
   id: string,
   body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName'>
 ) => admin<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+// Queues the LLM tag-generation job for one character (reads bio/secrets/
+// missions, proposes tags, overwrites the current tag list when it's
+// done). Fire-and-poll: this just flips the status to "queued" — re-fetch
+// adminGetCharacter to watch tagsGenerationStatus/tags update.
+export const adminGenerateCharacterTags = (id: string) =>
+  admin<{ ok: boolean }>(`/characters/${id}/generate-tags`, { method: 'POST' });
 
 // ---- Items ----
 export const adminListItems = () => admin<{ items: GMItem[] }>('/items');
