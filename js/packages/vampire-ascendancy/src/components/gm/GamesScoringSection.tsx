@@ -1,35 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  gmListGames,
-  gmCreateGame,
-  gmRecordGameResult,
-  gmListCharacters,
-  gmUpdateGame,
-  gmDeleteGame,
-  gmClearGameResult,
-} from '../../gmApi';
-import type { GMGame, GMCharacter } from '../../gmApi';
+import { gmListGames, gmRecordGameResult, gmListPlayers, gmClearGameResult } from '../../gmApi';
+import type { GMGame } from '../../gmApi';
 import { Card } from './GameSection';
 import { Combobox } from './Combobox';
 import type { ComboOption } from './Combobox';
-import { ScheduleCalendar } from './ScheduleCalendar';
-import { formatClock } from '../../theme';
+import { ScheduleLine, medal } from './GamesShared';
 
-// GM Games tab: pre-seed / add the night's contests, then record the top three
-// finishers as they emerge. The Blood Token / House Favor math is applied on the
-// server (1st +5/+5, 2nd +3/+3, 3rd +1/+2, participation +1 BT).
-export const GamesSection = () => {
+// A player's character, as far as the winner picker cares — sourced from
+// this instance's roster (gmListPlayers), not the shared character
+// library. A character with no active player here can't win a game here,
+// even if they're a valid character somewhere else's Toast.
+interface ScorableCharacter {
+  id: string;
+  name: string;
+  house?: string;
+}
+
+// Scoring tab: record the top three finishers as they emerge. Scheduling
+// and adding games lives on the Setup tab — this tab is purely "who won."
+// The Blood Token / House Favor math is applied on the server (1st +5/+5,
+// 2nd +3/+3, 3rd +1/+2, participation +1 BT).
+export const GamesScoringSection = () => {
   const [games, setGames] = useState<GMGame[]>([]);
-  const [chars, setChars] = useState<GMCharacter[]>([]);
+  const [chars, setChars] = useState<ScorableCharacter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState('');
-  const [busy, setBusy] = useState(false);
 
   const load = () => {
-    Promise.all([gmListGames(), gmListCharacters()])
-      .then(([g, c]) => {
+    Promise.all([gmListGames(), gmListPlayers()])
+      .then(([g, p]) => {
         setGames(g.games);
-        setChars(c.characters);
+        setChars(
+          p.players
+            .filter((pl) => pl.active && pl.character)
+            .map((pl) => ({ id: pl.character!.id, name: pl.character!.name, house: pl.character!.house }))
+        );
       })
       .finally(() => setLoading(false));
   };
@@ -37,44 +41,14 @@ export const GamesSection = () => {
     load();
   }, []);
 
-  const addGame = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      await gmCreateGame(name, games.length + 1);
-      setNewName('');
-      load();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (loading) return <p className="text-bone/50">Loading games…</p>;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addGame()}
-          placeholder="Add a game (e.g. Flip Cup)"
-          className="flex-1 rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone"
-        />
-        <button
-          onClick={addGame}
-          disabled={busy || !newName.trim()}
-          className="px-4 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
-        >
-          Add
-        </button>
-      </div>
-
-      {games.length > 0 && <ScheduleCalendar games={games} onChange={load} />}
-
       {games.length === 0 ? (
-        <p className="text-bone/50 text-sm">No games yet — add the night's contests above.</p>
+        <p className="text-bone/50 text-sm">
+          No games yet — add and schedule the night's contests on the Setup tab first.
+        </p>
       ) : (
         games.map((g) => <GameCard key={g.id} game={g} chars={chars} onChange={load} />)
       )}
@@ -82,15 +56,13 @@ export const GamesSection = () => {
   );
 };
 
-const medal = ['🥇', '🥈', '🥉'];
-
 const GameCard = ({
   game,
   chars,
   onChange,
 }: {
   game: GMGame;
-  chars: GMCharacter[];
+  chars: ScorableCharacter[];
   onChange: () => void;
 }) => {
   const [first, setFirst] = useState<string[]>([]);
@@ -156,6 +128,18 @@ const GameCard = ({
     }
   };
 
+  const clear = async () => {
+    if (!window.confirm(`Clear the result for "${game.name}"?\n\nThis reverses the Blood Tokens and House Favor it awarded.`))
+      return;
+    setBusy(true);
+    try {
+      await gmClearGameResult(game.id);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title = `${game.ordinal ? game.ordinal + '. ' : ''}${game.name}`;
 
   if (game.status === 'played') {
@@ -182,7 +166,13 @@ const GameCard = ({
           )}
           <p className="mt-1 text-xs text-green-400 uppercase tracking-[0.15em]">Recorded · awards applied</p>
         </div>
-        <ManageBar game={game} onChange={onChange} />
+        <button
+          onClick={clear}
+          disabled={busy}
+          className="mt-3 py-2 px-4 rounded-md border border-gold/50 text-gold uppercase tracking-[0.15em] text-xs disabled:opacity-40"
+        >
+          Clear result
+        </button>
       </Card>
     );
   }
@@ -231,7 +221,6 @@ const GameCard = ({
           +1. Clear the result afterward to undo.
         </p>
       </div>
-      <ManageBar game={game} onChange={onChange} />
     </Card>
   );
 };
@@ -242,109 +231,3 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
     {children}
   </div>
 );
-
-const ScheduleLine = ({ game }: { game: GMGame }) => {
-  const scheduled = game.startMinutes != null && game.endMinutes != null;
-  if (!scheduled && !game.assignedGm && !game.runNotes) return null;
-  return (
-    <div className="mb-2">
-      {(scheduled || game.location || game.assignedGm) && (
-        <p className="text-xs text-bone/60">
-          {scheduled && (
-            <span>
-              🕒 {formatClock(game.startMinutes!)}–{formatClock(game.endMinutes!)}{' '}
-            </span>
-          )}
-          {game.location && <span className="text-gold/80">· 📍 {game.location} </span>}
-          {game.assignedGm && <span className="text-bone/50">· 👤 {game.assignedGm}</span>}
-        </p>
-      )}
-      {game.runNotes && (
-        <details className="mt-1">
-          <summary className="text-xs text-gold/80 cursor-pointer">▸ How to run</summary>
-          <p className="mt-1 text-sm text-bone/80 whitespace-pre-wrap rounded-md bg-black/30 p-2">
-            {game.runNotes}
-          </p>
-        </details>
-      )}
-    </div>
-  );
-};
-
-// Rename / delete / clear-result controls, collapsed by default. A recorded game
-// can't be renamed (awards are matched by name) — clear it first.
-const ManageBar = ({ game, onChange }: { game: GMGame; onChange: () => void }) => {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState(game.name);
-  const [busy, setBusy] = useState(false);
-  const played = game.status === 'played';
-
-  const run = (fn: () => Promise<unknown>) => async () => {
-    setBusy(true);
-    try {
-      await fn();
-      onChange();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const rename = run(() => gmUpdateGame(game.id, name.trim(), game.ordinal));
-  const del = () => {
-    if (window.confirm(`Delete "${game.name}"?${played ? '\n\nThis also reverses the awards it applied.' : ''}`))
-      run(() => gmDeleteGame(game.id))();
-  };
-  const clear = () => {
-    if (window.confirm(`Clear the result for "${game.name}"?\n\nThis reverses the Blood Tokens and House Favor it awarded.`))
-      run(() => gmClearGameResult(game.id))();
-  };
-
-  return (
-    <div className="mt-3 pt-3 border-t border-blood/20">
-      <button onClick={() => setOpen((o) => !o)} className="text-xs text-bone/50 uppercase tracking-[0.15em]">
-        {open ? '▾ Manage' : '▸ Manage'}
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-2">
-          {!played && (
-            <div className="flex gap-2">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="flex-1 rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
-              />
-              <button
-                onClick={rename}
-                disabled={busy || !name.trim() || name.trim() === game.name}
-                className="px-3 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-xs disabled:opacity-40"
-              >
-                Rename
-              </button>
-            </div>
-          )}
-          <div className="flex gap-2">
-            {played && (
-              <button
-                onClick={clear}
-                disabled={busy}
-                className="flex-1 py-2 rounded-md border border-gold/50 text-gold uppercase tracking-[0.15em] text-xs disabled:opacity-40"
-              >
-                Clear result
-              </button>
-            )}
-            <button
-              onClick={del}
-              disabled={busy}
-              className="flex-1 py-2 rounded-md border border-blood/50 text-blood-bright uppercase tracking-[0.15em] text-xs disabled:opacity-40"
-            >
-              Delete game
-            </button>
-          </div>
-          {played && (
-            <p className="text-[11px] text-bone/40">Rename is disabled while recorded — clear the result first.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-

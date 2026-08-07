@@ -177,6 +177,19 @@ func (s *server) gmRecordGameResult(ctx *gin.Context) {
 			if placed[cid.String()] {
 				continue // same character listed in two places — count once
 			}
+			// Scoped to this instance: a character from the shared library
+			// with no active player here can't win a game here, even if the
+			// id is otherwise valid (they might be someone else's Toast's
+			// roster entirely).
+			slot, err := v.GetActivePlayerByCharacterID(ctx, instanceID, cid)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if slot == nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "that character isn't an active player in this Toast"})
+				return
+			}
 			ch, err := v.GetCharacterByID(ctx, cid)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

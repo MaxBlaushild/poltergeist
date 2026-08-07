@@ -12,7 +12,8 @@ import { PlayersSection } from './PlayersSection';
 import { InvitesSection } from './InvitesSection';
 import { BroadcastSection } from './BroadcastSection';
 import { QuizSection } from './QuizSection';
-import { GamesSection } from './GamesSection';
+import { GamesScheduleSection } from './GamesScheduleSection';
+import { GamesScoringSection } from './GamesScoringSection';
 import { StandingsSection } from './StandingsSection';
 import { BroadcastScreen } from './BroadcastScreen';
 import { ItemsSection } from './ItemsSection';
@@ -24,7 +25,8 @@ type Tab =
   | 'controls'
   | 'submissions'
   | 'awards'
-  | 'games'
+  | 'gamesSetup'
+  | 'gamesScoring'
   | 'items'
   | 'content'
   | 'cohosts'
@@ -47,6 +49,7 @@ const GROUPS: { id: Group; label: string; tabs: { id: Tab; label: string }[] }[]
       { id: 'content', label: 'Content' },
       { id: 'invites', label: 'Invites' },
       { id: 'players', label: 'Players' },
+      { id: 'gamesSetup', label: 'Games' },
       { id: 'cohosts', label: 'Co-Hosts' },
     ],
   },
@@ -65,7 +68,7 @@ const GROUPS: { id: Group; label: string; tabs: { id: Tab; label: string }[] }[]
     tabs: [
       { id: 'submissions', label: 'Submissions' },
       { id: 'awards', label: 'HF Awards' },
-      { id: 'games', label: 'Games' },
+      { id: 'gamesScoring', label: 'Games' },
       { id: 'items', label: 'Items' },
       { id: 'standings', label: 'Standings' },
     ],
@@ -198,7 +201,8 @@ const GMConsole = () => {
       )}
       {tab === 'submissions' && <SubmissionsSection />}
       {tab === 'awards' && <AwardsSection />}
-      {tab === 'games' && <GamesSection />}
+      {tab === 'gamesSetup' && <GamesScheduleSection />}
+      {tab === 'gamesScoring' && <GamesScoringSection />}
       {tab === 'items' && <ItemsSection />}
       {tab === 'content' && <ContentSection />}
       {tab === 'standings' && <StandingsSection />}
