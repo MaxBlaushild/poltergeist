@@ -31,16 +31,37 @@ func genOpaqueToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// GET /vampire-ascendancy/mysteries — every active mystery, for the "Host
+// a Toast" picker. Just enough to choose from (name + summary); the full
+// editor payload (lore, beats, quiz, secrets) is super-user-only, under
+// /admin/mysteries.
+func (s *server) listActiveMysteries(ctx *gin.Context) {
+	mysteries, err := s.dbClient.Vampire().ListMysteries(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(mysteries))
+	for _, m := range mysteries {
+		if !m.Active {
+			continue
+		}
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "summary": m.Summary})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"mysteries": out})
+}
+
 // ---- Instances ("Toasts") — platform routes, not scoped to any instance ----
 
 // POST /vampire-ascendancy/instances — "Host a Toast". The caller becomes
-// its Host and the instance starts fully populated from the shared content
-// library (everything included; the Host trims it down from the Content
-// tab).
+// its Host and the instance starts fully populated with the shared items
+// library (the Host trims it down from the Content tab); mysteryId is
+// chosen once here and never changes (see MYSTERY_REQUIREMENTS.md).
 func (s *server) createInstance(ctx *gin.Context) {
 	user := userFromContext(ctx)
 	var body struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		MysteryID string `json:"mysteryId"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -51,9 +72,24 @@ func (s *server) createInstance(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "give this Toast a name"})
 		return
 	}
+	mysteryID, err := uuid.Parse(body.MysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "choose a mystery"})
+		return
+	}
 
 	v := s.dbClient.Vampire()
-	inst, err := v.CreateInstance(ctx, name, &user.ID)
+	mystery, err := v.GetMysteryByID(ctx, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if mystery == nil || !mystery.Active {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown or inactive mystery"})
+		return
+	}
+
+	inst, err := v.CreateInstance(ctx, name, &user.ID, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -348,34 +384,3 @@ func (s *server) gmSetItemIncluded(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// GET /gm/library/quiz-questions
-func (s *server) gmListLibraryQuizQuestions(ctx *gin.Context) {
-	rows, err := s.dbClient.Vampire().ListLibraryQuizQuestions(ctx, instanceIDFromContext(ctx))
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"questions": rows})
-}
-
-// PUT /gm/library/quiz-questions/:id { included: bool }
-func (s *server) gmSetQuizQuestionIncluded(ctx *gin.Context) {
-	id, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid question id"})
-		return
-	}
-	var body struct {
-		Included bool `json:"included"`
-	}
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.dbClient.Vampire().SetQuizQuestionIncluded(ctx, instanceIDFromContext(ctx), id, body.Included); err != nil {
-		conflictOrInternal(ctx, err)
-		return
-	}
-	s.logGM(ctx, "set_quiz_question_included", map[string]interface{}{"questionId": id.String(), "included": body.Included})
-	ctx.JSON(http.StatusOK, gin.H{"ok": true})
-}

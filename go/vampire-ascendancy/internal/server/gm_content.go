@@ -45,8 +45,15 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		playerName = slot.GuestLabel
 	}
 
-	secrets := make([]gin.H, 0, len(c.Secrets))
-	for _, sec := range c.Secrets {
+	// Scoped to this instance's mystery — not every secret this character
+	// has ever had across every mystery they've appeared in.
+	secretRows, err := v.ListSecretsForCharacterAndMystery(ctx, id, mysteryIDFromContext(ctx))
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	secrets := make([]gin.H, 0, len(secretRows))
+	for _, sec := range secretRows {
 		secrets = append(secrets, gin.H{"ordinal": sec.Ordinal, "body": sec.Body})
 	}
 	missions := make([]gin.H, 0, len(c.Missions))

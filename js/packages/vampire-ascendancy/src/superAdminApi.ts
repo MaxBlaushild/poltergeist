@@ -49,8 +49,11 @@ export interface AdminCharacter {
   tags?: string[];
 }
 export const adminListCharacters = () => admin<{ characters: AdminCharacter[] }>('/characters');
+// Secrets are excluded — they're mystery-scoped now and edited from the
+// Mysteries tab's per-character secrets editor instead (see
+// MYSTERY_REQUIREMENTS.md).
 export const adminGetCharacter = (id: string) =>
-  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName'>>(`/characters/${id}`);
+  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets'>>(`/characters/${id}`);
 export const adminUpdateCharacter = (
   id: string,
   body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName'>
@@ -74,10 +77,61 @@ export const adminSetItemPhoto = (id: string, dataUrl: string) =>
 export const adminDeleteItemPhoto = (id: string) =>
   admin<{ ok: boolean }>(`/items/${id}/photo`, { method: 'DELETE' });
 
-// ---- Quiz ----
-export const adminGetQuizQuestions = () => admin<GMQuizQuestions>('/quiz/questions');
-export const adminUpdateQuizQuestions = (body: GMQuizQuestions) =>
-  admin<{ ok: boolean }>('/quiz/questions', { method: 'PUT', body: JSON.stringify(body) });
+// ---- Mysteries ----
+// The underlying story an instance's players are solving — see
+// MYSTERY_REQUIREMENTS.md. Quiz questions and (per-character) secrets are
+// scoped to a mystery instead of being shared/global.
+export interface AdminMystery {
+  id: string;
+  name: string;
+  summary: string;
+  active: boolean;
+  beatCount: number;
+}
+export interface AdminMysteryBeat {
+  id: string;
+  ordinal: number;
+  body: string;
+}
+export interface AdminMysteryFull {
+  id: string;
+  name: string;
+  summary: string;
+  fullLore: string;
+  active: boolean;
+  beats: AdminMysteryBeat[];
+}
+export const adminListMysteries = () => admin<{ mysteries: AdminMystery[] }>('/mysteries');
+export const adminCreateMystery = (name: string) =>
+  admin<{ id: string; name: string }>('/mysteries', { method: 'POST', body: JSON.stringify({ name }) });
+export const adminGetMystery = (id: string) => admin<AdminMysteryFull>(`/mysteries/${id}`);
+export const adminUpdateMystery = (
+  id: string,
+  body: { name: string; summary: string; fullLore: string; active: boolean; beats: { body: string }[] }
+) => admin<{ ok: boolean }>(`/mysteries/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+
+// ---- Quiz, scoped to a mystery ----
+export const adminGetMysteryQuiz = (mysteryId: string) => admin<GMQuizQuestions>(`/mysteries/${mysteryId}/quiz`);
+export const adminUpdateMysteryQuiz = (mysteryId: string, body: GMQuizQuestions) =>
+  admin<{ ok: boolean }>(`/mysteries/${mysteryId}/quiz`, { method: 'PUT', body: JSON.stringify(body) });
+
+// ---- Character secrets, scoped to a mystery ----
+export interface AdminMysterySecret {
+  ordinal: number;
+  body: string;
+  beatId: string | null;
+}
+export const adminGetCharacterSecretsForMystery = (mysteryId: string, characterId: string) =>
+  admin<{ secrets: AdminMysterySecret[] }>(`/mysteries/${mysteryId}/characters/${characterId}/secrets`);
+export const adminUpdateCharacterSecretsForMystery = (
+  mysteryId: string,
+  characterId: string,
+  secrets: { body: string; beatId: string | null }[]
+) =>
+  admin<{ ok: boolean }>(`/mysteries/${mysteryId}/characters/${characterId}/secrets`, {
+    method: 'PUT',
+    body: JSON.stringify({ secrets }),
+  });
 
 // ---- Super users ----
 export interface AdminSuperUser {

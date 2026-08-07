@@ -96,7 +96,7 @@ func (s *server) scorePart2(ctx *gin.Context) error {
 	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
 
-	questions, err := v.ListIncludedQuizQuestionsByPart(ctx, instanceID, 2, true)
+	questions, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryIDFromContext(ctx), 2, true)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (s *server) gradePart1(ctx *gin.Context, incompleteOnly bool, only *uuid.UU
 	}
 	instanceID := instanceIDFromContext(ctx)
 	v := s.dbClient.Vampire()
-	p1q, err := v.GetIncludedPart1Question(ctx, instanceID)
+	p1q, err := v.GetPart1QuestionForMystery(ctx, mysteryIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

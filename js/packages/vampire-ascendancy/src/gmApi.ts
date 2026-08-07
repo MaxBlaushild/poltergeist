@@ -297,7 +297,6 @@ export interface GMCharacterUpdate {
   imageUrl: string;
   playerName: string;
   tags: string[];
-  secrets: string[];
   missions: GMMissionEdit[];
 }
 export const gmGetCharacter = (id: string) => gm<GMCharacterFull>(`/characters/${id}`);

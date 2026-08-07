@@ -7,10 +7,10 @@ import { SignInForm } from '../SignInForm';
 import { SuperAdminCharacters } from './SuperAdminCharacters';
 import { SuperAdminHouses } from './SuperAdminHouses';
 import { SuperAdminItems } from './SuperAdminItems';
-import { SuperAdminQuiz } from './SuperAdminQuiz';
+import { SuperAdminMysteries } from './SuperAdminMysteries';
 import { SuperAdminUsers } from './SuperAdminUsers';
 
-type Tab = 'characters' | 'houses' | 'items' | 'quiz' | 'users';
+type Tab = 'mysteries' | 'characters' | 'houses' | 'items' | 'users';
 type Status = 'checking' | 'ok' | 'forbidden' | 'signed-out';
 
 // The shared content library editor — characters, houses, items, and quiz
@@ -57,13 +57,13 @@ export const SuperAdmin = () => {
 const SuperAdminConsole = () => {
   const navigate = useNavigate();
   const { auth } = useUserAuth();
-  const [tab, setTab] = useState<Tab>('characters');
+  const [tab, setTab] = useState<Tab>('mysteries');
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'mysteries', label: 'Mysteries' },
     { id: 'characters', label: 'Characters' },
     { id: 'houses', label: 'Houses' },
     { id: 'items', label: 'Items' },
-    { id: 'quiz', label: 'Quiz' },
     { id: 'users', label: 'Super Users' },
   ];
 
@@ -99,10 +99,10 @@ const SuperAdminConsole = () => {
         ))}
       </nav>
 
+      {tab === 'mysteries' && <SuperAdminMysteries />}
       {tab === 'characters' && <SuperAdminCharacters />}
       {tab === 'houses' && <SuperAdminHouses />}
       {tab === 'items' && <SuperAdminItems />}
-      {tab === 'quiz' && <SuperAdminQuiz />}
       {tab === 'users' && <SuperAdminUsers />}
     </div>
   );

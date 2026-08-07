@@ -20,8 +20,8 @@ func (e *ConflictError) Error() string { return e.Message }
 
 // ---- Instances ("Toasts" in user-facing copy) ----
 
-func (h *vampireHandler) CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID) (*models.VampireInstance, error) {
-	inst := models.VampireInstance{Name: name, Status: "active", CreatedBy: createdBy}
+func (h *vampireHandler) CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID) (*models.VampireInstance, error) {
+	inst := models.VampireInstance{Name: name, Status: "active", CreatedBy: createdBy, MysteryID: mysteryID}
 	if err := h.db.WithContext(ctx).Create(&inst).Error; err != nil {
 		return nil, err
 	}
@@ -58,28 +58,18 @@ func (h *vampireHandler) ListInstancesForUser(ctx context.Context, userID uuid.U
 // library (characters, items, quiz questions) for a newly created instance.
 // Idempotent — safe to call again later (e.g. to backfill library content
 // added after the instance was created).
+// SeedInstanceLibrary includes every shared item for a newly created
+// instance. Characters no longer get a join row here — which characters
+// are "in" is implicit via invites — and quiz questions no longer either:
+// an instance's quiz is simply every vampire_quiz_questions row whose
+// mystery_id matches the instance's own (see MYSTERY_REQUIREMENTS.md), not
+// a per-instance toggle.
 func (h *vampireHandler) SeedInstanceLibrary(ctx context.Context, instanceID uuid.UUID) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`
-			INSERT INTO vampire_instance_characters (instance_id, character_id, included, sigil, image_url)
-			SELECT ?, c.id, TRUE, '', ''
-			FROM vampire_characters c
-			ON CONFLICT (instance_id, character_id) DO NOTHING`, instanceID).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(`
-			INSERT INTO vampire_instance_items (instance_id, item_id, included)
-			SELECT ?, i.id, TRUE
-			FROM vampire_items i
-			ON CONFLICT (instance_id, item_id) DO NOTHING`, instanceID).Error; err != nil {
-			return err
-		}
-		return tx.Exec(`
-			INSERT INTO vampire_instance_quiz_questions (instance_id, question_id, included)
-			SELECT ?, q.id, TRUE
-			FROM vampire_quiz_questions q
-			ON CONFLICT (instance_id, question_id) DO NOTHING`, instanceID).Error
-	})
+	return h.db.WithContext(ctx).Exec(`
+		INSERT INTO vampire_instance_items (instance_id, item_id, included)
+		SELECT ?, i.id, TRUE
+		FROM vampire_items i
+		ON CONFLICT (instance_id, item_id) DO NOTHING`, instanceID).Error
 }
 
 // ---- Administrators ("Host" for role=owner, "Co-Host" for role=admin) ----
@@ -367,69 +357,18 @@ func (h *vampireHandler) SetItemIncluded(ctx context.Context, instanceID, itemID
 	})
 }
 
-// ---- Content library: quiz questions ----
+// ---- Quiz questions, scoped to a mystery (see MYSTERY_REQUIREMENTS.md) ----
+// Replaces the old per-instance include/exclude toggle entirely: an
+// instance's quiz is simply every question whose MysteryID matches the
+// instance's own.
 
-type LibraryQuizQuestion struct {
-	ID           uuid.UUID `json:"id"`
-	Part         int       `json:"part"`
-	Ordinal      int       `json:"ordinal"`
-	Prompt       string    `json:"prompt"`
-	QuestionType string    `json:"questionType"`
-	Included     bool      `json:"included"`
-}
-
-func (h *vampireHandler) ListLibraryQuizQuestions(ctx context.Context, instanceID uuid.UUID) ([]LibraryQuizQuestion, error) {
-	out := []LibraryQuizQuestion{}
-	if err := h.db.WithContext(ctx).
-		Table("vampire_quiz_questions q").
-		Select("q.id, q.part, q.ordinal, q.prompt, q.question_type, COALESCE(iq.included, false) AS included").
-		Joins("LEFT JOIN vampire_instance_quiz_questions iq ON iq.question_id = q.id AND iq.instance_id = ?", instanceID).
-		Order("q.part ASC, q.ordinal ASC").
-		Scan(&out).Error; err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// ListIncludedQuizQuestions returns the quiz questions included in this instance.
-func (h *vampireHandler) ListIncludedQuizQuestions(ctx context.Context, instanceID uuid.UUID, activeOnly bool) ([]models.VampireQuizQuestion, error) {
-	var qs []models.VampireQuizQuestion
-	q := h.db.WithContext(ctx).
-		Joins("JOIN vampire_instance_quiz_questions iq ON iq.question_id = vampire_quiz_questions.id AND iq.instance_id = ? AND iq.included", instanceID).
-		Order("vampire_quiz_questions.ordinal ASC")
-	if activeOnly {
-		q = q.Where("vampire_quiz_questions.active = ?", true)
-	}
-	if err := q.Find(&qs).Error; err != nil {
-		return nil, err
-	}
-	return qs, nil
-}
-
-// ListIncludedQuizQuestionsByPart is ListIncludedQuizQuestions filtered to one part.
-func (h *vampireHandler) ListIncludedQuizQuestionsByPart(ctx context.Context, instanceID uuid.UUID, part int, activeOnly bool) ([]models.VampireQuizQuestion, error) {
-	var qs []models.VampireQuizQuestion
-	q := h.db.WithContext(ctx).
-		Joins("JOIN vampire_instance_quiz_questions iq ON iq.question_id = vampire_quiz_questions.id AND iq.instance_id = ? AND iq.included", instanceID).
-		Where("vampire_quiz_questions.part = ?", part).
-		Order("vampire_quiz_questions.ordinal ASC")
-	if activeOnly {
-		q = q.Where("vampire_quiz_questions.active = ?", true)
-	}
-	if err := q.Find(&qs).Error; err != nil {
-		return nil, err
-	}
-	return qs, nil
-}
-
-// GetIncludedPart1Question returns this instance's single active Part 1
+// GetPart1QuestionForMystery returns a mystery's single active Part 1
 // (open-end) question.
-func (h *vampireHandler) GetIncludedPart1Question(ctx context.Context, instanceID uuid.UUID) (*models.VampireQuizQuestion, error) {
+func (h *vampireHandler) GetPart1QuestionForMystery(ctx context.Context, mysteryID uuid.UUID) (*models.VampireQuizQuestion, error) {
 	var qq models.VampireQuizQuestion
 	if err := h.db.WithContext(ctx).
-		Joins("JOIN vampire_instance_quiz_questions iq ON iq.question_id = vampire_quiz_questions.id AND iq.instance_id = ? AND iq.included", instanceID).
-		Where("vampire_quiz_questions.part = ? AND vampire_quiz_questions.active = ?", 1, true).
-		Order("vampire_quiz_questions.ordinal ASC").First(&qq).Error; err != nil {
+		Where("mystery_id = ? AND part = ? AND active = ?", mysteryID, 1, true).
+		Order("ordinal ASC").First(&qq).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -438,31 +377,35 @@ func (h *vampireHandler) GetIncludedPart1Question(ctx context.Context, instanceI
 	return &qq, nil
 }
 
-// SetQuizQuestionIncluded toggles a quiz question in or out of an instance's
-// roster. Un-including a question a player has already answered is blocked
-// (*ConflictError).
-func (h *vampireHandler) SetQuizQuestionIncluded(ctx context.Context, instanceID, questionID uuid.UUID, included bool) error {
+// ListQuizQuestionsByMysteryAndPart returns a mystery's questions for one part.
+func (h *vampireHandler) ListQuizQuestionsByMysteryAndPart(ctx context.Context, mysteryID uuid.UUID, part int, activeOnly bool) ([]models.VampireQuizQuestion, error) {
+	var qs []models.VampireQuizQuestion
+	q := h.db.WithContext(ctx).
+		Where("mystery_id = ? AND part = ?", mysteryID, part).
+		Order("ordinal ASC")
+	if activeOnly {
+		q = q.Where("active = ?", true)
+	}
+	if err := q.Find(&qs).Error; err != nil {
+		return nil, err
+	}
+	return qs, nil
+}
+
+// ReplaceQuizQuestionsForMystery removes a mystery's existing quiz questions
+// and inserts the new set — the mystery-scoped equivalent of the old
+// wholesale ReplaceQuizQuestions.
+func (h *vampireHandler) ReplaceQuizQuestionsForMystery(ctx context.Context, mysteryID uuid.UUID, questions []models.VampireQuizQuestion) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if !included {
-			var count int64
-			if err := tx.Model(&models.VampireQuizSubmission{}).
-				Where("instance_id = ? AND question_id = ?", instanceID, questionID).
-				Count(&count).Error; err != nil {
-				return err
-			}
-			if count > 0 {
-				return &ConflictError{Message: "can't remove this question — a player has already answered it"}
-			}
+		if err := tx.Where("mystery_id = ?", mysteryID).Delete(&models.VampireQuizQuestion{}).Error; err != nil {
+			return err
 		}
-		res := tx.Model(&models.VampireInstanceQuizQuestion{}).
-			Where("instance_id = ? AND question_id = ?", instanceID, questionID).
-			Updates(map[string]interface{}{"included": included, "updated_at": time.Now()})
-		if res.Error != nil {
-			return res.Error
+		for i := range questions {
+			questions[i].MysteryID = mysteryID
 		}
-		if res.RowsAffected == 0 {
-			return tx.Create(&models.VampireInstanceQuizQuestion{InstanceID: instanceID, QuestionID: questionID, Included: included}).Error
+		if len(questions) == 0 {
+			return nil
 		}
-		return nil
+		return tx.Create(&questions).Error
 	})
 }

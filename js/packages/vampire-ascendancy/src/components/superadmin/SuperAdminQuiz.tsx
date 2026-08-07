@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react';
-import { adminGetQuizQuestions, adminUpdateQuizQuestions } from '../../superAdminApi';
+import { adminGetMysteryQuiz, adminUpdateMysteryQuiz } from '../../superAdminApi';
 import type { GMQuizQuestions } from '../../gmApi';
 import { Card } from '../gm/GameSection';
 
 const qInput = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
 
-// Editor for the shared quiz content: the Part 1 open-end prompt + rubric,
-// and the Part 2 multiple-choice questions (including the answer key —
-// that's why this is super-user-only, not just editing: it's a spoiler for
-// anyone else's Toast running the same story). Saving replaces the question
-// set for every instance and clears any existing answers.
-export const SuperAdminQuiz = () => {
+// Editor for one mystery's quiz content: the Part 1 open-end prompt +
+// rubric, and the Part 2 multiple-choice questions (including the answer
+// key — that's why this is super-user-only, not just editing: it's a
+// spoiler for anyone else's Toast running the same mystery). Saving
+// replaces the question set for every instance running this mystery and
+// clears any existing answers.
+export const SuperAdminQuiz = ({ mysteryId }: { mysteryId: string }) => {
   const [q, setQ] = useState<GMQuizQuestions | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
-    adminGetQuizQuestions().then(setQ).catch(() => setNote('Could not load questions.'));
-  }, []);
+    setQ(null);
+    adminGetMysteryQuiz(mysteryId).then(setQ).catch(() => setNote('Could not load questions.'));
+  }, [mysteryId]);
 
   const updMc = (i: number, patch: Partial<GMQuizQuestions['part2'][number]>) =>
     setQ((prev) => (prev ? { ...prev, part2: prev.part2.map((x, j) => (j === i ? { ...x, ...patch } : x)) } : prev));
@@ -26,14 +28,14 @@ export const SuperAdminQuiz = () => {
     if (!q) return;
     if (
       !window.confirm(
-        'Save quiz questions?\n\nThis replaces the shared question set for every Toast and clears any existing quiz answers. Do this before any quiz runs.'
+        "Save quiz questions?\n\nThis replaces this mystery's question set for every Toast running it and clears any existing quiz answers. Do this before any quiz runs."
       )
     )
       return;
     setBusy(true);
     setNote(null);
     try {
-      await adminUpdateQuizQuestions(q);
+      await adminUpdateMysteryQuiz(mysteryId, q);
       setNote('Saved.');
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Save failed.');
@@ -45,7 +47,7 @@ export const SuperAdminQuiz = () => {
   if (!q) return <Card title="Quiz questions">{note || 'Loading…'}</Card>;
 
   return (
-    <Card title="Quiz questions (shared — affects every Toast)">
+    <Card title="Quiz questions (this mystery — affects every Toast running it)">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.15em] text-gold">Part 1 — open-end</span>
@@ -172,7 +174,7 @@ export const SuperAdminQuiz = () => {
           {note && <span className="text-bone/60 text-sm">{note}</span>}
         </div>
         <p className="text-[11px] text-bone/40">
-          Saving replaces the question set for every Toast and clears existing quiz answers. The
+          Saving replaces the question set for every Toast running this mystery and clears existing quiz answers. The
           numeric "Blood Tokens on hand" question is preserved automatically.
         </p>
       </div>

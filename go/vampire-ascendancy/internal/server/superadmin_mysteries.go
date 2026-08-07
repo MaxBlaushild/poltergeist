@@ -1,0 +1,230 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+// Mysteries — the underlying story an instance's players are solving. See
+// MYSTERY_REQUIREMENTS.md. Shared content, super-user-only, same
+// authorization posture as the rest of this file.
+
+// GET /admin/mysteries — every mystery, active and inactive (the "Host a
+// Toast" picker filters to active itself; this list shows both so a super
+// user can revive one).
+func (s *server) adminListMysteries(ctx *gin.Context) {
+	mysteries, err := s.dbClient.Vampire().ListMysteries(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(mysteries))
+	for _, m := range mysteries {
+		out = append(out, gin.H{
+			"id":        m.ID,
+			"name":      m.Name,
+			"summary":   m.Summary,
+			"active":    m.Active,
+			"beatCount": len(m.Beats),
+		})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"mysteries": out})
+}
+
+// POST /admin/mysteries — create a new mystery, empty apart from a name.
+func (s *server) adminCreateMystery(ctx *gin.Context) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "give this mystery a name"})
+		return
+	}
+	m, err := s.dbClient.Vampire().CreateMystery(ctx, name, "", "")
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logSuperUser(ctx, "create_mystery", map[string]interface{}{"id": m.ID.String(), "name": name})
+	ctx.JSON(http.StatusOK, gin.H{"id": m.ID, "name": m.Name})
+}
+
+// GET /admin/mysteries/:id — full editor payload: name, summary, full
+// lore, active, and the ordered beat list.
+func (s *server) adminGetMystery(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
+	m, err := s.dbClient.Vampire().GetMysteryByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if m == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "mystery not found"})
+		return
+	}
+	beats := make([]gin.H, 0, len(m.Beats))
+	for _, b := range m.Beats {
+		beats = append(beats, gin.H{"id": b.ID, "ordinal": b.Ordinal, "body": b.Body})
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"id":       m.ID,
+		"name":     m.Name,
+		"summary":  m.Summary,
+		"fullLore": m.FullLore,
+		"active":   m.Active,
+		"beats":    beats,
+	})
+}
+
+// PUT /admin/mysteries/:id — save the mystery editor: core fields plus the
+// beat list (replaced wholesale, same pattern secrets/missions already
+// use). Removing a beat that a secret still points at un-sets that
+// secret's beat rather than blocking the save (ON DELETE SET NULL) — the
+// frontend warns before that happens, but doesn't hard-block it.
+func (s *server) adminUpdateMystery(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
+	var body struct {
+		Name     string `json:"name"`
+		Summary  string `json:"summary"`
+		FullLore string `json:"fullLore"`
+		Active   bool   `json:"active"`
+		Beats    []struct {
+			Body string `json:"body"`
+		} `json:"beats"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	v := s.dbClient.Vampire()
+	if err := v.UpdateMystery(ctx, id, map[string]interface{}{
+		"name":      name,
+		"summary":   body.Summary,
+		"full_lore": body.FullLore,
+		"active":    body.Active,
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	beats := make([]models.VampireMysteryBeat, 0, len(body.Beats))
+	for i, b := range body.Beats {
+		if strings.TrimSpace(b.Body) == "" {
+			continue
+		}
+		beats = append(beats, models.VampireMysteryBeat{Ordinal: i + 1, Body: b.Body})
+	}
+	if err := v.ReplaceMysteryBeats(ctx, id, beats); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.logSuperUser(ctx, "update_mystery", map[string]interface{}{"id": id.String(), "beatCount": len(beats)})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// ---- Per-character secrets, scoped to a mystery ----
+// Deliberately reached through the mystery, not the character (see
+// MYSTERY_REQUIREMENTS.md's "Super Admin UI" section) — authoring a
+// mystery means walking its cast and deciding what each of them knows.
+
+// GET /admin/mysteries/:id/characters/:characterId/secrets
+func (s *server) adminGetCharacterSecretsForMystery(ctx *gin.Context) {
+	mysteryID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
+	characterID, err := uuid.Parse(ctx.Param("characterId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+		return
+	}
+	secrets, err := s.dbClient.Vampire().ListSecretsForCharacterAndMystery(ctx, characterID, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(secrets))
+	for _, sec := range secrets {
+		out = append(out, gin.H{"ordinal": sec.Ordinal, "body": sec.Body, "beatId": sec.BeatID})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"secrets": out})
+}
+
+// PUT /admin/mysteries/:id/characters/:characterId/secrets — replace this
+// character's secrets for this mystery wholesale. This is what makes a
+// character eligible for invites to an instance running this mystery (see
+// gm_players.go's gmListCharacters and CreatePlayerInvite) — saving an
+// empty list makes them ineligible again.
+func (s *server) adminUpdateCharacterSecretsForMystery(ctx *gin.Context) {
+	mysteryID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
+	characterID, err := uuid.Parse(ctx.Param("characterId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+		return
+	}
+	var body struct {
+		Secrets []struct {
+			Body   string  `json:"body"`
+			BeatID *string `json:"beatId"`
+		} `json:"secrets"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	secrets := make([]models.VampireSecret, 0, len(body.Secrets))
+	for i, sec := range body.Secrets {
+		if strings.TrimSpace(sec.Body) == "" {
+			continue
+		}
+		s := models.VampireSecret{Ordinal: i + 1, Body: sec.Body}
+		if sec.BeatID != nil && *sec.BeatID != "" {
+			bid, err := uuid.Parse(*sec.BeatID)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid beat id"})
+				return
+			}
+			s.BeatID = &bid
+		}
+		secrets = append(secrets, s)
+	}
+
+	if err := s.dbClient.Vampire().ReplaceSecretsForCharacterAndMystery(ctx, characterID, mysteryID, secrets); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logSuperUser(ctx, "update_character_secrets", map[string]interface{}{
+		"mysteryId": mysteryID.String(), "characterId": characterID.String(), "secretCount": len(secrets),
+	})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}

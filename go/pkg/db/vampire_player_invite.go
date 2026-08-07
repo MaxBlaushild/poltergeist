@@ -30,6 +30,26 @@ func (h *vampireHandler) CreatePlayerInvite(ctx context.Context, instanceID, cha
 			return &ConflictError{Message: "this character is already played by someone in this Toast"}
 		}
 
+		// Defense-in-depth mirror of gm_players.go's gmListCharacters
+		// filter: a character with no secrets authored for this instance's
+		// mystery can't be invited, even if the id otherwise checks out
+		// (see MYSTERY_REQUIREMENTS.md).
+		var mysteryID uuid.UUID
+		if err := tx.Model(&models.VampireInstance{}).
+			Where("id = ?", instanceID).
+			Pluck("mystery_id", &mysteryID).Error; err != nil {
+			return err
+		}
+		var secretCount int64
+		if err := tx.Model(&models.VampireSecret{}).
+			Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
+			Count(&secretCount).Error; err != nil {
+			return err
+		}
+		if secretCount == 0 {
+			return &ConflictError{Message: "this character has no secrets written for this Toast's mystery yet"}
+		}
+
 		inv := &models.VampirePlayerInvite{
 			InstanceID:  instanceID,
 			CharacterID: characterID,

@@ -641,37 +641,12 @@ func (h *vampireHandler) ListActiveNotifications(ctx context.Context, instanceID
 
 // ---- Quiz ----
 //
-// Questions are shared global content, same as characters/items — authoring
-// (ReplaceQuizQuestions, the seed importer) stays global/ops-only. Which
-// questions are live for a given instance is the included flag in
-// vampire_instance_quiz_questions (see ListIncludedQuizQuestions* in
-// vampire_instance.go). Submissions are instance-scoped.
-
-func (h *vampireHandler) ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error) {
-	var qs []models.VampireQuizQuestion
-	q := h.db.WithContext(ctx).Order("ordinal ASC")
-	if activeOnly {
-		q = q.Where("active = ?", true)
-	}
-	if err := q.Find(&qs).Error; err != nil {
-		return nil, err
-	}
-	return qs, nil
-}
-
-// ReplaceQuizQuestions wholesale-replaces the authored quiz (used by the seed
-// importer). Authored before the event, so wiping/reloading is safe.
-func (h *vampireHandler) ReplaceQuizQuestions(ctx context.Context, questions []models.VampireQuizQuestion) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("DELETE FROM vampire_quiz_questions").Error; err != nil {
-			return err
-		}
-		if len(questions) == 0 {
-			return nil
-		}
-		return tx.Create(&questions).Error
-	})
-}
+// Questions are mystery-scoped (see vampire_mystery.go's
+// GetPart1QuestionForMystery/ListQuizQuestionsByMysteryAndPart/
+// ReplaceQuizQuestionsForMystery — this used to be global content with a
+// per-instance include/exclude toggle; both are retired in favor of
+// mystery-scoping, see MYSTERY_REQUIREMENTS.md). Submissions stay
+// instance-scoped.
 
 // QuizSubmissionDetail is a quiz answer enriched with player and question context
 // for GM review (used to adjudicate open-ended answers).
@@ -719,35 +694,6 @@ func (h *vampireHandler) ListQuizSubmissionsDetailed(ctx context.Context, instan
 		return nil, err
 	}
 	return out, nil
-}
-
-// GetPart1Question returns the library's single active Part 1 (open-end)
-// question, unscoped — used by the content editor (which edits the shared
-// library, not one instance's play state). See GetIncludedPart1Question for
-// the play-time, instance-scoped equivalent.
-func (h *vampireHandler) GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error) {
-	var qq models.VampireQuizQuestion
-	if err := h.db.WithContext(ctx).
-		Where("part = ? AND active = ?", 1, true).
-		Order("ordinal ASC").First(&qq).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &qq, nil
-}
-
-func (h *vampireHandler) ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error) {
-	var qs []models.VampireQuizQuestion
-	q := h.db.WithContext(ctx).Where("part = ?", part).Order("ordinal ASC")
-	if activeOnly {
-		q = q.Where("active = ?", true)
-	}
-	if err := q.Find(&qs).Error; err != nil {
-		return nil, err
-	}
-	return qs, nil
 }
 
 func (h *vampireHandler) UpdateQuizSubmissionGrade(ctx context.Context, id uuid.UUID, aiScore *float64, awardedBT int) error {

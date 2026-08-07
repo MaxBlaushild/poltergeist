@@ -27,6 +27,11 @@ type VampireInstance struct {
 	// Nullable: the legacy instance backfilled from the pre-multi-tenant
 	// event has no single creator on record.
 	CreatedBy *uuid.UUID `gorm:"column:created_by" json:"createdBy"`
+	// MysteryID is chosen once at "Host a Toast" time and never changes —
+	// see MYSTERY_REQUIREMENTS.md. Every quiz question and character secret
+	// available in this instance is scoped to this mystery.
+	MysteryID uuid.UUID   `gorm:"column:mystery_id;not null" json:"mysteryId"`
+	Mystery   *VampireMystery `gorm:"foreignKey:MysteryID" json:"mystery,omitempty"`
 }
 
 func (VampireInstance) TableName() string { return "vampire_instances" }
@@ -102,16 +107,6 @@ func (VampireInstanceItem) TableName() string { return "vampire_instance_items" 
 
 // VampireInstanceQuizQuestion is one instance's inclusion toggle for a
 // library quiz question.
-type VampireInstanceQuizQuestion struct {
-	InstanceID uuid.UUID `gorm:"primary_key;column:instance_id" json:"instanceId"`
-	QuestionID uuid.UUID `gorm:"primary_key;column:question_id" json:"questionId"`
-	CreatedAt  time.Time `gorm:"not null" json:"createdAt"`
-	UpdatedAt  time.Time `gorm:"not null" json:"updatedAt"`
-	Included   bool      `gorm:"not null;default:true" json:"included"`
-}
-
-func (VampireInstanceQuizQuestion) TableName() string { return "vampire_instance_quiz_questions" }
-
 // VampireSuperUser is a user allowed to edit the shared content library
 // (characters, houses, items, quiz questions) across every instance — a
 // separate, higher tier than Host/Co-Host, which only toggles inclusion
@@ -202,6 +197,40 @@ type VampireGame struct {
 
 func (VampireGame) TableName() string { return "vampire_games" }
 
+// VampireMystery is the underlying story an instance's players are trying
+// to solve — shared content, edited by super users. See
+// MYSTERY_REQUIREMENTS.md. An instance picks exactly one mystery at
+// creation and never changes it.
+type VampireMystery struct {
+	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"not null" json:"updatedAt"`
+	Name      string    `gorm:"not null" json:"name"`
+	Summary   string    `gorm:"not null;default:''" json:"summary"`
+	FullLore  string    `gorm:"column:full_lore;not null;default:''" json:"fullLore"`
+	// Active hides a mystery from the "Host a Toast" picker without
+	// deleting it (and without breaking existing instances that reference
+	// it).
+	Active bool `gorm:"not null;default:true" json:"active"`
+
+	Beats []VampireMysteryBeat `gorm:"foreignKey:MysteryID" json:"beats,omitempty"`
+}
+
+func (VampireMystery) TableName() string { return "vampire_mysteries" }
+
+// VampireMysteryBeat is one discoverable fact about a mystery. Secrets
+// point at the beat they reveal; many secrets may point at the same beat.
+type VampireMysteryBeat struct {
+	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"not null" json:"updatedAt"`
+	MysteryID uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
+	Ordinal   int       `gorm:"not null;default:0" json:"ordinal"`
+	Body      string    `gorm:"not null;default:''" json:"body"`
+}
+
+func (VampireMysteryBeat) TableName() string { return "vampire_mystery_beats" }
+
 type VampireHouse struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
@@ -256,6 +285,15 @@ type VampireSecret struct {
 	CharacterID uuid.UUID `gorm:"not null" json:"characterId"`
 	Ordinal     int       `gorm:"not null" json:"ordinal"`
 	Body        string    `gorm:"not null;default:''" json:"body"`
+	// MysteryID/BeatID scope this secret to one mystery and the beat it
+	// reveals. Nullable indefinitely — not just during backfill — since a
+	// secret with no mystery is simply unusable by any instance (see
+	// MYSTERY_REQUIREMENTS.md's eligibility gating). BeatID is a
+	// form-required field in the Super Admin editor, not a hard DB
+	// constraint, so an in-progress secret can be saved before its beat is
+	// decided.
+	MysteryID *uuid.UUID `gorm:"column:mystery_id" json:"mysteryId"`
+	BeatID    *uuid.UUID `gorm:"column:beat_id" json:"beatId"`
 }
 
 func (VampireSecret) TableName() string { return "vampire_secrets" }
@@ -419,7 +457,12 @@ type VampireNotification struct {
 func (VampireNotification) TableName() string { return "vampire_notifications" }
 
 type VampireQuizQuestion struct {
-	ID           uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	ID uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	// MysteryID scopes this question to one mystery — the quiz is no
+	// longer a single global set trimmed per instance (see
+	// MYSTERY_REQUIREMENTS.md); an instance's quiz is simply every
+	// question whose MysteryID matches its own.
+	MysteryID    uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
 	CreatedAt    time.Time `gorm:"not null" json:"createdAt"`
 	UpdatedAt    time.Time `gorm:"not null" json:"updatedAt"`
 	Part         int       `gorm:"not null;default:2" json:"part"` // 1 = open-end (BT), 2 = MC (HF)

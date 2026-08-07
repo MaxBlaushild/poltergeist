@@ -11,10 +11,13 @@ import type { GMCharacterFull, GMMissionEdit } from '../../gmApi';
 import type { House } from '../../types';
 import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
+import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
-// The shared character roster: bios, secrets, missions. Sigils, portraits,
-// and the real guest playing a character are per-instance — see the GM
-// console's Players tab for those.
+// The shared character roster: bio, missions. Secrets are mystery-scoped
+// now — edited from the Mysteries tab's per-character secrets editor
+// instead (see MYSTERY_REQUIREMENTS.md). Sigils, portraits, and the real
+// guest playing a character are per-instance — see the GM console's
+// Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -90,7 +93,7 @@ const CharacterEditor = ({
   houses: House[];
   onSaved: () => void;
 }) => {
-  const [c, setC] = useState<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName'> | null>(null);
+  const [c, setC] = useState<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets'> | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [tagsError, setTagsError] = useState<string | null>(null);
@@ -137,7 +140,6 @@ const CharacterEditor = ({
         preEventInfo: c.preEventInfo,
         postAct1Context: c.postAct1Context,
         tags: c.tags,
-        secrets: c.secrets.map((s) => s.body),
         missions: c.missions.map((m) => ({
           tier: m.tier,
           rewardBt: m.rewardBt,
@@ -205,8 +207,8 @@ const CharacterEditor = ({
             </button>
           </div>
           <p className="text-[11px] text-bone/40">
-            Reads the saved bio, secrets, and missions — save your other edits first if you've changed
-            them.
+            Reads the saved bio and missions, plus this character's secrets in every mystery they
+            appear in — save your other edits first if you've changed them.
           </p>
           {c.tagsGenerationStatus === 'failed' && c.tagsGenerationError && (
             <p className="text-blood-bright text-xs">{c.tagsGenerationError}</p>
@@ -220,27 +222,6 @@ const CharacterEditor = ({
       <Field label="Post-act bio">
         <textarea className={input} rows={4} value={c.postAct1Context} onChange={(e) => set('postAct1Context', e.target.value)} />
       </Field>
-
-      <ListEditor
-        label="Secrets"
-        addLabel="+ Add secret"
-        onAdd={() => set('secrets', [...c.secrets, { ordinal: c.secrets.length + 1, body: '' }])}
-      >
-        {c.secrets.map((s, i) => (
-          <div key={i} className="flex gap-2 items-start">
-            <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
-            <textarea
-              className={input}
-              rows={2}
-              value={s.body}
-              onChange={(e) =>
-                set('secrets', c.secrets.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))
-              }
-            />
-            <RemoveBtn onClick={() => set('secrets', c.secrets.filter((_, j) => j !== i))} />
-          </div>
-        ))}
-      </ListEditor>
 
       <ListEditor
         label="Missions"
@@ -335,41 +316,3 @@ const TagsInput = ({
   );
 };
 
-const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <label className="flex flex-col gap-1">
-    <span className="text-[11px] uppercase tracking-[0.15em] text-bone/50">{label}</span>
-    {children}
-  </label>
-);
-
-const ListEditor = ({
-  label,
-  addLabel,
-  onAdd,
-  children,
-}: {
-  label: string;
-  addLabel: string;
-  onAdd: () => void;
-  children: React.ReactNode;
-}) => (
-  <div className="flex flex-col gap-2">
-    <div className="flex items-center justify-between">
-      <span className="text-[11px] uppercase tracking-[0.15em] text-bone/50">{label}</span>
-      <button onClick={onAdd} className="text-xs text-gold uppercase tracking-[0.15em]">
-        {addLabel}
-      </button>
-    </div>
-    {children}
-  </div>
-);
-
-const RemoveBtn = ({ onClick }: { onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    className="shrink-0 mt-1 w-6 h-6 rounded-full border border-blood/50 text-blood-bright text-xs leading-none"
-    aria-label="Remove"
-  >
-    ×
-  </button>
-);

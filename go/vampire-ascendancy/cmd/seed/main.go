@@ -111,6 +111,21 @@ func main() {
 	ctx := context.Background()
 	v := dbClient.Vampire()
 
+	// seed/*.json is all authored for one specific mystery — The Crimson
+	// Toast. Secrets and quiz questions are mystery-scoped (see
+	// MYSTERY_REQUIREMENTS.md), so this looks that mystery up by name and
+	// fails loudly if it's missing rather than silently creating a
+	// duplicate. Create it once (by hand, via the Super Admin dashboard, or
+	// psql) before running this the first time post-migration.
+	const legacyMysteryName = "The Crimson Toast"
+	mystery, err := v.GetMysteryByName(ctx, legacyMysteryName)
+	if err != nil {
+		log.Fatalf("failed to look up mystery %q: %v", legacyMysteryName, err)
+	}
+	if mystery == nil {
+		log.Fatalf("mystery %q not found — create it first (Super Admin dashboard, or the 000461 migration's backfill if this is a fresh live.env DB)", legacyMysteryName)
+	}
+
 	// --fresh: clear the old character content so this seed rebuilds from
 	// scratch. Necessary when characters were renamed or removed, since the
 	// upsert below is keyed by name and would otherwise leave orphaned
@@ -156,7 +171,7 @@ func main() {
 		for i, body := range c.Secrets {
 			secrets = append(secrets, models.VampireSecret{Ordinal: i + 1, Body: body})
 		}
-		if err := v.ReplaceSecrets(ctx, character.ID, secrets); err != nil {
+		if err := v.ReplaceSecretsForCharacterAndMystery(ctx, character.ID, mystery.ID, secrets); err != nil {
 			log.Fatalf("failed to replace secrets for %q: %v", c.Name, err)
 		}
 
@@ -233,7 +248,7 @@ func main() {
 			})
 		}
 
-		if err := v.ReplaceQuizQuestions(ctx, questions); err != nil {
+		if err := v.ReplaceQuizQuestionsForMystery(ctx, mystery.ID, questions); err != nil {
 			log.Fatalf("failed to load quiz questions: %v", err)
 		}
 		quizCount = len(questions)

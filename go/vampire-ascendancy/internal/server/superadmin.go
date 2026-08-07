@@ -86,9 +86,11 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"characters": out})
 }
 
-// GET /admin/characters/:id — a character's full editable content: bios,
-// secrets, missions. No sigil/portrait/player name — those are per-instance
-// (see GET /gm/characters/:id instead).
+// GET /admin/characters/:id — a character's full editable content: bio,
+// missions. No sigil/portrait/player name — those are per-instance (see GET
+// /gm/characters/:id instead). No secrets either — those are mystery-scoped
+// now (see MYSTERY_REQUIREMENTS.md) and edited from the Mysteries tab's
+// per-character secrets editor instead, not here.
 func (s *server) adminGetCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -105,10 +107,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		return
 	}
 
-	secrets := make([]gin.H, 0, len(c.Secrets))
-	for _, sec := range c.Secrets {
-		secrets = append(secrets, gin.H{"ordinal": sec.Ordinal, "body": sec.Body})
-	}
 	missions := make([]gin.H, 0, len(c.Missions))
 	for _, m := range c.Missions {
 		missions = append(missions, gin.H{
@@ -136,7 +134,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"tags":                 tags,
 		"tagsGenerationStatus": c.TagsGenerationStatus,
 		"tagsGenerationError":  c.TagsGenerationError,
-		"secrets":              secrets,
 		"missions":             missions,
 	})
 }
@@ -187,9 +184,10 @@ func (s *server) adminGenerateCharacterTags(ctx *gin.Context) {
 }
 
 // PUT /admin/characters/:id — save the shared character editor: core
-// fields, secrets and missions (replaced wholesale). Characters are only
-// ever created by the seed importer (from the master packet PDF); this
-// only edits existing ones.
+// fields and missions (missions replaced wholesale). Secrets are edited
+// from the Mysteries tab instead (mystery-scoped, not here — see
+// MYSTERY_REQUIREMENTS.md). Characters are only ever created by the seed
+// importer (from the master packet PDF); this only edits existing ones.
 func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -205,7 +203,6 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		PreEventInfo    string   `json:"preEventInfo"`
 		PostAct1Context string   `json:"postAct1Context"`
 		Tags            []string `json:"tags"`
-		Secrets         []string `json:"secrets"`
 		Missions        []struct {
 			Tier         string `json:"tier"`
 			RewardBt     int    `json:"rewardBt"`
@@ -252,18 +249,6 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		}
 	}
 	if err := v.UpdateCharacter(ctx, id, fields); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	secrets := make([]models.VampireSecret, 0, len(body.Secrets))
-	for _, b := range body.Secrets {
-		if strings.TrimSpace(b) == "" {
-			continue
-		}
-		secrets = append(secrets, models.VampireSecret{Ordinal: len(secrets) + 1, Body: b})
-	}
-	if err := v.ReplaceSecrets(ctx, id, secrets); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -422,21 +407,27 @@ func (s *server) adminDeleteItemPhoto(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ---- Quiz questions ----
+// ---- Quiz questions, scoped to one mystery ----
 
-// GET /admin/quiz/questions — the editable quiz: Part 1 open-end prompt/
-// rubric and Part 2 multiple-choice questions, including the answer key
-// (why this is super-user-only, not just editing: Co-Hosts shouldn't see
-// spoilers for a story they may also be playing in another instance).
-func (s *server) adminGetQuizQuestions(ctx *gin.Context) {
+// GET /admin/mysteries/:id/quiz — the editable quiz for one mystery: Part 1
+// open-end prompt/rubric and Part 2 multiple-choice questions, including
+// the answer key (why this is super-user-only, not just editing: Co-Hosts
+// shouldn't see spoilers for a story they may also be playing in another
+// instance).
+func (s *server) adminGetMysteryQuiz(ctx *gin.Context) {
+	mysteryID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
 	v := s.dbClient.Vampire()
 
 	part1 := gin.H{"prompt": "", "rubric": "", "maxBt": 6}
-	if p1, _ := v.GetPart1Question(ctx); p1 != nil {
+	if p1, _ := v.GetPart1QuestionForMystery(ctx, mysteryID); p1 != nil {
 		part1 = gin.H{"prompt": p1.Prompt, "rubric": p1.Rubric, "maxBt": p1.MaxBT}
 	}
 
-	p2qs, err := v.ListQuizQuestionsByPart(ctx, 2, true)
+	p2qs, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryID, 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -461,12 +452,18 @@ func (s *server) adminGetQuizQuestions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"part1": part1, "part2": part2})
 }
 
-// PUT /admin/quiz/questions — replace the quiz from the editor. Rebuilds
-// Part 1 and the Part 2 multiple-choice set, and preserves any numeric
-// questions (the Blood-Tokens-on-hand question) so editing MC doesn't drop
-// them. Replacing the question set clears existing quiz answers in every
-// instance, so this is a pre-quiz, whole-library operation.
-func (s *server) adminUpdateQuizQuestions(ctx *gin.Context) {
+// PUT /admin/mysteries/:id/quiz — replace this mystery's quiz from the
+// editor. Rebuilds Part 1 and the Part 2 multiple-choice set, and
+// preserves any numeric questions (the Blood-Tokens-on-hand question) so
+// editing MC doesn't drop them. Replacing the question set clears existing
+// quiz answers in every instance running this mystery, so this is a
+// pre-quiz, whole-mystery operation.
+func (s *server) adminUpdateMysteryQuiz(ctx *gin.Context) {
+	mysteryID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
+		return
+	}
 	var body struct {
 		Part1 struct {
 			Prompt string `json:"prompt"`
@@ -524,7 +521,7 @@ func (s *server) adminUpdateQuizQuestions(ctx *gin.Context) {
 	}
 
 	// Preserve numeric questions (e.g. Blood Tokens on hand), appended after MC.
-	if existing, err := v.ListQuizQuestionsByPart(ctx, 2, true); err == nil {
+	if existing, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryID, 2, true); err == nil {
 		for _, q := range existing {
 			if q.QuestionType != "multiple_choice" {
 				questions = append(questions, models.VampireQuizQuestion{
@@ -541,11 +538,11 @@ func (s *server) adminUpdateQuizQuestions(ctx *gin.Context) {
 		}
 	}
 
-	if err := v.ReplaceQuizQuestions(ctx, questions); err != nil {
+	if err := v.ReplaceQuizQuestionsForMystery(ctx, mysteryID, questions); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	s.logSuperUser(ctx, "update_quiz_questions", map[string]interface{}{"part2Count": len(body.Part2)})
+	s.logSuperUser(ctx, "update_mystery_quiz", map[string]interface{}{"mysteryId": mysteryID.String(), "part2Count": len(body.Part2)})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

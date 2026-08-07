@@ -102,11 +102,21 @@ func (s *server) gmUpdatePlayer(ctx *gin.Context) {
 // the Invites tab's "who is this invite for" picker. Not filtered to
 // "included" (that concept is retired — see MULTI_TENANT_REQUIREMENTS.md);
 // the frontend cross-references the current roster + pending invites to
-// grey out ones already spoken for. Carries preEventInfo and tags so the
-// picker can search/filter/preview without a second round trip per
-// character.
+// grey out ones already spoken for. Also filtered to characters with at
+// least one secret authored for this instance's mystery — a character
+// with none can't be invited (see MYSTERY_REQUIREMENTS.md's eligibility
+// gating; CreatePlayerInvite enforces the same rule server-side as
+// defense-in-depth, this filtering is just so the picker doesn't offer
+// them in the first place). Carries preEventInfo and tags so the picker
+// can search/filter/preview without a second round trip per character.
 func (s *server) gmListCharacters(ctx *gin.Context) {
-	chars, err := s.dbClient.Vampire().ListCharacters(ctx)
+	v := s.dbClient.Vampire()
+	chars, err := v.ListCharacters(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	hasSecrets, err := v.ListCharacterIDsWithSecretsForMystery(ctx, mysteryIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -114,6 +124,9 @@ func (s *server) gmListCharacters(ctx *gin.Context) {
 	out := make([]gin.H, 0, len(chars))
 	for _, c := range chars {
 		if c.RoleType != "player" {
+			continue
+		}
+		if !hasSecrets[c.ID] {
 			continue
 		}
 		tags := []string(c.Tags)

@@ -58,10 +58,20 @@ export interface MyToast {
   };
 }
 export const listMyToasts = () => request<{ instances: MyToast[] }>('/instances');
-export const hostToast = (name: string) => request<{ id: string; name: string }>('/instances', {
-  method: 'POST',
-  body: JSON.stringify({ name }),
-});
+export const hostToast = (name: string, mysteryId: string) =>
+  request<{ id: string; name: string }>('/instances', {
+    method: 'POST',
+    body: JSON.stringify({ name, mysteryId }),
+  });
+
+// ---- Mysteries (picker only — the full editor is super-user-only, see
+// superAdminApi.ts) ----
+export interface ActiveMystery {
+  id: string;
+  name: string;
+  summary: string;
+}
+export const listActiveMysteries = () => request<{ mysteries: ActiveMystery[] }>('/mysteries');
 
 export const acceptCoHostInvite = (token: string) =>
   request<{ instanceId: string }>(`/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });

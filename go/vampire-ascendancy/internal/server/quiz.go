@@ -59,7 +59,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 
 	// ---- Part 1 ----
 	part1 := gin.H{"open": state.QuizPart1Open, "openedAt": state.QuizPart1OpenedAt, "submitted": false, "prompt": "", "answer": ""}
-	p1q, err := v.GetIncludedPart1Question(ctx, player.InstanceID)
+	p1q, err := v.GetPart1QuestionForMystery(ctx, mysteryIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -74,7 +74,7 @@ func (s *server) getQuiz(ctx *gin.Context) {
 	// Reveal only the current question — the first one this player hasn't locked.
 	// Later questions progressively disclose details, so we never send them until
 	// the earlier ones are answered.
-	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
+	p2qs, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryIDFromContext(ctx), 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -128,7 +128,7 @@ func (s *server) submitQuizPart1(ctx *gin.Context) {
 		return
 	}
 
-	p1q, err := v.GetIncludedPart1Question(ctx, player.InstanceID)
+	p1q, err := v.GetPart1QuestionForMystery(ctx, mysteryIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -180,7 +180,7 @@ func (s *server) submitQuizPart2(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
+	p2qs, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryIDFromContext(ctx), 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -254,7 +254,7 @@ func (s *server) submitQuizPart2Answer(ctx *gin.Context) {
 		return
 	}
 
-	p2qs, err := v.ListIncludedQuizQuestionsByPart(ctx, player.InstanceID, 2, true)
+	p2qs, err := v.ListQuizQuestionsByMysteryAndPart(ctx, mysteryIDFromContext(ctx), 2, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

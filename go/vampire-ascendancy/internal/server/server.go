@@ -69,6 +69,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	// real signed-in account (see withUser).
 	r.POST("/vampire-ascendancy/instances", s.withUser, s.createInstance)
 	r.GET("/vampire-ascendancy/instances", s.withUser, s.listMyInstances)
+	// The "Host a Toast" mystery picker — any signed-in user, not just
+	// super users (who edit mysteries; anyone can pick one to host).
+	r.GET("/vampire-ascendancy/mysteries", s.withUser, s.listActiveMysteries)
 	r.POST("/vampire-ascendancy/invites/:token/accept", s.withUser, s.acceptInstanceAdminInvite)
 
 	// Player invites (RSVP) — a Host/Co-Host invites a specific real person
@@ -159,12 +162,12 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.DELETE("/admins/:userId", s.gmRemoveAdmin)
 	gm.POST("/admins/transfer", s.gmTransferOwnership)
 
-	// Content tab: include/exclude toggles against the shared library
-	// (items/quiz only — which characters are "in" is implicit via invites).
+	// Content tab: include/exclude toggle against the shared item library.
+	// Characters have no toggle (implicit via invites) and neither does the
+	// quiz anymore — it's mystery-scoped now, not per-instance (see
+	// MYSTERY_REQUIREMENTS.md).
 	gm.GET("/library/items", s.gmListLibraryItems)
 	gm.PUT("/library/items/:id", s.gmSetItemIncluded)
-	gm.GET("/library/quiz-questions", s.gmListLibraryQuizQuestions)
-	gm.PUT("/library/quiz-questions/:id", s.gmSetQuizQuestionIncluded)
 
 	// Shared content library editor — characters, houses, items, and quiz
 	// questions are global (read by every instance); editing them is
@@ -183,8 +186,14 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.DELETE("/items/:id", s.adminDeleteItem)
 	admin.POST("/items/:id/photo", s.adminSetItemPhoto)
 	admin.DELETE("/items/:id/photo", s.adminDeleteItemPhoto)
-	admin.GET("/quiz/questions", s.adminGetQuizQuestions)
-	admin.PUT("/quiz/questions", s.adminUpdateQuizQuestions)
+	admin.GET("/mysteries", s.adminListMysteries)
+	admin.POST("/mysteries", s.adminCreateMystery)
+	admin.GET("/mysteries/:id", s.adminGetMystery)
+	admin.PUT("/mysteries/:id", s.adminUpdateMystery)
+	admin.GET("/mysteries/:id/quiz", s.adminGetMysteryQuiz)
+	admin.PUT("/mysteries/:id/quiz", s.adminUpdateMysteryQuiz)
+	admin.GET("/mysteries/:id/characters/:characterId/secrets", s.adminGetCharacterSecretsForMystery)
+	admin.PUT("/mysteries/:id/characters/:characterId/secrets", s.adminUpdateCharacterSecretsForMystery)
 	admin.GET("/super-users", s.adminListSuperUsers)
 	admin.POST("/super-users", s.adminAddSuperUser)
 	admin.DELETE("/super-users/:userId", s.adminRemoveSuperUser)

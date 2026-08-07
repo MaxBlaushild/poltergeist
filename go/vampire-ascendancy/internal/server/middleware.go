@@ -45,8 +45,18 @@ func (s *server) withPlayer(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "you don't have a character in this Toast"})
 		return
 	}
+	instance, err := s.dbClient.Vampire().GetInstanceByID(ctx, instanceID)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if instance == nil {
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
 
 	ctx.Set(playerContextKey, player)
+	ctx.Set(mysteryIDContextKey, instance.MysteryID)
 	ctx.Next()
 }
 
@@ -63,6 +73,10 @@ const (
 	currentUserContextKey = "vampireUser"
 	instanceIDContextKey  = "vampireInstanceId"
 	gmNameContextKey      = "vampireGMName"
+	// mysteryIDContextKey is set by withPlayer/withInstanceAdmin (both
+	// already resolve the instance row) so quiz handlers don't need a
+	// separate GetInstanceByID call of their own — see mysteryIDFromContext.
+	mysteryIDContextKey = "vampireMysteryId"
 )
 
 // authenticateUser validates the request's Bearer token against the shared
@@ -128,15 +142,34 @@ func (s *server) withInstanceAdmin(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "you are not a Host or Co-Host of this Toast"})
 		return
 	}
+	instance, err := s.dbClient.Vampire().GetInstanceByID(ctx, instanceID)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if instance == nil {
+		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
 
 	ctx.Set(currentUserContextKey, user)
 	ctx.Set(instanceIDContextKey, instanceID)
+	ctx.Set(mysteryIDContextKey, instance.MysteryID)
 	ctx.Set(gmNameContextKey, user.Name)
 	ctx.Next()
 }
 
 func instanceIDFromContext(ctx *gin.Context) uuid.UUID {
 	v, _ := ctx.Get(instanceIDContextKey)
+	id, _ := v.(uuid.UUID)
+	return id
+}
+
+// mysteryIDFromContext returns the current instance's mystery — set by
+// withPlayer (player routes) or withInstanceAdmin (gm routes), both of
+// which already load the instance row for their own checks.
+func mysteryIDFromContext(ctx *gin.Context) uuid.UUID {
+	v, _ := ctx.Get(mysteryIDContextKey)
 	id, _ := v.(uuid.UUID)
 	return id
 }

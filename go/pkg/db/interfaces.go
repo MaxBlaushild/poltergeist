@@ -361,7 +361,7 @@ type TradesARGlassesLeadHandle interface {
 // instance via an instanceID parameter.
 type VampireHandle interface {
 	// Instances ("Toasts")
-	CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID) (*models.VampireInstance, error)
+	CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID) (*models.VampireInstance, error)
 	GetInstanceByID(ctx context.Context, id uuid.UUID) (*models.VampireInstance, error)
 	ListInstancesForUser(ctx context.Context, userID uuid.UUID) ([]models.VampireInstance, error)
 	// SeedInstanceLibrary includes everything currently in the shared library
@@ -496,15 +496,11 @@ type VampireHandle interface {
 	ListActiveNotifications(ctx context.Context, instanceID uuid.UUID) ([]models.VampireNotification, error)
 	GetActiveNotificationForPlayer(ctx context.Context, instanceID, playerID uuid.UUID, houseID *uuid.UUID) (*models.VampireNotification, error)
 
-	// Quiz — questions are shared global content (authoring below stays
-	// global/ops-only); per-instance inclusion is the "Content library: quiz
-	// questions" methods further down. Submissions are instance-scoped.
-	ListQuizQuestions(ctx context.Context, activeOnly bool) ([]models.VampireQuizQuestion, error)
-	ListQuizQuestionsByPart(ctx context.Context, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
-	// GetPart1Question is unscoped (content-editor use — see
-	// GetIncludedPart1Question for the play-time equivalent).
-	GetPart1Question(ctx context.Context) (*models.VampireQuizQuestion, error)
-	ReplaceQuizQuestions(ctx context.Context, questions []models.VampireQuizQuestion) error
+	// Quiz — questions are mystery-scoped (see vampire_mystery.go and
+	// MYSTERY_REQUIREMENTS.md). Submissions stay instance-scoped.
+	GetPart1QuestionForMystery(ctx context.Context, mysteryID uuid.UUID) (*models.VampireQuizQuestion, error)
+	ListQuizQuestionsByMysteryAndPart(ctx context.Context, mysteryID uuid.UUID, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
+	ReplaceQuizQuestionsForMystery(ctx context.Context, mysteryID uuid.UUID, questions []models.VampireQuizQuestion) error
 	GetQuizQuestionByID(ctx context.Context, id uuid.UUID) (*models.VampireQuizQuestion, error)
 	ListQuizSubmissionsDetailed(ctx context.Context, instanceID uuid.UUID) ([]QuizSubmissionDetail, error)
 	UpsertQuizSubmission(ctx context.Context, instanceID, playerID, questionID uuid.UUID, answer string, isCorrect *bool, locked bool) (*models.VampireQuizSubmission, error)
@@ -522,14 +518,25 @@ type VampireHandle interface {
 	DeleteHouseFavorBySource(ctx context.Context, instanceID uuid.UUID, source string) error
 	DeleteBloodTokensBySourceForPlayer(ctx context.Context, playerID uuid.UUID, source string) error
 
-	// Content library: quiz questions — per-instance inclusion.
-	ListLibraryQuizQuestions(ctx context.Context, instanceID uuid.UUID) ([]LibraryQuizQuestion, error)
-	ListIncludedQuizQuestions(ctx context.Context, instanceID uuid.UUID, activeOnly bool) ([]models.VampireQuizQuestion, error)
-	ListIncludedQuizQuestionsByPart(ctx context.Context, instanceID uuid.UUID, part int, activeOnly bool) ([]models.VampireQuizQuestion, error)
-	GetIncludedPart1Question(ctx context.Context, instanceID uuid.UUID) (*models.VampireQuizQuestion, error)
-	// SetQuizQuestionIncluded returns a *ConflictError when un-including a
-	// question a player has already answered in this instance.
-	SetQuizQuestionIncluded(ctx context.Context, instanceID, questionID uuid.UUID, included bool) error
+	// Mysteries — see vampire_mystery.go and MYSTERY_REQUIREMENTS.md.
+	CreateMystery(ctx context.Context, name, summary, fullLore string) (*models.VampireMystery, error)
+	ListMysteries(ctx context.Context) ([]models.VampireMystery, error)
+	GetMysteryByID(ctx context.Context, id uuid.UUID) (*models.VampireMystery, error)
+	// GetMysteryByName is used by cmd/seed, whose seed files are all
+	// authored for "The Crimson Toast" specifically.
+	GetMysteryByName(ctx context.Context, name string) (*models.VampireMystery, error)
+	UpdateMystery(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error
+	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []models.VampireMysteryBeat) error
+	// Character secrets, scoped to a mystery.
+	ListSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireSecret, error)
+	ReplaceSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, secrets []models.VampireSecret) error
+	// CharacterHasSecretsForMystery / ListCharacterIDsWithSecretsForMystery
+	// back the "can't invite a character with no secrets for this
+	// instance's mystery" rule — the latter for the Invites tab's picker
+	// (one query for the whole list), the former as a defense-in-depth
+	// check inside CreatePlayerInvite itself.
+	CharacterHasSecretsForMystery(ctx context.Context, characterID, mysteryID uuid.UUID) (bool, error)
+	ListCharacterIDsWithSecretsForMystery(ctx context.Context, mysteryID uuid.UUID) (map[uuid.UUID]bool, error)
 
 	// GM audit log
 	LogGMAction(ctx context.Context, instanceID uuid.UUID, gmName, action string, payload []byte) error

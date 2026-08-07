@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listMyToasts, hostToast, type MyToast } from '../platformApi';
+import { listMyToasts, hostToast, listActiveMysteries, type MyToast, type ActiveMystery } from '../platformApi';
 import { adminListHouses } from '../superAdminApi';
 import { ApiError } from '../api';
 import { useUserAuth } from '../userAuth';
@@ -168,15 +168,25 @@ const TeaserPortrait = ({
 export const CreateToast = () => {
   const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [mysteryId, setMysteryId] = useState('');
+  const [mysteries, setMysteries] = useState<ActiveMystery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    listActiveMysteries()
+      .then((d) => setMysteries(d.mysteries))
+      .catch(() => setMysteries([]));
+  }, []);
+
+  const ready = name.trim() && mysteryId;
+
   const submit = async () => {
-    if (!name.trim() || busy) return;
+    if (!ready || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const inst = await hostToast(name.trim());
+      const inst = await hostToast(name.trim(), mysteryId);
       navigate(`/e/${inst.id}/gm`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not host this Toast. Try again.');
@@ -186,7 +196,7 @@ export const CreateToast = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm rounded-lg border border-blood/50 bg-black/70 p-6">
         <VampireMark className="w-12 h-12 mx-auto mb-3" />
         <h1 className="font-display text-2xl font-bold text-bone text-center mb-1">Host a Toast</h1>
@@ -197,14 +207,42 @@ export const CreateToast = () => {
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
           placeholder="Sarah's 30th Birthday Toast"
           className="w-full rounded-md bg-black/60 border border-blood/40 p-3 text-bone mb-4"
         />
+
+        <label className="block text-xs uppercase tracking-[0.2em] text-bone/60 mb-1">Which mystery?</label>
+        <p className="text-bone/40 text-xs mb-2">
+          Picked once — this can't be changed after the Toast is created.
+        </p>
+        {mysteries === null ? (
+          <p className="text-bone/50 text-sm mb-4">Loading mysteries…</p>
+        ) : mysteries.length === 0 ? (
+          <p className="text-gold/80 text-sm mb-4">No mysteries available yet — ask a super user to create one.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5 mb-4 max-h-64 overflow-y-auto">
+            {mysteries.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setMysteryId(m.id)}
+                className={`text-left rounded-md border p-3 transition-colors ${
+                  mysteryId === m.id
+                    ? 'border-blood-bright bg-blood/20'
+                    : 'border-blood/30 bg-black/30 hover:border-blood/50'
+                }`}
+              >
+                <p className="text-bone text-sm font-semibold">{m.name}</p>
+                {m.summary && <p className="text-bone/60 text-xs mt-0.5">{m.summary}</p>}
+              </button>
+            ))}
+          </div>
+        )}
+
         {error && <p className="text-blood-bright text-sm mb-3">{error}</p>}
         <button
           onClick={submit}
-          disabled={busy || !name.trim()}
+          disabled={busy || !ready}
           className="w-full py-3 rounded-md bg-blood text-bone uppercase tracking-[0.2em] text-sm hover:bg-blood-bright disabled:opacity-40"
         >
           {busy ? 'Hosting…' : 'Host this Toast'}
