@@ -13,11 +13,11 @@ import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
 import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
-// The shared character roster: bio, missions. Secrets are mystery-scoped
-// now — edited from the Mysteries tab's per-character secrets editor
-// instead (see MYSTERY_REQUIREMENTS.md). Sigils, portraits, and the real
-// guest playing a character are per-instance — see the GM console's
-// Players tab for those.
+// The shared character roster: pre-event bio, missions. Secrets and
+// post-Act-1 context are mystery-scoped now — edited from the Mysteries
+// tab's per-character content editor instead (see MYSTERY_REQUIREMENTS.md).
+// Sigils, portraits, and the real guest playing a character are
+// per-instance — see the GM console's Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -93,7 +93,10 @@ const CharacterEditor = ({
   houses: House[];
   onSaved: () => void;
 }) => {
-  const [c, setC] = useState<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets'> | null>(null);
+  const [c, setC] = useState<Omit<
+    GMCharacterFull,
+    'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context'
+  > | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [tagsError, setTagsError] = useState<string | null>(null);
@@ -138,7 +141,6 @@ const CharacterEditor = ({
         roleType: c.roleType,
         houseId: c.houseId,
         preEventInfo: c.preEventInfo,
-        postAct1Context: c.postAct1Context,
         tags: c.tags,
         missions: c.missions.map((m) => ({
           tier: m.tier,
@@ -207,8 +209,9 @@ const CharacterEditor = ({
             </button>
           </div>
           <p className="text-[11px] text-bone/40">
-            Reads the saved bio and missions, plus this character's secrets in every mystery they
-            appear in — save your other edits first if you've changed them.
+            Reads the saved pre-event bio and missions, plus this character's secrets and post-Act-1
+            context in every mystery they appear in — save your other edits first if you've changed
+            them.
           </p>
           {c.tagsGenerationStatus === 'failed' && c.tagsGenerationError && (
             <p className="text-blood-bright text-xs">{c.tagsGenerationError}</p>
@@ -219,9 +222,10 @@ const CharacterEditor = ({
       <Field label="Pre-event bio">
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />
       </Field>
-      <Field label="Post-act bio">
-        <textarea className={input} rows={4} value={c.postAct1Context} onChange={(e) => set('postAct1Context', e.target.value)} />
-      </Field>
+      <p className="text-[11px] text-bone/40 -mt-1">
+        Post-Act-1 context is mystery-scoped now — edit it from the Mysteries tab's per-character
+        content editor instead.
+      </p>
 
       <ListEditor
         label="Missions"

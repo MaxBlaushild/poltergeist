@@ -155,16 +155,19 @@ func main() {
 		}
 
 		character, err := v.UpsertCharacter(ctx, &models.VampireCharacter{
-			Name:            c.Name,
-			Title:           c.Title,
-			HouseID:         houseID,
-			RoleType:        c.RoleType,
-			IsOptional:      c.IsOptional,
-			PreEventInfo:    c.PreEventInfo,
-			PostAct1Context: c.PostAct1Context,
+			Name:         c.Name,
+			Title:        c.Title,
+			HouseID:      houseID,
+			RoleType:     c.RoleType,
+			IsOptional:   c.IsOptional,
+			PreEventInfo: c.PreEventInfo,
 		})
 		if err != nil {
 			log.Fatalf("failed to upsert character %q: %v", c.Name, err)
+		}
+
+		if err := v.UpsertCharacterMysteryContext(ctx, character.ID, mystery.ID, c.PostAct1Context); err != nil {
+			log.Fatalf("failed to set post-act1 context for %q: %v", c.Name, err)
 		}
 
 		secrets := make([]models.VampireSecret, 0, len(c.Secrets))

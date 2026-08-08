@@ -156,7 +156,7 @@ func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireC
 			Columns: []clause.Column{{Name: "name"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"title", "house_id", "role_type", "is_optional",
-				"pre_event_info", "post_act1_context", "updated_at",
+				"pre_event_info", "updated_at",
 			}),
 		}).
 		Create(c).Error; err != nil {
@@ -188,6 +188,7 @@ func (h *vampireHandler) GetCharacterByID(ctx context.Context, id uuid.UUID) (*m
 		Preload("House").
 		Preload("Secrets", func(db *gorm.DB) *gorm.DB { return db.Order("ordinal ASC") }).
 		Preload("Missions", func(db *gorm.DB) *gorm.DB { return db.Order("ordinal ASC") }).
+		Preload("PostAct1Contexts").
 		First(&c, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil

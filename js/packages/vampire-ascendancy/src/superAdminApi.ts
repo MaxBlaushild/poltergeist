@@ -49,14 +49,16 @@ export interface AdminCharacter {
   tags?: string[];
 }
 export const adminListCharacters = () => admin<{ characters: AdminCharacter[] }>('/characters');
-// Secrets are excluded — they're mystery-scoped now and edited from the
-// Mysteries tab's per-character secrets editor instead (see
-// MYSTERY_REQUIREMENTS.md).
+// Secrets and post-Act-1 context are excluded — both are mystery-scoped now
+// and edited from the Mysteries tab's per-character content editor instead
+// (see MYSTERY_REQUIREMENTS.md).
 export const adminGetCharacter = (id: string) =>
-  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets'>>(`/characters/${id}`);
+  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context'>>(
+    `/characters/${id}`
+  );
 export const adminUpdateCharacter = (
   id: string,
-  body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName'>
+  body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName' | 'postAct1Context'>
 ) => admin<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 // Queues the LLM tag-generation job for one character (reads bio/secrets/
 // missions, proposes tags, overwrites the current tag list when it's
@@ -115,22 +117,26 @@ export const adminGetMysteryQuiz = (mysteryId: string) => admin<GMQuizQuestions>
 export const adminUpdateMysteryQuiz = (mysteryId: string, body: GMQuizQuestions) =>
   admin<{ ok: boolean }>(`/mysteries/${mysteryId}/quiz`, { method: 'PUT', body: JSON.stringify(body) });
 
-// ---- Character secrets, scoped to a mystery ----
+// ---- Character content, scoped to a mystery: secrets + post-Act-1 context ----
 export interface AdminMysterySecret {
   ordinal: number;
   body: string;
   beatId: string | null;
 }
-export const adminGetCharacterSecretsForMystery = (mysteryId: string, characterId: string) =>
-  admin<{ secrets: AdminMysterySecret[] }>(`/mysteries/${mysteryId}/characters/${characterId}/secrets`);
-export const adminUpdateCharacterSecretsForMystery = (
+export interface AdminMysteryCharacterContent {
+  secrets: AdminMysterySecret[];
+  postAct1Context: string;
+}
+export const adminGetCharacterContentForMystery = (mysteryId: string, characterId: string) =>
+  admin<AdminMysteryCharacterContent>(`/mysteries/${mysteryId}/characters/${characterId}/content`);
+export const adminUpdateCharacterContentForMystery = (
   mysteryId: string,
   characterId: string,
-  secrets: { body: string; beatId: string | null }[]
+  body: { secrets: { body: string; beatId: string | null }[]; postAct1Context: string }
 ) =>
-  admin<{ ok: boolean }>(`/mysteries/${mysteryId}/characters/${characterId}/secrets`, {
+  admin<{ ok: boolean }>(`/mysteries/${mysteryId}/characters/${characterId}/content`, {
     method: 'PUT',
-    body: JSON.stringify({ secrets }),
+    body: JSON.stringify(body),
   });
 
 // ---- Super users ----

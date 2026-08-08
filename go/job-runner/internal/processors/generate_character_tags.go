@@ -88,8 +88,16 @@ func buildCharacterTagsPrompt(c *models.VampireCharacter) string {
 	if c.PreEventInfo != "" {
 		fmt.Fprintf(&b, "\nPRE-EVENT BIO:\n%s\n", c.PreEventInfo)
 	}
-	if c.PostAct1Context != "" {
-		fmt.Fprintf(&b, "\nPOST-ACT BIO:\n%s\n", c.PostAct1Context)
+	if len(c.PostAct1Contexts) > 0 {
+		// Spans every mystery this character's been cast in, same as
+		// SECRETS below — not scoped to any one mystery, since tag
+		// generation reads the character's full picture.
+		b.WriteString("\nPOST-ACT BIO:\n")
+		for _, pc := range c.PostAct1Contexts {
+			if pc.PostAct1Context != "" {
+				fmt.Fprintf(&b, "%s\n", pc.PostAct1Context)
+			}
+		}
 	}
 	if len(c.Secrets) > 0 {
 		b.WriteString("\nSECRETS:\n")

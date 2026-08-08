@@ -146,13 +146,15 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ---- Per-character secrets, scoped to a mystery ----
+// ---- Per-character content, scoped to a mystery: secrets + post-Act-1
+// context ----
 // Deliberately reached through the mystery, not the character (see
 // MYSTERY_REQUIREMENTS.md's "Super Admin UI" section) — authoring a
-// mystery means walking its cast and deciding what each of them knows.
+// mystery means walking its cast and deciding what each of them knows, and
+// what happens to them, in that mystery specifically.
 
-// GET /admin/mysteries/:id/characters/:characterId/secrets
-func (s *server) adminGetCharacterSecretsForMystery(ctx *gin.Context) {
+// GET /admin/mysteries/:id/characters/:characterId/content
+func (s *server) adminGetCharacterContentForMystery(ctx *gin.Context) {
 	mysteryID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
@@ -163,7 +165,13 @@ func (s *server) adminGetCharacterSecretsForMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
 		return
 	}
-	secrets, err := s.dbClient.Vampire().ListSecretsForCharacterAndMystery(ctx, characterID, mysteryID)
+	v := s.dbClient.Vampire()
+	secrets, err := v.ListSecretsForCharacterAndMystery(ctx, characterID, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	postAct1Context, err := v.GetCharacterMysteryContext(ctx, characterID, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -172,15 +180,15 @@ func (s *server) adminGetCharacterSecretsForMystery(ctx *gin.Context) {
 	for _, sec := range secrets {
 		out = append(out, gin.H{"ordinal": sec.Ordinal, "body": sec.Body, "beatId": sec.BeatID})
 	}
-	ctx.JSON(http.StatusOK, gin.H{"secrets": out})
+	ctx.JSON(http.StatusOK, gin.H{"secrets": out, "postAct1Context": postAct1Context})
 }
 
-// PUT /admin/mysteries/:id/characters/:characterId/secrets — replace this
-// character's secrets for this mystery wholesale. This is what makes a
-// character eligible for invites to an instance running this mystery (see
-// gm_players.go's gmListCharacters and CreatePlayerInvite) — saving an
-// empty list makes them ineligible again.
-func (s *server) adminUpdateCharacterSecretsForMystery(ctx *gin.Context) {
+// PUT /admin/mysteries/:id/characters/:characterId/content — replace this
+// character's secrets for this mystery wholesale (an empty list makes them
+// ineligible for invites — see gm_players.go's gmListCharacters and
+// CreatePlayerInvite) and overwrite their post-Act-1 context for this
+// mystery.
+func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 	mysteryID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
@@ -196,6 +204,7 @@ func (s *server) adminUpdateCharacterSecretsForMystery(ctx *gin.Context) {
 			Body   string  `json:"body"`
 			BeatID *string `json:"beatId"`
 		} `json:"secrets"`
+		PostAct1Context string `json:"postAct1Context"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -219,11 +228,16 @@ func (s *server) adminUpdateCharacterSecretsForMystery(ctx *gin.Context) {
 		secrets = append(secrets, s)
 	}
 
-	if err := s.dbClient.Vampire().ReplaceSecretsForCharacterAndMystery(ctx, characterID, mysteryID, secrets); err != nil {
+	v := s.dbClient.Vampire()
+	if err := v.ReplaceSecretsForCharacterAndMystery(ctx, characterID, mysteryID, secrets); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	s.logSuperUser(ctx, "update_character_secrets", map[string]interface{}{
+	if err := v.UpsertCharacterMysteryContext(ctx, characterID, mysteryID, body.PostAct1Context); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logSuperUser(ctx, "update_character_mystery_content", map[string]interface{}{
 		"mysteryId": mysteryID.String(), "characterId": characterID.String(), "secretCount": len(secrets),
 	})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})

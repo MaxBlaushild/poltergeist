@@ -93,7 +93,14 @@ func (s *server) getMe(ctx *gin.Context) {
 
 	// Gated content — only revealed after the host opens the evening.
 	if state.ContentUnlocked {
-		charResp["postAct1Context"] = character.PostAct1Context
+		// Scoped to this instance's mystery — not whatever context this
+		// character has for every mystery they've ever appeared in.
+		postAct1Context, err := s.dbClient.Vampire().GetCharacterMysteryContext(ctx, character.ID, mysteryIDFromContext(ctx))
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		charResp["postAct1Context"] = postAct1Context
 		// Scoped to this instance's mystery — not every secret this
 		// character has ever had across every mystery they've appeared in.
 		secrets, err := s.dbClient.Vampire().ListSecretsForCharacterAndMystery(ctx, character.ID, mysteryIDFromContext(ctx))

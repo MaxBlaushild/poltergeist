@@ -45,9 +45,15 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		playerName = slot.GuestLabel
 	}
 
-	// Scoped to this instance's mystery — not every secret this character
-	// has ever had across every mystery they've appeared in.
-	secretRows, err := v.ListSecretsForCharacterAndMystery(ctx, id, mysteryIDFromContext(ctx))
+	// Scoped to this instance's mystery — not every secret/context this
+	// character has ever had across every mystery they've appeared in.
+	mysteryID := mysteryIDFromContext(ctx)
+	secretRows, err := v.ListSecretsForCharacterAndMystery(ctx, id, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	postAct1Context, err := v.GetCharacterMysteryContext(ctx, id, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -75,7 +81,7 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"isOptional":      c.IsOptional,
 		"houseId":         c.HouseID,
 		"preEventInfo":    c.PreEventInfo,
-		"postAct1Context": c.PostAct1Context,
+		"postAct1Context": postAct1Context,
 		"imageUrl":        imageURL,
 		"playerName":      playerName,
 		"secrets":         secrets,

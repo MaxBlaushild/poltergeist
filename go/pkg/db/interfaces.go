@@ -537,6 +537,12 @@ type VampireHandle interface {
 	// check inside CreatePlayerInvite itself.
 	CharacterHasSecretsForMystery(ctx context.Context, characterID, mysteryID uuid.UUID) (bool, error)
 	ListCharacterIDsWithSecretsForMystery(ctx context.Context, mysteryID uuid.UUID) (map[uuid.UUID]bool, error)
+	// Character post-Act-1 context, scoped to a mystery — the mystery-scoped
+	// equivalent of the old VampireCharacter.PostAct1Context column. A
+	// single string per (character, mystery), so it's upserted rather than
+	// wholesale-replaced like secrets.
+	GetCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID) (string, error)
+	UpsertCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID, postAct1Context string) error
 
 	// GM audit log
 	LogGMAction(ctx context.Context, instanceID uuid.UUID, gmName, action string, payload []byte) error

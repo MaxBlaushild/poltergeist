@@ -86,11 +86,11 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"characters": out})
 }
 
-// GET /admin/characters/:id — a character's full editable content: bio,
-// missions. No sigil/portrait/player name — those are per-instance (see GET
-// /gm/characters/:id instead). No secrets either — those are mystery-scoped
-// now (see MYSTERY_REQUIREMENTS.md) and edited from the Mysteries tab's
-// per-character secrets editor instead, not here.
+// GET /admin/characters/:id — a character's full editable content: pre-event
+// bio, missions. No sigil/portrait/player name — those are per-instance (see
+// GET /gm/characters/:id instead). No secrets or post-Act-1 context either —
+// both are mystery-scoped now (see MYSTERY_REQUIREMENTS.md) and edited from
+// the Mysteries tab's per-character editor instead, not here.
 func (s *server) adminGetCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -130,7 +130,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"isOptional":           c.IsOptional,
 		"houseId":              c.HouseID,
 		"preEventInfo":         c.PreEventInfo,
-		"postAct1Context":      c.PostAct1Context,
 		"tags":                 tags,
 		"tagsGenerationStatus": c.TagsGenerationStatus,
 		"tagsGenerationError":  c.TagsGenerationError,
@@ -184,10 +183,11 @@ func (s *server) adminGenerateCharacterTags(ctx *gin.Context) {
 }
 
 // PUT /admin/characters/:id — save the shared character editor: core
-// fields and missions (missions replaced wholesale). Secrets are edited
-// from the Mysteries tab instead (mystery-scoped, not here — see
-// MYSTERY_REQUIREMENTS.md). Characters are only ever created by the seed
-// importer (from the master packet PDF); this only edits existing ones.
+// fields and missions (missions replaced wholesale). Secrets and post-Act-1
+// context are edited from the Mysteries tab instead (mystery-scoped, not
+// here — see MYSTERY_REQUIREMENTS.md). Characters are only ever created by
+// the seed importer (from the master packet PDF); this only edits existing
+// ones.
 func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -196,14 +196,13 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	}
 
 	var body struct {
-		Name            string   `json:"name"`
-		Title           string   `json:"title"`
-		RoleType        string   `json:"roleType"`
-		HouseID         *string  `json:"houseId"`
-		PreEventInfo    string   `json:"preEventInfo"`
-		PostAct1Context string   `json:"postAct1Context"`
-		Tags            []string `json:"tags"`
-		Missions        []struct {
+		Name         string   `json:"name"`
+		Title        string   `json:"title"`
+		RoleType     string   `json:"roleType"`
+		HouseID      *string  `json:"houseId"`
+		PreEventInfo string   `json:"preEventInfo"`
+		Tags         []string `json:"tags"`
+		Missions     []struct {
 			Tier         string `json:"tier"`
 			RewardBt     int    `json:"rewardBt"`
 			Prompt       string `json:"prompt"`
@@ -229,12 +228,11 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 
 	v := s.dbClient.Vampire()
 	fields := map[string]interface{}{
-		"name":              body.Name,
-		"title":             body.Title,
-		"role_type":         body.RoleType,
-		"pre_event_info":    body.PreEventInfo,
-		"post_act1_context": body.PostAct1Context,
-		"tags":              models.StringArray(tags),
+		"name":           body.Name,
+		"title":          body.Title,
+		"role_type":      body.RoleType,
+		"pre_event_info": body.PreEventInfo,
+		"tags":           models.StringArray(tags),
 	}
 	if body.HouseID != nil {
 		if *body.HouseID == "" {

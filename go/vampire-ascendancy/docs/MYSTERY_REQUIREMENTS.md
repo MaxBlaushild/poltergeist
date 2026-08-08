@@ -25,7 +25,9 @@ A character's **secrets** become mystery-scoped too: the same character (say, Se
 Nox) can be cast in multiple mysteries over time, and has a different set of secrets
 in each one — because the secrets are what that character knows about *that*
 mystery's beats. Each secret is tied to exactly one beat (which beat it reveals).
-A character's bio (pre-event/post-act text) and missions stay as they are today —
+A character's **post-Act-1 context** is mystery-scoped for the same reason (a
+follow-up decision, made after this doc's original phase shipped — see the
+`vampire_character_mystery_contexts` migration). Pre-event bio and missions stay
 global to the character, not per-mystery.
 
 Each **instance** ("Toast") has exactly one mystery, chosen once at creation and
@@ -243,8 +245,9 @@ both reasons.
   per-instance override of secrets, no Host-level "add a bonus secret" tool).
 - Multiple mysteries per instance, or an instance switching mysteries after
   creation (see decision #2).
-- Per-mystery character bios/missions (see decision #1) — flagged as a plausible
-  future follow-up if a story needs it, not built now.
+- Per-mystery character pre-event bios/missions (see decision #1) — post-Act-1
+  context was carved out of this and made mystery-scoped in a follow-up (see
+  `vampire_character_mystery_contexts`); pre-event bio and missions remain global.
 - Enforcing beat coverage (e.g. "every beat must have at least one secret pointing
   at it" as a publish-blocking rule for a mystery) — the Super Admin dashboard
   shows the data but doesn't gate on completeness.

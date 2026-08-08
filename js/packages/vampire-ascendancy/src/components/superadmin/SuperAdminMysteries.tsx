@@ -5,8 +5,8 @@ import {
   adminGetMystery,
   adminUpdateMystery,
   adminListCharacters,
-  adminGetCharacterSecretsForMystery,
-  adminUpdateCharacterSecretsForMystery,
+  adminGetCharacterContentForMystery,
+  adminUpdateCharacterContentForMystery,
 } from '../../superAdminApi';
 import type { AdminMystery, AdminMysteryFull, AdminMysterySecret, AdminCharacter } from '../../superAdminApi';
 import { Card } from '../gm/GameSection';
@@ -152,7 +152,7 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
   const sections: { id: MysterySection; label: string }[] = [
     { id: 'story', label: 'Story' },
     { id: 'quiz', label: 'Quiz' },
-    { id: 'secrets', label: 'Character secrets' },
+    { id: 'secrets', label: 'Characters' },
   ];
 
   return (
@@ -229,10 +229,10 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
   );
 };
 
-// Walk the cast and decide what each of them knows for this mystery —
-// deliberately reached from the mystery, not the character (see
-// MYSTERY_REQUIREMENTS.md's "Super Admin UI"). A character with zero
-// secrets here can't be invited to a Toast running this mystery.
+// Walk the cast and decide what each of them knows — and what happens to
+// them — for this mystery. Deliberately reached from the mystery, not the
+// character (see MYSTERY_REQUIREMENTS.md's "Super Admin UI"). A character
+// with zero secrets here can't be invited to a Toast running this mystery.
 const CharacterSecretsEditor = ({ mysteryId, beats }: { mysteryId: string; beats: AdminMysteryFull['beats'] }) => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -251,12 +251,12 @@ const CharacterSecretsEditor = ({ mysteryId, beats }: { mysteryId: string; beats
   return (
     <div className="flex flex-col gap-3">
       <CharacterBrowser characters={characters} selectedId={selectedId ?? undefined} onSelect={(c) => setSelectedId(c.id)} />
-      {selected && <SecretsForCharacter key={selected.id} mysteryId={mysteryId} character={selected} beats={beats} />}
+      {selected && <ContentForCharacter key={selected.id} mysteryId={mysteryId} character={selected} beats={beats} />}
     </div>
   );
 };
 
-const SecretsForCharacter = ({
+const ContentForCharacter = ({
   mysteryId,
   character,
   beats,
@@ -266,17 +266,22 @@ const SecretsForCharacter = ({
   beats: AdminMysteryFull['beats'];
 }) => {
   const [secrets, setSecrets] = useState<AdminMysterySecret[] | null>(null);
+  const [postAct1Context, setPostAct1Context] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     setSecrets(null);
-    adminGetCharacterSecretsForMystery(mysteryId, character.id)
-      .then((d) => setSecrets(d.secrets))
-      .catch(() => setNote('Could not load secrets.'));
+    setPostAct1Context('');
+    adminGetCharacterContentForMystery(mysteryId, character.id)
+      .then((d) => {
+        setSecrets(d.secrets);
+        setPostAct1Context(d.postAct1Context);
+      })
+      .catch(() => setNote('Could not load this character.'));
   }, [mysteryId, character.id]);
 
-  if (!secrets) return <p className="text-bone/50 text-sm">{note || 'Loading secrets…'}</p>;
+  if (!secrets) return <p className="text-bone/50 text-sm">{note || 'Loading…'}</p>;
 
   const input = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
 
@@ -284,11 +289,10 @@ const SecretsForCharacter = ({
     setBusy(true);
     setNote(null);
     try {
-      await adminUpdateCharacterSecretsForMystery(
-        mysteryId,
-        character.id,
-        secrets.map((s) => ({ body: s.body, beatId: s.beatId }))
-      );
+      await adminUpdateCharacterContentForMystery(mysteryId, character.id, {
+        secrets: secrets.map((s) => ({ body: s.body, beatId: s.beatId })),
+        postAct1Context,
+      });
       setNote('Saved.');
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Save failed.');
@@ -298,7 +302,7 @@ const SecretsForCharacter = ({
   };
 
   return (
-    <Card title={`${character.name}'s secrets for this mystery`}>
+    <Card title={`${character.name} in this mystery`}>
       {secrets.length === 0 && (
         <p className="text-gold/80 text-xs mb-2">
           No secrets yet — {character.name} can't be invited to a Toast running this mystery until
@@ -339,13 +343,23 @@ const SecretsForCharacter = ({
           </div>
         ))}
       </ListEditor>
+
+      <Field label="Post-Act-1 context — what happens to them after Act One, in this mystery">
+        <textarea
+          className={`${input} mt-1.5`}
+          rows={4}
+          value={postAct1Context}
+          onChange={(e) => setPostAct1Context(e.target.value)}
+        />
+      </Field>
+
       <div className="mt-3 flex items-center gap-3">
         <button
           onClick={save}
           disabled={busy}
           className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
         >
-          {busy ? 'Saving…' : 'Save secrets'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
         {note && <span className="text-bone/60 text-sm">{note}</span>}
       </div>
