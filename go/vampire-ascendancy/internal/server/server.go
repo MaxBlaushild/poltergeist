@@ -194,6 +194,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.PUT("/mysteries/:id/quiz", s.adminUpdateMysteryQuiz)
 	admin.GET("/mysteries/:id/characters/:characterId/content", s.adminGetCharacterContentForMystery)
 	admin.PUT("/mysteries/:id/characters/:characterId/content", s.adminUpdateCharacterContentForMystery)
+	// Beat-centric secret management — the Story tab's beat panel.
+	admin.GET("/mysteries/:id/beats/:beatId/secrets", s.adminListBeatSecrets)
+	admin.POST("/mysteries/:id/beats/:beatId/secrets", s.adminCreateBeatSecret)
+	admin.PUT("/secrets/:secretId", s.adminUpdateSecretBody)
+	admin.DELETE("/secrets/:secretId", s.adminDeleteSecret)
 	admin.GET("/super-users", s.adminListSuperUsers)
 	admin.POST("/super-users", s.adminAddSuperUser)
 	admin.DELETE("/super-users/:userId", s.adminRemoveSuperUser)

@@ -63,24 +63,50 @@ func (h *vampireHandler) UpdateMystery(ctx context.Context, id uuid.UUID, fields
 	return h.db.WithContext(ctx).Model(&models.VampireMystery{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// ReplaceMysteryBeats removes a mystery's existing beats and inserts the
-// new set — same wholesale-replace pattern as ReplaceSecrets/ReplaceMissions.
-// Existing vampire_secrets.beat_id references to the removed beats are set
-// to NULL by the FK (no ON DELETE CASCADE on that column), not deleted —
-// see the Super Admin mystery editor, which warns before removing a beat
-// that's still referenced.
+// ReplaceMysteryBeats reconciles a mystery's beat list against what's
+// submitted: beats that already have an id are updated in place (so that id
+// — and any vampire_secrets.beat_id pointing at it — survives the save);
+// beats no longer present are deleted (their secrets' beat_id gets
+// ON DELETE SET NULL'd, same as before, since there's no ON DELETE CASCADE
+// on that column); beats with no id are inserted as new.
+//
+// This used to be a blind delete-then-recreate, which regenerated every
+// beat's id — silently orphaning every secret's beat assignment — on every
+// single save, not just when a beat was actually removed. That made beat
+// ids too unstable to build anything on top of (like the beat-centric
+// secrets panel below), so this reconciles instead.
 func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []models.VampireMysteryBeat) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("mystery_id = ?", mysteryID).Delete(&models.VampireMysteryBeat{}).Error; err != nil {
-			return err
-		}
+		keepIDs := make([]uuid.UUID, 0, len(beats))
 		for i := range beats {
 			beats[i].MysteryID = mysteryID
+			if beats[i].ID != uuid.Nil {
+				keepIDs = append(keepIDs, beats[i].ID)
+			}
 		}
-		if len(beats) == 0 {
-			return nil
+
+		del := tx.Where("mystery_id = ?", mysteryID)
+		if len(keepIDs) > 0 {
+			del = del.Where("id NOT IN ?", keepIDs)
 		}
-		return tx.Create(&beats).Error
+		if err := del.Delete(&models.VampireMysteryBeat{}).Error; err != nil {
+			return err
+		}
+
+		for i := range beats {
+			if beats[i].ID == uuid.Nil {
+				if err := tx.Create(&beats[i]).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Model(&models.VampireMysteryBeat{}).
+				Where("id = ?", beats[i].ID).
+				Updates(map[string]interface{}{"ordinal": beats[i].Ordinal, "body": beats[i].Body}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -119,6 +145,68 @@ func (h *vampireHandler) ReplaceSecretsForCharacterAndMystery(ctx context.Contex
 		}
 		return tx.Create(&secrets).Error
 	})
+}
+
+// ---- Beat-centric secret management ----
+// Complements ListSecretsForCharacterAndMystery/ReplaceSecretsForCharacterAndMystery
+// above — those are character-centric (look at one character, decide what
+// they know); these are beat-centric (look at one beat, in the Story tab's
+// beat panel, and decide who knows it). Individual create/update/delete,
+// not wholesale replace, since this view only ever sees one beat's slice of
+// a character's secrets, never their full list — replacing wholesale here
+// would silently wipe out that character's secrets for every other beat.
+
+// ListSecretsForBeat returns every secret, across every character, that
+// points at one specific beat. Character names for display are resolved by
+// the frontend from its already-loaded character list, not joined here.
+func (h *vampireHandler) ListSecretsForBeat(ctx context.Context, beatID uuid.UUID) ([]models.VampireSecret, error) {
+	var out []models.VampireSecret
+	if err := h.db.WithContext(ctx).
+		Where("beat_id = ?", beatID).
+		Order("created_at ASC").
+		Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreateSecretForCharacterMystery appends one new secret for a character in
+// a mystery, tied to the given beat. Ordinal is computed as "one past
+// however many secrets this character already has for this mystery" — fine
+// given ordinal is display-order only, never uniqueness-enforced (see the
+// model's comment).
+func (h *vampireHandler) CreateSecretForCharacterMystery(ctx context.Context, characterID, mysteryID uuid.UUID, beatID *uuid.UUID, body string) (*models.VampireSecret, error) {
+	var count int64
+	if err := h.db.WithContext(ctx).Model(&models.VampireSecret{}).
+		Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
+		Count(&count).Error; err != nil {
+		return nil, err
+	}
+	s := models.VampireSecret{
+		CharacterID: characterID,
+		MysteryID:   &mysteryID,
+		BeatID:      beatID,
+		Ordinal:     int(count) + 1,
+		Body:        body,
+	}
+	if err := h.db.WithContext(ctx).Create(&s).Error; err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// UpdateSecretBody edits one secret's text in place — used by the beat
+// panel's inline editor, which only ever touches one secret at a time.
+func (h *vampireHandler) UpdateSecretBody(ctx context.Context, id uuid.UUID, body string) error {
+	return h.db.WithContext(ctx).Model(&models.VampireSecret{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"body": body}).Error
+}
+
+// DeleteSecret removes one secret outright — the beat panel's "remove"
+// action.
+func (h *vampireHandler) DeleteSecret(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.VampireSecret{}, "id = ?", id).Error
 }
 
 // CharacterHasSecretsForMystery is the eligibility check invites rely on:

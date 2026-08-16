@@ -537,6 +537,14 @@ type VampireHandle interface {
 	// check inside CreatePlayerInvite itself.
 	CharacterHasSecretsForMystery(ctx context.Context, characterID, mysteryID uuid.UUID) (bool, error)
 	ListCharacterIDsWithSecretsForMystery(ctx context.Context, mysteryID uuid.UUID) (map[uuid.UUID]bool, error)
+	// Beat-centric secret management — the Story tab's beat panel, looking
+	// at one beat and deciding who knows it, as opposed to the
+	// character-centric methods above. Individual create/update/delete, not
+	// wholesale replace — see vampire_mystery.go's comment.
+	ListSecretsForBeat(ctx context.Context, beatID uuid.UUID) ([]models.VampireSecret, error)
+	CreateSecretForCharacterMystery(ctx context.Context, characterID, mysteryID uuid.UUID, beatID *uuid.UUID, body string) (*models.VampireSecret, error)
+	UpdateSecretBody(ctx context.Context, id uuid.UUID, body string) error
+	DeleteSecret(ctx context.Context, id uuid.UUID) error
 	// Character post-Act-1 context, scoped to a mystery — the mystery-scoped
 	// equivalent of the old VampireCharacter.PostAct1Context column. A
 	// single string per (character, mystery), so it's upserted rather than

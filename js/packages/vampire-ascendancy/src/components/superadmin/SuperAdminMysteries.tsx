@@ -7,8 +7,19 @@ import {
   adminListCharacters,
   adminGetCharacterContentForMystery,
   adminUpdateCharacterContentForMystery,
+  adminListBeatSecrets,
+  adminCreateBeatSecret,
+  adminUpdateSecretBody,
+  adminDeleteSecret,
 } from '../../superAdminApi';
-import type { AdminMystery, AdminMysteryFull, AdminMysterySecret, AdminCharacter } from '../../superAdminApi';
+import type {
+  AdminMystery,
+  AdminMysteryFull,
+  AdminMysteryBeat,
+  AdminMysterySecret,
+  AdminCharacter,
+  AdminBeatSecret,
+} from '../../superAdminApi';
 import { Card } from '../gm/GameSection';
 import { CharacterBrowser } from '../gm/CharacterBrowser';
 import { SuperAdminQuiz } from './SuperAdminQuiz';
@@ -118,6 +129,9 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [section, setSection] = useState<MysterySection>('story');
+  // Which beats have their "who knows this" panel open — keyed by beat id,
+  // so it only applies to beats that have already been saved (see below).
+  const [expandedBeatIds, setExpandedBeatIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setM(null);
@@ -128,19 +142,31 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
 
   const set = <K extends keyof AdminMysteryFull>(k: K, v: AdminMysteryFull[K]) => setM({ ...m, [k]: v });
 
+  const toggleBeat = (id: string) =>
+    setExpandedBeatIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const save = async () => {
     setBusy(true);
     setNote(null);
     try {
+      // id is passed through (not just body) so a beat that already exists
+      // keeps its id — and any secret's beatId pointing at it — instead of
+      // every save silently regenerating every beat's id.
       await adminUpdateMystery(m.id, {
         name: m.name,
         summary: m.summary,
         fullLore: m.fullLore,
         active: m.active,
-        beats: m.beats.map((b) => ({ body: b.body })),
+        beats: m.beats.map((b) => ({ id: b.id || undefined, body: b.body })),
       });
       setNote('Saved.');
       onSaved();
+      adminGetMystery(m.id).then(setM);
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Save failed.');
     } finally {
@@ -193,21 +219,35 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
             onAdd={() => set('beats', [...m.beats, { id: '', ordinal: m.beats.length + 1, body: '' }])}
           >
             {m.beats.map((b, i) => (
-              <div key={i} className="flex gap-2 items-start">
-                <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
-                <textarea
-                  className={input}
-                  rows={2}
-                  value={b.body}
-                  onChange={(e) => set('beats', m.beats.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
-                />
-                <RemoveBtn onClick={() => set('beats', m.beats.filter((_, j) => j !== i))} />
+              <div key={i} className="flex flex-col gap-1">
+                <div className="flex gap-2 items-start">
+                  <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
+                  <textarea
+                    className={input}
+                    rows={2}
+                    value={b.body}
+                    onChange={(e) => set('beats', m.beats.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
+                  />
+                  <RemoveBtn onClick={() => set('beats', m.beats.filter((_, j) => j !== i))} />
+                </div>
+                {b.id ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleBeat(b.id)}
+                    className="self-start ml-6 text-[11px] uppercase tracking-[0.15em] text-gold/70 hover:text-gold"
+                  >
+                    {expandedBeatIds.has(b.id) ? '▾ Hide who knows this' : '▸ Who knows this'}
+                  </button>
+                ) : (
+                  <p className="ml-6 text-[11px] text-bone/30">Save the mystery to assign secrets to this beat.</p>
+                )}
+                {b.id && expandedBeatIds.has(b.id) && <BeatSecretsPanel mysteryId={m.id} beat={b} />}
               </div>
             ))}
           </ListEditor>
           <p className="text-[11px] text-bone/40">
-            Removing a beat that a secret still points at un-sets that secret's beat rather than
-            deleting the secret — check the Character secrets tab afterward if you remove one.
+            Renaming a beat's text keeps its id (and any secrets pointing at it) — only removing it
+            un-sets those secrets' beat rather than deleting them.
           </p>
 
           <div className="flex items-center gap-3">
@@ -226,6 +266,151 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
       {section === 'quiz' && <SuperAdminQuiz mysteryId={m.id} />}
       {section === 'secrets' && <CharacterSecretsEditor mysteryId={m.id} beats={m.beats} />}
     </div>
+  );
+};
+
+// A beat's "who knows this" panel — the beat-centric complement of
+// CharacterSecretsEditor/SecretsForCharacter below. Lets a super user assign
+// secrets to characters right where a beat is authored, instead of having
+// to leave the Story tab and walk the cast one character at a time. Writes
+// happen immediately per-secret (not deferred to "Save mystery"), same
+// posture as the character-centric editor's own save button.
+const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminMysteryBeat }) => {
+  const [characters, setCharacters] = useState<AdminCharacter[]>([]);
+  const [secrets, setSecrets] = useState<AdminBeatSecret[] | null>(null);
+  const [newCharacterId, setNewCharacterId] = useState('');
+  const [newBody, setNewBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = () => {
+    adminListBeatSecrets(mysteryId, beat.id)
+      .then((d) => setSecrets(d.secrets))
+      .catch(() => setNote('Could not load secrets for this beat.'));
+  };
+
+  useEffect(() => {
+    adminListCharacters()
+      .then((d) => setCharacters(d.characters.filter((c) => c.roleType === 'player')))
+      .catch(() => {});
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mysteryId, beat.id]);
+
+  const characterName = (id: string) => characters.find((c) => c.id === id)?.name || '(unknown character)';
+
+  const addSecret = async () => {
+    if (!newCharacterId || !newBody.trim()) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminCreateBeatSecret(mysteryId, beat.id, newCharacterId, newBody.trim());
+      setNewBody('');
+      load();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Could not add secret.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeSecret = async (id: string) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminDeleteSecret(id);
+      load();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Could not remove secret.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const input = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
+
+  return (
+    <div className="ml-6 mt-1 rounded-md border border-gold/25 bg-black/20 p-3 flex flex-col gap-2">
+      <p className="text-[11px] uppercase tracking-[0.2em] text-gold/70">Who knows this</p>
+      {secrets === null ? (
+        <p className="text-bone/50 text-xs">{note || 'Loading…'}</p>
+      ) : (
+        <>
+          {secrets.length === 0 && <p className="text-bone/40 text-xs">No one yet.</p>}
+          {secrets.map((s) => (
+            <div key={s.id} className="flex gap-2 items-start">
+              <div className="flex-1">
+                <p className="text-gold/80 text-xs mb-0.5">{characterName(s.characterId)}</p>
+                <BeatSecretBodyEditor secret={s} onSaved={load} />
+              </div>
+              <RemoveBtn onClick={() => removeSecret(s.id)} />
+            </div>
+          ))}
+        </>
+      )}
+      <div className="flex gap-2 items-start pt-2 border-t border-gold/10">
+        <select
+          className={`${input} w-36 shrink-0`}
+          value={newCharacterId}
+          onChange={(e) => setNewCharacterId(e.target.value)}
+        >
+          <option value="">— character —</option>
+          {characters.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <textarea
+          className={input}
+          rows={2}
+          placeholder="What they know…"
+          value={newBody}
+          onChange={(e) => setNewBody(e.target.value)}
+        />
+        <button
+          onClick={addSecret}
+          disabled={busy || !newCharacterId || !newBody.trim()}
+          className="shrink-0 px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40"
+        >
+          + Add
+        </button>
+      </div>
+      {note && <p className="text-blood-bright text-xs">{note}</p>}
+    </div>
+  );
+};
+
+// Auto-saves on blur (rather than a per-row Save button) since this list has
+// no batch "Save" step of its own — each secret is its own row-level write.
+const BeatSecretBodyEditor = ({ secret, onSaved }: { secret: AdminBeatSecret; onSaved: () => void }) => {
+  const [body, setBody] = useState(secret.body);
+  const [saving, setSaving] = useState(false);
+
+  const commit = async () => {
+    const trimmed = body.trim();
+    if (!trimmed || trimmed === secret.body.trim()) {
+      setBody(secret.body);
+      return;
+    }
+    setSaving(true);
+    try {
+      await adminUpdateSecretBody(secret.id, trimmed);
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <textarea
+      className="w-full rounded-md bg-black/60 border border-blood/30 p-1.5 text-bone text-xs disabled:opacity-60"
+      rows={2}
+      value={body}
+      onChange={(e) => setBody(e.target.value)}
+      onBlur={commit}
+      disabled={saving}
+    />
   );
 };
 

@@ -109,7 +109,16 @@ export const adminCreateMystery = (name: string) =>
 export const adminGetMystery = (id: string) => admin<AdminMysteryFull>(`/mysteries/${id}`);
 export const adminUpdateMystery = (
   id: string,
-  body: { name: string; summary: string; fullLore: string; active: boolean; beats: { body: string }[] }
+  body: {
+    name: string;
+    summary: string;
+    fullLore: string;
+    active: boolean;
+    // id is omitted (or '') for a beat being created; present for one being
+    // edited — preserving it is what keeps the beat's id, and any secret's
+    // beatId pointing at it, stable across saves.
+    beats: { id?: string; body: string }[];
+  }
 ) => admin<{ ok: boolean }>(`/mysteries/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 
 // ---- Quiz, scoped to a mystery ----
@@ -138,6 +147,26 @@ export const adminUpdateCharacterContentForMystery = (
     method: 'PUT',
     body: JSON.stringify(body),
   });
+
+// ---- Beat-centric secrets: who knows this beat, across the whole cast ----
+// Complements the character-centric content editor above — the Story tab's
+// beat panel, for assigning secrets to characters right where a beat is
+// authored, instead of leaving to walk the cast one character at a time.
+export interface AdminBeatSecret {
+  id: string;
+  characterId: string;
+  body: string;
+}
+export const adminListBeatSecrets = (mysteryId: string, beatId: string) =>
+  admin<{ secrets: AdminBeatSecret[] }>(`/mysteries/${mysteryId}/beats/${beatId}/secrets`);
+export const adminCreateBeatSecret = (mysteryId: string, beatId: string, characterId: string, body: string) =>
+  admin<{ id: string }>(`/mysteries/${mysteryId}/beats/${beatId}/secrets`, {
+    method: 'POST',
+    body: JSON.stringify({ characterId, body }),
+  });
+export const adminUpdateSecretBody = (secretId: string, body: string) =>
+  admin<{ ok: boolean }>(`/secrets/${secretId}`, { method: 'PUT', body: JSON.stringify({ body }) });
+export const adminDeleteSecret = (secretId: string) => admin<{ ok: boolean }>(`/secrets/${secretId}`, { method: 'DELETE' });
 
 // ---- Super users ----
 export interface AdminSuperUser {
