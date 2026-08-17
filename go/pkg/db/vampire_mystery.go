@@ -12,20 +12,36 @@ import (
 // go/vampire-ascendancy/docs/MYSTERY_REQUIREMENTS.md. Shared content,
 // created/edited only by super users.
 
-func (h *vampireHandler) CreateMystery(ctx context.Context, name, summary, fullLore string) (*models.VampireMystery, error) {
-	m := models.VampireMystery{Name: name, Summary: summary, FullLore: fullLore, Active: true}
+func (h *vampireHandler) CreateMystery(ctx context.Context, name, summary, fullLore string, isSubplot bool) (*models.VampireMystery, error) {
+	m := models.VampireMystery{Name: name, Summary: summary, FullLore: fullLore, Active: true, IsSubplot: isSubplot}
 	if err := h.db.WithContext(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-// ListMysteries returns every mystery (active and inactive — the Super
-// Admin list shows both; the "Host a Toast" picker filters to active
-// itself).
+// ListMysteries returns every mystery AND subplot (active and inactive —
+// the Super Admin list shows both; the "Host a Toast" pickers filter to
+// active themselves). Callers split by IsSubplot for display — see
+// ListActiveMysteriesByKind for the platform-facing pickers, which filter
+// server-side instead.
 func (h *vampireHandler) ListMysteries(ctx context.Context) ([]models.VampireMystery, error) {
 	var out []models.VampireMystery
 	if err := h.db.WithContext(ctx).Order("name ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListActiveMysteriesByKind powers the "Host a Toast" pickers: the main
+// mystery picker (isSubplot=false) and the subplot multi-select
+// (isSubplot=true) both read from this, each getting only their own kind.
+func (h *vampireHandler) ListActiveMysteriesByKind(ctx context.Context, isSubplot bool) ([]models.VampireMystery, error) {
+	var out []models.VampireMystery
+	if err := h.db.WithContext(ctx).
+		Where("active = ? AND is_subplot = ?", true, isSubplot).
+		Order("name ASC").
+		Find(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -112,9 +128,12 @@ func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid
 
 // ---- Character secrets, scoped to a mystery ----
 
-// ListSecretsForCharacterAndMystery is the player-facing read path (see
-// me.go) — a character's secrets for one specific mystery, not every
-// secret they've ever had across every mystery they've appeared in.
+// ListSecretsForCharacterAndMystery is used by the Super Admin character
+// content editor — a character's secrets for exactly one mystery (or
+// subplot) at a time, not every secret they've ever had across every
+// mystery they've appeared in. Player-/GM-facing reads go through
+// ListSecretsForCharacterAndMysteries (plural) instead, which combines an
+// instance's main mystery with its selected subplots in one call.
 func (h *vampireHandler) ListSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireSecret, error) {
 	var out []models.VampireSecret
 	if err := h.db.WithContext(ctx).
@@ -126,10 +145,29 @@ func (h *vampireHandler) ListSecretsForCharacterAndMystery(ctx context.Context, 
 	return out, nil
 }
 
+// ListSecretsForCharacterAndMysteries is the player-/GM-facing read path
+// (see me.go/gm_content.go) — a character's secrets across a set of
+// mysteries, used to combine an instance's one required mystery with
+// however many subplots it has selected into a single flat list. Subplots
+// don't get their own display grouping; a secret from a subplot reads
+// exactly like one from the main mystery.
+func (h *vampireHandler) ListSecretsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireSecret, error) {
+	if len(mysteryIDs) == 0 {
+		return []models.VampireSecret{}, nil
+	}
+	var out []models.VampireSecret
+	if err := h.db.WithContext(ctx).
+		Where("character_id = ? AND mystery_id IN ?", characterID, mysteryIDs).
+		Order("ordinal ASC").
+		Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplaceSecretsForCharacterAndMystery removes a character's existing
 // secrets for one mystery (leaving their secrets for any other mystery
-// untouched) and inserts the new set — the mystery-scoped equivalent of
-// the old ReplaceSecrets.
+// untouched) and inserts the new set.
 func (h *vampireHandler) ReplaceSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, secrets []models.VampireSecret) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
@@ -144,6 +182,63 @@ func (h *vampireHandler) ReplaceSecretsForCharacterAndMystery(ctx context.Contex
 			return nil
 		}
 		return tx.Create(&secrets).Error
+	})
+}
+
+// ---- Character missions, scoped to a mystery ----
+// Same rationale and shape as secrets above: a character can have a
+// different set of missions per mystery/subplot they're cast in.
+
+// ListMissionsForCharacterAndMystery is used by the Super Admin character
+// content editor — a character's missions for exactly one mystery (or
+// subplot) at a time.
+func (h *vampireHandler) ListMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireMission, error) {
+	var out []models.VampireMission
+	if err := h.db.WithContext(ctx).
+		Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
+		Order("ordinal ASC").
+		Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListMissionsForCharacterAndMysteries is the player-/GM-facing read path
+// (see me.go/gm_content.go) — a character's missions across a set of
+// mysteries, combining an instance's one required mystery with however
+// many subplots it has selected into a single flat list, exactly like
+// ListSecretsForCharacterAndMysteries.
+func (h *vampireHandler) ListMissionsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireMission, error) {
+	if len(mysteryIDs) == 0 {
+		return []models.VampireMission{}, nil
+	}
+	var out []models.VampireMission
+	if err := h.db.WithContext(ctx).
+		Where("character_id = ? AND mystery_id IN ?", characterID, mysteryIDs).
+		Order("ordinal ASC").
+		Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReplaceMissionsForCharacterAndMystery removes a character's existing
+// missions for one mystery (leaving their missions for any other mystery
+// untouched) and inserts the new set.
+func (h *vampireHandler) ReplaceMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, missions []models.VampireMission) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
+			Delete(&models.VampireMission{}).Error; err != nil {
+			return err
+		}
+		for i := range missions {
+			missions[i].CharacterID = characterID
+			missions[i].MysteryID = &mysteryID
+		}
+		if len(missions) == 0 {
+			return nil
+		}
+		return tx.Create(&missions).Error
 	})
 }
 

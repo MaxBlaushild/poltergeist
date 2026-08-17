@@ -101,14 +101,22 @@ func (s *server) getMe(ctx *gin.Context) {
 			return
 		}
 		charResp["postAct1Context"] = postAct1Context
-		// Scoped to this instance's mystery — not every secret this
-		// character has ever had across every mystery they've appeared in.
-		secrets, err := s.dbClient.Vampire().ListSecretsForCharacterAndMystery(ctx, character.ID, mysteryIDFromContext(ctx))
+		// Scoped to this instance's mystery plus its selected subplots —
+		// not every secret/mission this character has ever had across
+		// every mystery/subplot they've appeared in.
+		mysteryIDs := mysteryAndSubplotIDsFromContext(ctx)
+		secrets, err := s.dbClient.Vampire().ListSecretsForCharacterAndMysteries(ctx, character.ID, mysteryIDs)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		charResp["secrets"] = secrets
+
+		missionRows, err := s.dbClient.Vampire().ListMissionsForCharacterAndMysteries(ctx, character.ID, mysteryIDs)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
 		// Attach each mission's submission state for this player.
 		subs, err := s.dbClient.Vampire().ListSubmissionsForPlayer(ctx, player.ID)
@@ -135,8 +143,8 @@ func (s *server) getMe(ctx *gin.Context) {
 			}
 		}
 
-		missions := make([]gin.H, 0, len(character.Missions))
-		for _, m := range character.Missions {
+		missions := make([]gin.H, 0, len(missionRows))
+		for _, m := range missionRows {
 			missions = append(missions, gin.H{
 				"id":           m.ID,
 				"ordinal":      m.Ordinal,

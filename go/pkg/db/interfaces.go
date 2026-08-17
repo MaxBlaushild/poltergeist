@@ -361,9 +361,11 @@ type TradesARGlassesLeadHandle interface {
 // instance via an instanceID parameter.
 type VampireHandle interface {
 	// Instances ("Toasts")
-	CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID) (*models.VampireInstance, error)
+	CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID, subplotIDs []uuid.UUID) (*models.VampireInstance, error)
 	GetInstanceByID(ctx context.Context, id uuid.UUID) (*models.VampireInstance, error)
 	ListInstancesForUser(ctx context.Context, userID uuid.UUID) ([]models.VampireInstance, error)
+	// ListSubplotIDsForInstance — see vampire_instance_subplots.
+	ListSubplotIDsForInstance(ctx context.Context, instanceID uuid.UUID) ([]uuid.UUID, error)
 	// SeedInstanceLibrary includes everything currently in the shared library
 	// for an instance. Idempotent.
 	SeedInstanceLibrary(ctx context.Context, instanceID uuid.UUID) error
@@ -413,8 +415,6 @@ type VampireHandle interface {
 	GetCharacterByID(ctx context.Context, id uuid.UUID) (*models.VampireCharacter, error)
 	ListCharacters(ctx context.Context) ([]models.VampireCharacter, error)
 	GetActivePlayerByCharacterID(ctx context.Context, instanceID, characterID uuid.UUID) (*models.VampirePlayer, error)
-	ReplaceSecrets(ctx context.Context, characterID uuid.UUID, secrets []models.VampireSecret) error
-	ReplaceMissions(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error
 	GetMissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMission, error)
 	// WipeCharactersAndRoster clears the global character library (cascades
 	// secrets/missions and every instance's inclusion rows for them) for a
@@ -519,17 +519,28 @@ type VampireHandle interface {
 	DeleteBloodTokensBySourceForPlayer(ctx context.Context, playerID uuid.UUID, source string) error
 
 	// Mysteries — see vampire_mystery.go and MYSTERY_REQUIREMENTS.md.
-	CreateMystery(ctx context.Context, name, summary, fullLore string) (*models.VampireMystery, error)
+	// Subplots are structurally the same row (IsSubplot distinguishes
+	// them), so these all serve both.
+	CreateMystery(ctx context.Context, name, summary, fullLore string, isSubplot bool) (*models.VampireMystery, error)
 	ListMysteries(ctx context.Context) ([]models.VampireMystery, error)
+	// ListActiveMysteriesByKind — see vampire_mystery.go.
+	ListActiveMysteriesByKind(ctx context.Context, isSubplot bool) ([]models.VampireMystery, error)
 	GetMysteryByID(ctx context.Context, id uuid.UUID) (*models.VampireMystery, error)
 	// GetMysteryByName is used by cmd/seed, whose seed files are all
 	// authored for "The Crimson Toast" specifically.
 	GetMysteryByName(ctx context.Context, name string) (*models.VampireMystery, error)
 	UpdateMystery(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error
 	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []models.VampireMysteryBeat) error
-	// Character secrets, scoped to a mystery.
+	// Character secrets, scoped to a mystery (or subplot — same table).
 	ListSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireSecret, error)
+	// ListSecretsForCharacterAndMysteries — see vampire_mystery.go.
+	ListSecretsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireSecret, error)
 	ReplaceSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, secrets []models.VampireSecret) error
+	// Character missions, scoped to a mystery (or subplot) — same shape as
+	// secrets above.
+	ListMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireMission, error)
+	ListMissionsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireMission, error)
+	ReplaceMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, missions []models.VampireMission) error
 	// CharacterHasSecretsForMystery / ListCharacterIDsWithSecretsForMystery
 	// back the "can't invite a character with no secrets for this
 	// instance's mystery" rule — the latter for the Invites tab's picker

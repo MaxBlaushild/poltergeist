@@ -25,13 +25,26 @@ A character's **secrets** become mystery-scoped too: the same character (say, Se
 Nox) can be cast in multiple mysteries over time, and has a different set of secrets
 in each one — because the secrets are what that character knows about *that*
 mystery's beats. Each secret is tied to exactly one beat (which beat it reveals).
-A character's **post-Act-1 context** is mystery-scoped for the same reason (a
-follow-up decision, made after this doc's original phase shipped — see the
-`vampire_character_mystery_contexts` migration). Pre-event bio and missions stay
-global to the character, not per-mystery.
+A character's **post-Act-1 context** and **missions** are mystery-scoped for the same
+reason (both follow-up decisions, made after this doc's original phase shipped — see
+the `vampire_character_mystery_contexts` migration and the
+`vampire_missions.mystery_id` column). Pre-event bio stays global to the character,
+not per-mystery.
 
 Each **instance** ("Toast") has exactly one mystery, chosen once at creation and
 fixed for the life of that instance (see "Decisions already made").
+
+**Subplots** are a sibling of mysteries, added in a follow-up phase — not a separate
+table, just `vampire_mysteries.is_subplot = true`. Same shape (summary, full lore,
+beats whose beats are tied to character secrets/missions exactly like a main
+mystery's), but an instance picks zero or many of them (`vampire_instance_subplots`)
+*in addition to* its one required mystery, equally permanent once chosen. Two
+deliberate differences from a main mystery: a subplot doesn't gate invite
+eligibility (only the main mystery's secrets do — see "Decisions already made" #3),
+and a subplot has no quiz questions of its own (an instance's quiz is always just
+its main mystery's Part 1/Part 2 set). A character's secrets/missions/context for a
+selected subplot surface to players and the GM dossier preview exactly like the main
+mystery's — combined into one flat list, not shown as a separate section.
 
 ## Decisions already made
 

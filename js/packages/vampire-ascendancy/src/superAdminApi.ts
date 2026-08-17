@@ -49,16 +49,16 @@ export interface AdminCharacter {
   tags?: string[];
 }
 export const adminListCharacters = () => admin<{ characters: AdminCharacter[] }>('/characters');
-// Secrets and post-Act-1 context are excluded — both are mystery-scoped now
-// and edited from the Mysteries tab's per-character content editor instead
-// (see MYSTERY_REQUIREMENTS.md).
+// Secrets, post-Act-1 context, and missions are all excluded — every one of
+// them is mystery-scoped now and edited from the Mysteries tab's
+// per-character content editor instead (see MYSTERY_REQUIREMENTS.md).
 export const adminGetCharacter = (id: string) =>
-  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context'>>(
+  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context' | 'missions'>>(
     `/characters/${id}`
   );
 export const adminUpdateCharacter = (
   id: string,
-  body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName' | 'postAct1Context'>
+  body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName' | 'postAct1Context' | 'missions'>
 ) => admin<{ ok: boolean }>(`/characters/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 // Queues the LLM tag-generation job for one character (reads bio/secrets/
 // missions, proposes tags, overwrites the current tag list when it's
@@ -79,15 +79,19 @@ export const adminSetItemPhoto = (id: string, dataUrl: string) =>
 export const adminDeleteItemPhoto = (id: string) =>
   admin<{ ok: boolean }>(`/items/${id}/photo`, { method: 'DELETE' });
 
-// ---- Mysteries ----
+// ---- Mysteries (and subplots — a sibling, not a separate table: same row
+// shape, isSubplot picks which) ----
 // The underlying story an instance's players are solving — see
-// MYSTERY_REQUIREMENTS.md. Quiz questions and (per-character) secrets are
-// scoped to a mystery instead of being shared/global.
+// MYSTERY_REQUIREMENTS.md. Quiz questions and (per-character) secrets/
+// missions are scoped to a mystery instead of being shared/global. An
+// instance picks one required mystery (isSubplot=false) plus zero or many
+// subplots (isSubplot=true).
 export interface AdminMystery {
   id: string;
   name: string;
   summary: string;
   active: boolean;
+  isSubplot: boolean;
   beatCount: number;
 }
 export interface AdminMysteryBeat {
@@ -101,11 +105,12 @@ export interface AdminMysteryFull {
   summary: string;
   fullLore: string;
   active: boolean;
+  isSubplot: boolean;
   beats: AdminMysteryBeat[];
 }
 export const adminListMysteries = () => admin<{ mysteries: AdminMystery[] }>('/mysteries');
-export const adminCreateMystery = (name: string) =>
-  admin<{ id: string; name: string }>('/mysteries', { method: 'POST', body: JSON.stringify({ name }) });
+export const adminCreateMystery = (name: string, isSubplot: boolean) =>
+  admin<{ id: string; name: string }>('/mysteries', { method: 'POST', body: JSON.stringify({ name, isSubplot }) });
 export const adminGetMystery = (id: string) => admin<AdminMysteryFull>(`/mysteries/${id}`);
 export const adminUpdateMystery = (
   id: string,
@@ -114,6 +119,7 @@ export const adminUpdateMystery = (
     summary: string;
     fullLore: string;
     active: boolean;
+    isSubplot: boolean;
     // id is omitted (or '') for a beat being created; present for one being
     // edited — preserving it is what keeps the beat's id, and any secret's
     // beatId pointing at it, stable across saves.
@@ -126,14 +132,22 @@ export const adminGetMysteryQuiz = (mysteryId: string) => admin<GMQuizQuestions>
 export const adminUpdateMysteryQuiz = (mysteryId: string, body: GMQuizQuestions) =>
   admin<{ ok: boolean }>(`/mysteries/${mysteryId}/quiz`, { method: 'PUT', body: JSON.stringify(body) });
 
-// ---- Character content, scoped to a mystery: secrets + post-Act-1 context ----
+// ---- Character content, scoped to a mystery: secrets + missions + post-Act-1 context ----
 export interface AdminMysterySecret {
   ordinal: number;
   body: string;
   beatId: string | null;
 }
+export interface AdminMysteryMission {
+  ordinal: number;
+  tier: string;
+  rewardBt: number;
+  prompt: string;
+  answerFormat: string;
+}
 export interface AdminMysteryCharacterContent {
   secrets: AdminMysterySecret[];
+  missions: AdminMysteryMission[];
   postAct1Context: string;
 }
 export const adminGetCharacterContentForMystery = (mysteryId: string, characterId: string) =>
@@ -141,7 +155,11 @@ export const adminGetCharacterContentForMystery = (mysteryId: string, characterI
 export const adminUpdateCharacterContentForMystery = (
   mysteryId: string,
   characterId: string,
-  body: { secrets: { body: string; beatId: string | null }[]; postAct1Context: string }
+  body: {
+    secrets: { body: string; beatId: string | null }[];
+    missions: { tier: string; rewardBt: number; prompt: string; answerFormat: string }[];
+    postAct1Context: string;
+  }
 ) =>
   admin<{ ok: boolean }>(`/mysteries/${mysteryId}/characters/${characterId}/content`, {
     method: 'PUT',

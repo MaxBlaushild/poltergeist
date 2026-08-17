@@ -54,9 +54,15 @@ func (s *server) withPlayer(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "instance not found"})
 		return
 	}
+	subplotIDs, err := s.dbClient.Vampire().ListSubplotIDsForInstance(ctx, instanceID)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.Set(playerContextKey, player)
 	ctx.Set(mysteryIDContextKey, instance.MysteryID)
+	ctx.Set(subplotIDsContextKey, subplotIDs)
 	ctx.Next()
 }
 
@@ -77,6 +83,10 @@ const (
 	// already resolve the instance row) so quiz handlers don't need a
 	// separate GetInstanceByID call of their own — see mysteryIDFromContext.
 	mysteryIDContextKey = "vampireMysteryId"
+	// subplotIDsContextKey is set alongside mysteryIDContextKey — the
+	// instance's selected subplots (zero or many), for combining with the
+	// main mystery when reading secrets — see subplotIDsFromContext.
+	subplotIDsContextKey = "vampireSubplotIds"
 )
 
 // authenticateUser validates the request's Bearer token against the shared
@@ -151,10 +161,16 @@ func (s *server) withInstanceAdmin(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "instance not found"})
 		return
 	}
+	subplotIDs, err := s.dbClient.Vampire().ListSubplotIDsForInstance(ctx, instanceID)
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.Set(currentUserContextKey, user)
 	ctx.Set(instanceIDContextKey, instanceID)
 	ctx.Set(mysteryIDContextKey, instance.MysteryID)
+	ctx.Set(subplotIDsContextKey, subplotIDs)
 	ctx.Set(gmNameContextKey, user.Name)
 	ctx.Next()
 }
@@ -172,6 +188,23 @@ func mysteryIDFromContext(ctx *gin.Context) uuid.UUID {
 	v, _ := ctx.Get(mysteryIDContextKey)
 	id, _ := v.(uuid.UUID)
 	return id
+}
+
+// subplotIDsFromContext returns the current instance's selected subplots —
+// set alongside mysteryIDFromContext by the same middleware. Use
+// mysteryAndSubplotIDsFromContext to get both combined into one slice, the
+// shape secrets reads actually want.
+func subplotIDsFromContext(ctx *gin.Context) []uuid.UUID {
+	v, _ := ctx.Get(subplotIDsContextKey)
+	ids, _ := v.([]uuid.UUID)
+	return ids
+}
+
+// mysteryAndSubplotIDsFromContext is what secret reads actually want: the
+// instance's one required mystery plus however many subplots it has
+// selected, combined into one slice for ListSecretsForCharacterAndMysteries.
+func mysteryAndSubplotIDsFromContext(ctx *gin.Context) []uuid.UUID {
+	return append([]uuid.UUID{mysteryIDFromContext(ctx)}, subplotIDsFromContext(ctx)...)
 }
 
 func gmNameFromContext(ctx *gin.Context) string {

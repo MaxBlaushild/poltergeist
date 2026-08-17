@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listMyToasts, hostToast, listActiveMysteries, type MyToast, type ActiveMystery } from '../platformApi';
+import {
+  listMyToasts,
+  hostToast,
+  listActiveMysteries,
+  listActiveSubplots,
+  type MyToast,
+  type ActiveMystery,
+} from '../platformApi';
 import { adminListHouses } from '../superAdminApi';
 import { ApiError } from '../api';
 import { useUserAuth } from '../userAuth';
@@ -170,6 +177,8 @@ export const CreateToast = () => {
   const [name, setName] = useState('');
   const [mysteryId, setMysteryId] = useState('');
   const [mysteries, setMysteries] = useState<ActiveMystery[] | null>(null);
+  const [subplotIds, setSubplotIds] = useState<Set<string>>(new Set());
+  const [subplots, setSubplots] = useState<ActiveMystery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -177,7 +186,18 @@ export const CreateToast = () => {
     listActiveMysteries()
       .then((d) => setMysteries(d.mysteries))
       .catch(() => setMysteries([]));
+    listActiveSubplots()
+      .then((d) => setSubplots(d.subplots))
+      .catch(() => setSubplots([]));
   }, []);
+
+  const toggleSubplot = (id: string) =>
+    setSubplotIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const ready = name.trim() && mysteryId;
 
@@ -186,7 +206,7 @@ export const CreateToast = () => {
     setBusy(true);
     setError(null);
     try {
-      const inst = await hostToast(name.trim(), mysteryId);
+      const inst = await hostToast(name.trim(), mysteryId, Array.from(subplotIds));
       navigate(`/e/${inst.id}/gm`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not host this Toast. Try again.');
@@ -234,6 +254,40 @@ export const CreateToast = () => {
               >
                 <p className="text-bone text-sm font-semibold">{m.name}</p>
                 {m.summary && <p className="text-bone/60 text-xs mt-0.5">{m.summary}</p>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <label className="block text-xs uppercase tracking-[0.2em] text-bone/60 mb-1">
+          Any sub-plots? <span className="normal-case text-bone/40">(optional)</span>
+        </label>
+        <p className="text-bone/40 text-xs mb-2">
+          Pick as many as you like, in addition to the mystery above — equally permanent once
+          hosted.
+        </p>
+        {subplots === null ? (
+          <p className="text-bone/50 text-sm mb-4">Loading sub-plots…</p>
+        ) : subplots.length === 0 ? (
+          <p className="text-bone/40 text-xs mb-4">No sub-plots available yet.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5 mb-4 max-h-48 overflow-y-auto">
+            {subplots.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggleSubplot(s.id)}
+                className={`text-left rounded-md border p-3 transition-colors ${
+                  subplotIds.has(s.id)
+                    ? 'border-blood-bright bg-blood/20'
+                    : 'border-blood/30 bg-black/30 hover:border-blood/50'
+                }`}
+              >
+                <p className="text-bone text-sm font-semibold">
+                  {subplotIds.has(s.id) && <span className="text-gold mr-1.5">✓</span>}
+                  {s.name}
+                </p>
+                {s.summary && <p className="text-bone/60 text-xs mt-0.5">{s.summary}</p>}
               </button>
             ))}
           </div>

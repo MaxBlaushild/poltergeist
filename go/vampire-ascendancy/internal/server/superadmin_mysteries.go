@@ -12,10 +12,18 @@ import (
 // Mysteries — the underlying story an instance's players are solving. See
 // MYSTERY_REQUIREMENTS.md. Shared content, super-user-only, same
 // authorization posture as the rest of this file.
+//
+// Subplots are a sibling of mysteries, not a separate table: same row
+// shape (summary/full lore/beats/secrets all work identically), just
+// IsSubplot=true. An instance picks its one required mystery plus zero or
+// many subplots (see vampire_instance_subplots) — every handler below
+// serves both kinds interchangeably; only the frontend splits them into
+// separate tabs by isSubplot.
 
-// GET /admin/mysteries — every mystery, active and inactive (the "Host a
-// Toast" picker filters to active itself; this list shows both so a super
-// user can revive one).
+// GET /admin/mysteries — every mystery AND subplot, active and inactive
+// (the "Host a Toast" pickers filter to active themselves; this list shows
+// both so a super user can revive one). The frontend splits by isSubplot
+// into the Mysteries and Sub-plots tabs.
 func (s *server) adminListMysteries(ctx *gin.Context) {
 	mysteries, err := s.dbClient.Vampire().ListMysteries(ctx)
 	if err != nil {
@@ -29,16 +37,19 @@ func (s *server) adminListMysteries(ctx *gin.Context) {
 			"name":      m.Name,
 			"summary":   m.Summary,
 			"active":    m.Active,
+			"isSubplot": m.IsSubplot,
 			"beatCount": len(m.Beats),
 		})
 	}
 	ctx.JSON(http.StatusOK, gin.H{"mysteries": out})
 }
 
-// POST /admin/mysteries — create a new mystery, empty apart from a name.
+// POST /admin/mysteries — create a new mystery or subplot (same row shape,
+// isSubplot picks which), empty apart from a name.
 func (s *server) adminCreateMystery(ctx *gin.Context) {
 	var body struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		IsSubplot bool   `json:"isSubplot"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -46,20 +57,25 @@ func (s *server) adminCreateMystery(ctx *gin.Context) {
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "give this mystery a name"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "give this a name"})
 		return
 	}
-	m, err := s.dbClient.Vampire().CreateMystery(ctx, name, "", "")
+	m, err := s.dbClient.Vampire().CreateMystery(ctx, name, "", "", body.IsSubplot)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	s.logSuperUser(ctx, "create_mystery", map[string]interface{}{"id": m.ID.String(), "name": name})
+	action := "create_mystery"
+	if body.IsSubplot {
+		action = "create_subplot"
+	}
+	s.logSuperUser(ctx, action, map[string]interface{}{"id": m.ID.String(), "name": name})
 	ctx.JSON(http.StatusOK, gin.H{"id": m.ID, "name": m.Name})
 }
 
 // GET /admin/mysteries/:id — full editor payload: name, summary, full
-// lore, active, and the ordered beat list.
+// lore, active, isSubplot, and the ordered beat list. Same payload whether
+// it's a mystery or a subplot.
 func (s *server) adminGetMystery(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -80,12 +96,13 @@ func (s *server) adminGetMystery(ctx *gin.Context) {
 		beats = append(beats, gin.H{"id": b.ID, "ordinal": b.Ordinal, "body": b.Body})
 	}
 	ctx.JSON(http.StatusOK, gin.H{
-		"id":       m.ID,
-		"name":     m.Name,
-		"summary":  m.Summary,
-		"fullLore": m.FullLore,
-		"active":   m.Active,
-		"beats":    beats,
+		"id":        m.ID,
+		"name":      m.Name,
+		"summary":   m.Summary,
+		"fullLore":  m.FullLore,
+		"active":    m.Active,
+		"isSubplot": m.IsSubplot,
+		"beats":     beats,
 	})
 }
 
@@ -101,11 +118,12 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 		return
 	}
 	var body struct {
-		Name     string `json:"name"`
-		Summary  string `json:"summary"`
-		FullLore string `json:"fullLore"`
-		Active   bool   `json:"active"`
-		Beats    []struct {
+		Name      string `json:"name"`
+		Summary   string `json:"summary"`
+		FullLore  string `json:"fullLore"`
+		Active    bool   `json:"active"`
+		IsSubplot bool   `json:"isSubplot"`
+		Beats     []struct {
 			// ID is empty for a beat being created; present for one being
 			// edited. Preserving it is what keeps a beat's id — and any
 			// secret's beat_id pointing at it — stable across saves (see
@@ -126,10 +144,11 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 
 	v := s.dbClient.Vampire()
 	if err := v.UpdateMystery(ctx, id, map[string]interface{}{
-		"name":      name,
-		"summary":   body.Summary,
-		"full_lore": body.FullLore,
-		"active":    body.Active,
+		"name":       name,
+		"summary":    body.Summary,
+		"full_lore":  body.FullLore,
+		"active":     body.Active,
+		"is_subplot": body.IsSubplot,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -185,23 +204,38 @@ func (s *server) adminGetCharacterContentForMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	missions, err := v.ListMissionsForCharacterAndMystery(ctx, characterID, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	postAct1Context, err := v.GetCharacterMysteryContext(ctx, characterID, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	out := make([]gin.H, 0, len(secrets))
+	secretsOut := make([]gin.H, 0, len(secrets))
 	for _, sec := range secrets {
-		out = append(out, gin.H{"ordinal": sec.Ordinal, "body": sec.Body, "beatId": sec.BeatID})
+		secretsOut = append(secretsOut, gin.H{"ordinal": sec.Ordinal, "body": sec.Body, "beatId": sec.BeatID})
 	}
-	ctx.JSON(http.StatusOK, gin.H{"secrets": out, "postAct1Context": postAct1Context})
+	missionsOut := make([]gin.H, 0, len(missions))
+	for _, m := range missions {
+		missionsOut = append(missionsOut, gin.H{
+			"ordinal":      m.Ordinal,
+			"tier":         m.Tier,
+			"rewardBt":     m.RewardBT,
+			"prompt":       m.Prompt,
+			"answerFormat": m.AnswerFormat,
+		})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"secrets": secretsOut, "missions": missionsOut, "postAct1Context": postAct1Context})
 }
 
 // PUT /admin/mysteries/:id/characters/:characterId/content — replace this
-// character's secrets for this mystery wholesale (an empty list makes them
-// ineligible for invites — see gm_players.go's gmListCharacters and
-// CreatePlayerInvite) and overwrite their post-Act-1 context for this
-// mystery.
+// character's secrets and missions for this mystery wholesale (an empty
+// secrets list makes them ineligible for invites — see gm_players.go's
+// gmListCharacters and CreatePlayerInvite; missions don't gate invites) and
+// overwrite their post-Act-1 context for this mystery.
 func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 	mysteryID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -218,6 +252,12 @@ func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 			Body   string  `json:"body"`
 			BeatID *string `json:"beatId"`
 		} `json:"secrets"`
+		Missions []struct {
+			Tier         string `json:"tier"`
+			RewardBt     int    `json:"rewardBt"`
+			Prompt       string `json:"prompt"`
+			AnswerFormat string `json:"answerFormat"`
+		} `json:"missions"`
 		PostAct1Context string `json:"postAct1Context"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -242,8 +282,30 @@ func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 		secrets = append(secrets, s)
 	}
 
+	missions := make([]models.VampireMission, 0, len(body.Missions))
+	for _, m := range body.Missions {
+		if strings.TrimSpace(m.Prompt) == "" {
+			continue
+		}
+		tier := m.Tier
+		if tier == "" {
+			tier = "easy"
+		}
+		missions = append(missions, models.VampireMission{
+			Ordinal:      len(missions) + 1,
+			Tier:         tier,
+			RewardBT:     m.RewardBt,
+			Prompt:       m.Prompt,
+			AnswerFormat: m.AnswerFormat,
+		})
+	}
+
 	v := s.dbClient.Vampire()
 	if err := v.ReplaceSecretsForCharacterAndMystery(ctx, characterID, mysteryID, secrets); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := v.ReplaceMissionsForCharacterAndMystery(ctx, characterID, mysteryID, missions); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -252,7 +314,8 @@ func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 		return
 	}
 	s.logSuperUser(ctx, "update_character_mystery_content", map[string]interface{}{
-		"mysteryId": mysteryID.String(), "characterId": characterID.String(), "secretCount": len(secrets),
+		"mysteryId": mysteryID.String(), "characterId": characterID.String(),
+		"secretCount": len(secrets), "missionCount": len(missions),
 	})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }

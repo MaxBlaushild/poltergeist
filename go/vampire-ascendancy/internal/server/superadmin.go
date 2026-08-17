@@ -86,11 +86,12 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"characters": out})
 }
 
-// GET /admin/characters/:id — a character's full editable content: pre-event
-// bio, missions. No sigil/portrait/player name — those are per-instance (see
-// GET /gm/characters/:id instead). No secrets or post-Act-1 context either —
-// both are mystery-scoped now (see MYSTERY_REQUIREMENTS.md) and edited from
-// the Mysteries tab's per-character editor instead, not here.
+// GET /admin/characters/:id — a character's full editable content:
+// pre-event bio, tags. No sigil/portrait/player name — those are
+// per-instance (see GET /gm/characters/:id instead). No secrets,
+// post-Act-1 context, or missions either — all three are mystery-scoped
+// now (see MYSTERY_REQUIREMENTS.md) and edited from the Mysteries tab's
+// per-character content editor instead, not here.
 func (s *server) adminGetCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -105,17 +106,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 	if c == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
-	}
-
-	missions := make([]gin.H, 0, len(c.Missions))
-	for _, m := range c.Missions {
-		missions = append(missions, gin.H{
-			"ordinal":      m.Ordinal,
-			"tier":         m.Tier,
-			"rewardBt":     m.RewardBT,
-			"prompt":       m.Prompt,
-			"answerFormat": m.AnswerFormat,
-		})
 	}
 
 	tags := []string(c.Tags)
@@ -133,7 +123,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"tags":                 tags,
 		"tagsGenerationStatus": c.TagsGenerationStatus,
 		"tagsGenerationError":  c.TagsGenerationError,
-		"missions":             missions,
 	})
 }
 
@@ -183,11 +172,10 @@ func (s *server) adminGenerateCharacterTags(ctx *gin.Context) {
 }
 
 // PUT /admin/characters/:id — save the shared character editor: core
-// fields and missions (missions replaced wholesale). Secrets and post-Act-1
-// context are edited from the Mysteries tab instead (mystery-scoped, not
-// here — see MYSTERY_REQUIREMENTS.md). Characters are only ever created by
-// the seed importer (from the master packet PDF); this only edits existing
-// ones.
+// fields only. Secrets, post-Act-1 context, and missions are all edited
+// from the Mysteries tab instead (mystery-scoped, not here — see
+// MYSTERY_REQUIREMENTS.md). Characters are only ever created by the seed
+// importer (from the master packet PDF); this only edits existing ones.
 func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -202,12 +190,6 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		HouseID      *string  `json:"houseId"`
 		PreEventInfo string   `json:"preEventInfo"`
 		Tags         []string `json:"tags"`
-		Missions     []struct {
-			Tier         string `json:"tier"`
-			RewardBt     int    `json:"rewardBt"`
-			Prompt       string `json:"prompt"`
-			AnswerFormat string `json:"answerFormat"`
-		} `json:"missions"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -247,28 +229,6 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		}
 	}
 	if err := v.UpdateCharacter(ctx, id, fields); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	missions := make([]models.VampireMission, 0, len(body.Missions))
-	for _, m := range body.Missions {
-		if strings.TrimSpace(m.Prompt) == "" {
-			continue
-		}
-		tier := m.Tier
-		if tier == "" {
-			tier = "easy"
-		}
-		missions = append(missions, models.VampireMission{
-			Ordinal:      len(missions) + 1,
-			Tier:         tier,
-			RewardBT:     m.RewardBt,
-			Prompt:       m.Prompt,
-			AnswerFormat: m.AnswerFormat,
-		})
-	}
-	if err := v.ReplaceMissions(ctx, id, missions); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -20,9 +20,26 @@ func (e *ConflictError) Error() string { return e.Message }
 
 // ---- Instances ("Toasts" in user-facing copy) ----
 
-func (h *vampireHandler) CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID) (*models.VampireInstance, error) {
-	inst := models.VampireInstance{Name: name, Status: "active", CreatedBy: createdBy, MysteryID: mysteryID}
-	if err := h.db.WithContext(ctx).Create(&inst).Error; err != nil {
+// CreateInstance also records the instance's selected subplots (zero or
+// many, in addition to its one required mysteryID) in the same
+// transaction — see vampire_instance_subplots.
+func (h *vampireHandler) CreateInstance(ctx context.Context, name string, createdBy *uuid.UUID, mysteryID uuid.UUID, subplotIDs []uuid.UUID) (*models.VampireInstance, error) {
+	var inst models.VampireInstance
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		inst = models.VampireInstance{Name: name, Status: "active", CreatedBy: createdBy, MysteryID: mysteryID}
+		if err := tx.Create(&inst).Error; err != nil {
+			return err
+		}
+		if len(subplotIDs) == 0 {
+			return nil
+		}
+		rows := make([]models.VampireInstanceSubplot, 0, len(subplotIDs))
+		for _, sid := range subplotIDs {
+			rows = append(rows, models.VampireInstanceSubplot{InstanceID: inst.ID, MysteryID: sid})
+		}
+		return tx.Create(&rows).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &inst, nil
@@ -37,6 +54,20 @@ func (h *vampireHandler) GetInstanceByID(ctx context.Context, id uuid.UUID) (*mo
 		return nil, err
 	}
 	return &inst, nil
+}
+
+// ListSubplotIDsForInstance returns the subplots selected for one instance
+// — used by withPlayer/withInstanceAdmin to cache alongside the instance's
+// main mystery ID (see subplotIDsContextKey), and by createInstance's own
+// validation.
+func (h *vampireHandler) ListSubplotIDsForInstance(ctx context.Context, instanceID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := h.db.WithContext(ctx).Model(&models.VampireInstanceSubplot{}).
+		Where("instance_id = ?", instanceID).
+		Pluck("mystery_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // ListInstancesForUser returns every instance the user Hosts or Co-Hosts

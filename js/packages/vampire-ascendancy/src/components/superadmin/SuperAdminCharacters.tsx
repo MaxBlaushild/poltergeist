@@ -7,17 +7,17 @@ import {
   adminGenerateCharacterTags,
 } from '../../superAdminApi';
 import type { AdminCharacter } from '../../superAdminApi';
-import type { GMCharacterFull, GMMissionEdit } from '../../gmApi';
+import type { GMCharacterFull } from '../../gmApi';
 import type { House } from '../../types';
 import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
-import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
+import { Field } from './SuperAdminShared';
 
-// The shared character roster: pre-event bio, missions. Secrets and
-// post-Act-1 context are mystery-scoped now — edited from the Mysteries
-// tab's per-character content editor instead (see MYSTERY_REQUIREMENTS.md).
-// Sigils, portraits, and the real guest playing a character are
-// per-instance — see the GM console's Players tab for those.
+// The shared character roster: pre-event bio, tags. Secrets, post-Act-1
+// context, and missions are all mystery-scoped now — edited from the
+// Mysteries tab's per-character content editor instead (see
+// MYSTERY_REQUIREMENTS.md). Sigils, portraits, and the real guest playing a
+// character are per-instance — see the GM console's Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -82,8 +82,6 @@ export const SuperAdminCharacters = () => {
   );
 };
 
-const blankMission = (): GMMissionEdit => ({ tier: 'easy', rewardBt: 2, prompt: '', answerFormat: '' });
-
 const CharacterEditor = ({
   characterId,
   houses,
@@ -95,7 +93,7 @@ const CharacterEditor = ({
 }) => {
   const [c, setC] = useState<Omit<
     GMCharacterFull,
-    'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context'
+    'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context' | 'missions'
   > | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -142,12 +140,6 @@ const CharacterEditor = ({
         houseId: c.houseId,
         preEventInfo: c.preEventInfo,
         tags: c.tags,
-        missions: c.missions.map((m) => ({
-          tier: m.tier,
-          rewardBt: m.rewardBt,
-          prompt: m.prompt,
-          answerFormat: m.answerFormat,
-        })),
       });
       setNote('Saved.');
       onSaved();
@@ -209,7 +201,7 @@ const CharacterEditor = ({
             </button>
           </div>
           <p className="text-[11px] text-bone/40">
-            Reads the saved pre-event bio and missions, plus this character's secrets and post-Act-1
+            Reads the saved pre-event bio, plus this character's secrets, missions, and post-Act-1
             context in every mystery they appear in — save your other edits first if you've changed
             them.
           </p>
@@ -223,55 +215,9 @@ const CharacterEditor = ({
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />
       </Field>
       <p className="text-[11px] text-bone/40 -mt-1">
-        Post-Act-1 context is mystery-scoped now — edit it from the Mysteries tab's per-character
-        content editor instead.
+        Secrets, missions, and post-Act-1 context are all mystery-scoped now — edit them from the
+        Mysteries tab's per-character content editor instead.
       </p>
-
-      <ListEditor
-        label="Missions"
-        addLabel="+ Add mission"
-        onAdd={() => set('missions', [...c.missions, { ordinal: c.missions.length + 1, ...blankMission() }])}
-      >
-        {c.missions.map((m, i) => (
-          <div key={i} className="rounded-md border border-blood/30 p-2 flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-gold text-xs w-4">{i + 1}</span>
-              <select
-                className={`${input} w-28`}
-                value={m.tier}
-                onChange={(e) => set('missions', c.missions.map((x, j) => (j === i ? { ...x, tier: e.target.value } : x)))}
-              >
-                <option value="easy">easy</option>
-                <option value="medium">medium</option>
-                <option value="hard">hard</option>
-              </select>
-              <input
-                type="number"
-                className={`${input} w-20`}
-                value={m.rewardBt}
-                onChange={(e) =>
-                  set('missions', c.missions.map((x, j) => (j === i ? { ...x, rewardBt: Number(e.target.value) || 0 } : x)))
-                }
-              />
-              <span className="text-bone/40 text-xs">BT</span>
-              <RemoveBtn onClick={() => set('missions', c.missions.filter((_, j) => j !== i))} />
-            </div>
-            <textarea
-              className={input}
-              rows={2}
-              placeholder="Mission prompt"
-              value={m.prompt}
-              onChange={(e) => set('missions', c.missions.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
-            />
-            <input
-              className={input}
-              placeholder="What to submit (answer format)"
-              value={m.answerFormat}
-              onChange={(e) => set('missions', c.missions.map((x, j) => (j === i ? { ...x, answerFormat: e.target.value } : x)))}
-            />
-          </div>
-        ))}
-      </ListEditor>
 
       <div className="flex items-center gap-3">
         <button

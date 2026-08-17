@@ -10,7 +10,7 @@ import { SuperAdminItems } from './SuperAdminItems';
 import { SuperAdminMysteries } from './SuperAdminMysteries';
 import { SuperAdminUsers } from './SuperAdminUsers';
 
-type Tab = 'mysteries' | 'characters' | 'houses' | 'items' | 'users';
+type Tab = 'mysteries' | 'subplots' | 'characters' | 'houses' | 'items' | 'users';
 type Status = 'checking' | 'ok' | 'forbidden' | 'signed-out';
 
 // The shared content library editor — characters, houses, items, and quiz
@@ -61,6 +61,7 @@ const SuperAdminConsole = () => {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'mysteries', label: 'Mysteries' },
+    { id: 'subplots', label: 'Sub-plots' },
     { id: 'characters', label: 'Characters' },
     { id: 'houses', label: 'Houses' },
     { id: 'items', label: 'Items' },
@@ -99,7 +100,8 @@ const SuperAdminConsole = () => {
         ))}
       </nav>
 
-      {tab === 'mysteries' && <SuperAdminMysteries />}
+      {tab === 'mysteries' && <SuperAdminMysteries isSubplot={false} />}
+      {tab === 'subplots' && <SuperAdminMysteries isSubplot={true} />}
       {tab === 'characters' && <SuperAdminCharacters />}
       {tab === 'houses' && <SuperAdminHouses />}
       {tab === 'items' && <SuperAdminItems />}

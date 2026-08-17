@@ -17,6 +17,7 @@ import type {
   AdminMysteryFull,
   AdminMysteryBeat,
   AdminMysterySecret,
+  AdminMysteryMission,
   AdminCharacter,
   AdminBeatSecret,
 } from '../../superAdminApi';
@@ -27,10 +28,16 @@ import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
 // The underlying story an instance's players are solving — see
 // MYSTERY_REQUIREMENTS.md. An instance picks exactly one mystery at
-// creation and never changes it; everything here (beats, quiz, character
-// secrets) is what a Host is choosing between on that one-time picker.
-export const SuperAdminMysteries = () => {
-  const [mysteries, setMysteries] = useState<AdminMystery[]>([]);
+// creation (this component with isSubplot=false) plus zero or many
+// subplots (isSubplot=true — a sibling, not a separate table: same row
+// shape, same editor, just filtered/created as the other kind). Everything
+// here (beats, quiz, character secrets/missions/context) is what a Host is
+// choosing between on that one-time picker. Subplots skip the Quiz section
+// (an instance's quiz is always just its main mystery's) and don't gate
+// invite eligibility the way a mystery's secrets do.
+export const SuperAdminMysteries = ({ isSubplot }: { isSubplot: boolean }) => {
+  const noun = isSubplot ? 'subplot' : 'mystery';
+  const [all, setAll] = useState<AdminMystery[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
@@ -38,19 +45,21 @@ export const SuperAdminMysteries = () => {
 
   const load = () => {
     adminListMysteries()
-      .then((d) => setMysteries(d.mysteries))
+      .then((d) => setAll(d.mysteries))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
     load();
   }, []);
 
+  const mysteries = all.filter((m) => m.isSubplot === isSubplot);
+
   const create = async () => {
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
     try {
-      const res = await adminCreateMystery(name);
+      const res = await adminCreateMystery(name, isSubplot);
       setNewName('');
       load();
       setOpenId(res.id);
@@ -59,17 +68,17 @@ export const SuperAdminMysteries = () => {
     }
   };
 
-  if (loading) return <Card title="Mysteries">Loading…</Card>;
+  if (loading) return <Card title={isSubplot ? 'Sub-plots' : 'Mysteries'}>Loading…</Card>;
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="New mystery">
+      <Card title={`New ${noun}`}>
         <div className="flex gap-2">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && create()}
-            placeholder="e.g. The Ashglass Inheritance"
+            placeholder={isSubplot ? 'e.g. The Missing Ledger' : 'e.g. The Ashglass Inheritance'}
             className="flex-1 rounded-md bg-black/60 border border-blood/40 p-2.5 text-bone"
           />
           <button
@@ -82,7 +91,7 @@ export const SuperAdminMysteries = () => {
         </div>
       </Card>
 
-      <Card title={`Mysteries (${mysteries.length})`}>
+      <Card title={`${isSubplot ? 'Sub-plots' : 'Mysteries'} (${mysteries.length})`}>
         <div className="flex flex-col gap-1.5">
           {mysteries.map((m) => (
             <div key={m.id} className="border-b border-blood/15 last:border-0 pb-1.5">
@@ -115,7 +124,9 @@ export const SuperAdminMysteries = () => {
               )}
             </div>
           ))}
-          {mysteries.length === 0 && <p className="text-bone/50 text-sm">No mysteries yet — create one above.</p>}
+          {mysteries.length === 0 && (
+            <p className="text-bone/50 text-sm">No {noun}s yet — create one above.</p>
+          )}
         </div>
       </Card>
     </div>
@@ -138,7 +149,7 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
     adminGetMystery(mysteryId).then(setM).catch(() => setNote('Could not load mystery.'));
   }, [mysteryId]);
 
-  if (!m) return <p className="text-bone/50 text-sm">{note || 'Loading mystery…'}</p>;
+  if (!m) return <p className="text-bone/50 text-sm">{note || 'Loading…'}</p>;
 
   const set = <K extends keyof AdminMysteryFull>(k: K, v: AdminMysteryFull[K]) => setM({ ...m, [k]: v });
 
@@ -162,6 +173,7 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
         summary: m.summary,
         fullLore: m.fullLore,
         active: m.active,
+        isSubplot: m.isSubplot,
         beats: m.beats.map((b) => ({ id: b.id || undefined, body: b.body })),
       });
       setNote('Saved.');
@@ -174,10 +186,13 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
     }
   };
 
+  const noun = m.isSubplot ? 'subplot' : 'mystery';
   const input = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
   const sections: { id: MysterySection; label: string }[] = [
     { id: 'story', label: 'Story' },
-    { id: 'quiz', label: 'Quiz' },
+    // Subplots don't have their own quiz — an instance's quiz is always
+    // just its main mystery's (see MYSTERY_REQUIREMENTS.md).
+    ...(m.isSubplot ? [] : [{ id: 'quiz' as const, label: 'Quiz' }]),
     { id: 'secrets', label: 'Characters' },
   ];
 
@@ -212,6 +227,11 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
             <input type="checkbox" checked={m.active} onChange={(e) => set('active', e.target.checked)} />
             Active — shows up on the "Host a Toast" picker
           </label>
+          <label className="flex items-center gap-2 text-sm text-bone/70">
+            <input type="checkbox" checked={m.isSubplot} onChange={(e) => set('isSubplot', e.target.checked)} />
+            Sub-plot — a Host can pick zero or many of these, in addition to their one required
+            mystery. Doesn't gate invite eligibility or have its own quiz.
+          </label>
 
           <ListEditor
             label="Beats — discoverable facts about the mystery"
@@ -239,7 +259,7 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
                     {expandedBeatIds.has(b.id) ? '▾ Hide who knows this' : '▸ Who knows this'}
                   </button>
                 ) : (
-                  <p className="ml-6 text-[11px] text-bone/30">Save the mystery to assign secrets to this beat.</p>
+                  <p className="ml-6 text-[11px] text-bone/30">Save to assign secrets to this beat.</p>
                 )}
                 {b.id && expandedBeatIds.has(b.id) && <BeatSecretsPanel mysteryId={m.id} beat={b} />}
               </div>
@@ -256,25 +276,25 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
               disabled={busy}
               className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
             >
-              {busy ? 'Saving…' : 'Save mystery'}
+              {busy ? 'Saving…' : `Save ${noun}`}
             </button>
             {note && <span className="text-bone/60 text-sm">{note}</span>}
           </div>
         </div>
       )}
 
-      {section === 'quiz' && <SuperAdminQuiz mysteryId={m.id} />}
-      {section === 'secrets' && <CharacterSecretsEditor mysteryId={m.id} beats={m.beats} />}
+      {section === 'quiz' && !m.isSubplot && <SuperAdminQuiz mysteryId={m.id} />}
+      {section === 'secrets' && <CharacterContentEditor mysteryId={m.id} beats={m.beats} />}
     </div>
   );
 };
 
 // A beat's "who knows this" panel — the beat-centric complement of
-// CharacterSecretsEditor/SecretsForCharacter below. Lets a super user assign
+// CharacterContentEditor/ContentForCharacter below. Lets a super user assign
 // secrets to characters right where a beat is authored, instead of having
 // to leave the Story tab and walk the cast one character at a time. Writes
-// happen immediately per-secret (not deferred to "Save mystery"), same
-// posture as the character-centric editor's own save button.
+// happen immediately per-secret (not deferred to "Save"), same posture as
+// the character-centric editor's own save button.
 const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminMysteryBeat }) => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [secrets, setSecrets] = useState<AdminBeatSecret[] | null>(null);
@@ -414,11 +434,12 @@ const BeatSecretBodyEditor = ({ secret, onSaved }: { secret: AdminBeatSecret; on
   );
 };
 
-// Walk the cast and decide what each of them knows — and what happens to
-// them — for this mystery. Deliberately reached from the mystery, not the
-// character (see MYSTERY_REQUIREMENTS.md's "Super Admin UI"). A character
-// with zero secrets here can't be invited to a Toast running this mystery.
-const CharacterSecretsEditor = ({ mysteryId, beats }: { mysteryId: string; beats: AdminMysteryFull['beats'] }) => {
+// Walk the cast and decide what each of them knows, what they need to do,
+// and what happens to them — for this mystery. Deliberately reached from
+// the mystery, not the character (see MYSTERY_REQUIREMENTS.md's "Super
+// Admin UI"). A character with zero secrets here can't be invited to a
+// Toast running this mystery (missions don't gate invites the same way).
+const CharacterContentEditor = ({ mysteryId, beats }: { mysteryId: string; beats: AdminMysteryFull['beats'] }) => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -441,6 +462,8 @@ const CharacterSecretsEditor = ({ mysteryId, beats }: { mysteryId: string; beats
   );
 };
 
+const blankMission = (): AdminMysteryMission => ({ ordinal: 0, tier: 'easy', rewardBt: 2, prompt: '', answerFormat: '' });
+
 const ContentForCharacter = ({
   mysteryId,
   character,
@@ -451,16 +474,19 @@ const ContentForCharacter = ({
   beats: AdminMysteryFull['beats'];
 }) => {
   const [secrets, setSecrets] = useState<AdminMysterySecret[] | null>(null);
+  const [missions, setMissions] = useState<AdminMysteryMission[]>([]);
   const [postAct1Context, setPostAct1Context] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     setSecrets(null);
+    setMissions([]);
     setPostAct1Context('');
     adminGetCharacterContentForMystery(mysteryId, character.id)
       .then((d) => {
         setSecrets(d.secrets);
+        setMissions(d.missions);
         setPostAct1Context(d.postAct1Context);
       })
       .catch(() => setNote('Could not load this character.'));
@@ -476,6 +502,12 @@ const ContentForCharacter = ({
     try {
       await adminUpdateCharacterContentForMystery(mysteryId, character.id, {
         secrets: secrets.map((s) => ({ body: s.body, beatId: s.beatId })),
+        missions: missions.map((m) => ({
+          tier: m.tier,
+          rewardBt: m.rewardBt,
+          prompt: m.prompt,
+          answerFormat: m.answerFormat,
+        })),
         postAct1Context,
       });
       setNote('Saved.');
@@ -525,6 +557,54 @@ const ContentForCharacter = ({
               </select>
             </div>
             <RemoveBtn onClick={() => setSecrets(secrets.filter((_, j) => j !== i))} />
+          </div>
+        ))}
+      </ListEditor>
+
+      <ListEditor
+        label="Missions"
+        addLabel="+ Add mission"
+        onAdd={() => setMissions([...missions, { ...blankMission(), ordinal: missions.length + 1 }])}
+      >
+        {missions.map((mn, i) => (
+          <div key={i} className="rounded-md border border-blood/30 p-2 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-gold text-xs w-4">{i + 1}</span>
+              <select
+                className={`${input} w-28`}
+                value={mn.tier}
+                onChange={(e) => setMissions(missions.map((x, j) => (j === i ? { ...x, tier: e.target.value } : x)))}
+              >
+                <option value="easy">easy</option>
+                <option value="medium">medium</option>
+                <option value="hard">hard</option>
+              </select>
+              <input
+                type="number"
+                className={`${input} w-20`}
+                value={mn.rewardBt}
+                onChange={(e) =>
+                  setMissions(missions.map((x, j) => (j === i ? { ...x, rewardBt: Number(e.target.value) || 0 } : x)))
+                }
+              />
+              <span className="text-bone/40 text-xs">BT</span>
+              <RemoveBtn onClick={() => setMissions(missions.filter((_, j) => j !== i))} />
+            </div>
+            <textarea
+              className={input}
+              rows={2}
+              placeholder="Mission prompt"
+              value={mn.prompt}
+              onChange={(e) => setMissions(missions.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
+            />
+            <input
+              className={input}
+              placeholder="What to submit (answer format)"
+              value={mn.answerFormat}
+              onChange={(e) =>
+                setMissions(missions.map((x, j) => (j === i ? { ...x, answerFormat: e.target.value } : x)))
+              }
+            />
           </div>
         ))}
       </ListEditor>

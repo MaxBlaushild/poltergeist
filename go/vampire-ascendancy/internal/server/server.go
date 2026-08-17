@@ -69,9 +69,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	// real signed-in account (see withUser).
 	r.POST("/vampire-ascendancy/instances", s.withUser, s.createInstance)
 	r.GET("/vampire-ascendancy/instances", s.withUser, s.listMyInstances)
-	// The "Host a Toast" mystery picker — any signed-in user, not just
-	// super users (who edit mysteries; anyone can pick one to host).
+	// The "Host a Toast" mystery/subplot pickers — any signed-in user, not
+	// just super users (who edit mysteries; anyone can pick one to host).
 	r.GET("/vampire-ascendancy/mysteries", s.withUser, s.listActiveMysteries)
+	r.GET("/vampire-ascendancy/subplots", s.withUser, s.listActiveSubplots)
 	r.POST("/vampire-ascendancy/invites/:token/accept", s.withUser, s.acceptInstanceAdminInvite)
 
 	// Player invites (RSVP) — a Host/Co-Host invites a specific real person

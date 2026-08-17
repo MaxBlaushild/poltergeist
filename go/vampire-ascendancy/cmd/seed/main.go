@@ -196,7 +196,7 @@ func main() {
 			}
 			missions = append(missions, mission)
 		}
-		if err := v.ReplaceMissions(ctx, character.ID, missions); err != nil {
+		if err := v.ReplaceMissionsForCharacterAndMystery(ctx, character.ID, mystery.ID, missions); err != nil {
 			log.Fatalf("failed to replace missions for %q: %v", c.Name, err)
 		}
 	}

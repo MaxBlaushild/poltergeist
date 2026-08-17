@@ -58,20 +58,25 @@ export interface MyToast {
   };
 }
 export const listMyToasts = () => request<{ instances: MyToast[] }>('/instances');
-export const hostToast = (name: string, mysteryId: string) =>
+// subplotIds is optional — zero or many, in addition to the required
+// mysteryId — and equally permanent once the Toast is created (see
+// MYSTERY_REQUIREMENTS.md).
+export const hostToast = (name: string, mysteryId: string, subplotIds: string[]) =>
   request<{ id: string; name: string }>('/instances', {
     method: 'POST',
-    body: JSON.stringify({ name, mysteryId }),
+    body: JSON.stringify({ name, mysteryId, subplotIds }),
   });
 
-// ---- Mysteries (picker only — the full editor is super-user-only, see
-// superAdminApi.ts) ----
+// ---- Mysteries and subplots (picker only — the full editor is
+// super-user-only, see superAdminApi.ts) ----
 export interface ActiveMystery {
   id: string;
   name: string;
   summary: string;
 }
 export const listActiveMysteries = () => request<{ mysteries: ActiveMystery[] }>('/mysteries');
+// Same shape as ActiveMystery — reused rather than a separate type.
+export const listActiveSubplots = () => request<{ subplots: ActiveMystery[] }>('/subplots');
 
 export const acceptCoHostInvite = (token: string) =>
   request<{ instanceId: string }>(`/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });

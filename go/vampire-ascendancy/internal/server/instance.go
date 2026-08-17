@@ -31,24 +31,37 @@ func genOpaqueToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// GET /vampire-ascendancy/mysteries — every active mystery, for the "Host
-// a Toast" picker. Just enough to choose from (name + summary); the full
-// editor payload (lore, beats, quiz, secrets) is super-user-only, under
-// /admin/mysteries.
+// GET /vampire-ascendancy/mysteries — every active main mystery, for the
+// "Host a Toast" picker's required single choice. Just enough to choose
+// from (name + summary); the full editor payload (lore, beats, quiz,
+// secrets) is super-user-only, under /admin/mysteries. Subplots are a
+// separate list — see listActiveSubplots.
 func (s *server) listActiveMysteries(ctx *gin.Context) {
-	mysteries, err := s.dbClient.Vampire().ListMysteries(ctx)
+	mysteries, err := s.dbClient.Vampire().ListActiveMysteriesByKind(ctx, false)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	out := make([]gin.H, 0, len(mysteries))
 	for _, m := range mysteries {
-		if !m.Active {
-			continue
-		}
 		out = append(out, gin.H{"id": m.ID, "name": m.Name, "summary": m.Summary})
 	}
 	ctx.JSON(http.StatusOK, gin.H{"mysteries": out})
+}
+
+// GET /vampire-ascendancy/subplots — every active subplot, for the "Host a
+// Toast" picker's optional multi-select. Same shape as listActiveMysteries.
+func (s *server) listActiveSubplots(ctx *gin.Context) {
+	subplots, err := s.dbClient.Vampire().ListActiveMysteriesByKind(ctx, true)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(subplots))
+	for _, m := range subplots {
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "summary": m.Summary})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"subplots": out})
 }
 
 // ---- Instances ("Toasts") — platform routes, not scoped to any instance ----
@@ -57,11 +70,15 @@ func (s *server) listActiveMysteries(ctx *gin.Context) {
 // its Host and the instance starts fully populated with the shared items
 // library (the Host trims it down from the Content tab); mysteryId is
 // chosen once here and never changes (see MYSTERY_REQUIREMENTS.md).
+// subplotIds is optional — zero or many, in addition to the required
+// mysteryId — and equally permanent; there's no "change subplots later"
+// flow, same rationale as the main mystery's lock-in.
 func (s *server) createInstance(ctx *gin.Context) {
 	user := userFromContext(ctx)
 	var body struct {
-		Name      string `json:"name"`
-		MysteryID string `json:"mysteryId"`
+		Name       string   `json:"name"`
+		MysteryID  string   `json:"mysteryId"`
+		SubplotIDs []string `json:"subplotIds"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -84,12 +101,31 @@ func (s *server) createInstance(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if mystery == nil || !mystery.Active {
+	if mystery == nil || !mystery.Active || mystery.IsSubplot {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown or inactive mystery"})
 		return
 	}
 
-	inst, err := v.CreateInstance(ctx, name, &user.ID, mysteryID)
+	subplotIDs := make([]uuid.UUID, 0, len(body.SubplotIDs))
+	for _, raw := range body.SubplotIDs {
+		sid, err := uuid.Parse(raw)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid subplot id"})
+			return
+		}
+		subplot, err := v.GetMysteryByID(ctx, sid)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if subplot == nil || !subplot.Active || !subplot.IsSubplot {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown or inactive subplot"})
+			return
+		}
+		subplotIDs = append(subplotIDs, sid)
+	}
+
+	inst, err := v.CreateInstance(ctx, name, &user.ID, mysteryID, subplotIDs)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

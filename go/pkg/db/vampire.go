@@ -226,38 +226,6 @@ func (h *vampireHandler) GetActivePlayerByCharacterID(ctx context.Context, insta
 	return &p, nil
 }
 
-// ReplaceSecrets removes existing secrets for a character and inserts the new set.
-func (h *vampireHandler) ReplaceSecrets(ctx context.Context, characterID uuid.UUID, secrets []models.VampireSecret) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("character_id = ?", characterID).Delete(&models.VampireSecret{}).Error; err != nil {
-			return err
-		}
-		for i := range secrets {
-			secrets[i].CharacterID = characterID
-		}
-		if len(secrets) == 0 {
-			return nil
-		}
-		return tx.Create(&secrets).Error
-	})
-}
-
-// ReplaceMissions removes existing missions for a character and inserts the new set.
-func (h *vampireHandler) ReplaceMissions(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("character_id = ?", characterID).Delete(&models.VampireMission{}).Error; err != nil {
-			return err
-		}
-		for i := range missions {
-			missions[i].CharacterID = characterID
-		}
-		if len(missions) == 0 {
-			return nil
-		}
-		return tx.Create(&missions).Error
-	})
-}
-
 func (h *vampireHandler) GetMissionByID(ctx context.Context, id uuid.UUID) (*models.VampireMission, error) {
 	var m models.VampireMission
 	if err := h.db.WithContext(ctx).First(&m, "id = ?", id).Error; err != nil {

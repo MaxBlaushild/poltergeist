@@ -212,11 +212,29 @@ type VampireMystery struct {
 	// deleting it (and without breaking existing instances that reference
 	// it).
 	Active bool `gorm:"not null;default:true" json:"active"`
+	// IsSubplot distinguishes a subplot from a main mystery. Structurally
+	// identical row (summary/full lore/beats/secrets all work the same way
+	// against either), but a subplot is selected zero-or-many-at-a-time
+	// alongside an instance's one required mystery, doesn't gate invite
+	// eligibility, and doesn't have quiz questions — see
+	// vampire_instance_subplots and MYSTERY_REQUIREMENTS.md.
+	IsSubplot bool `gorm:"column:is_subplot;not null;default:false" json:"isSubplot"`
 
 	Beats []VampireMysteryBeat `gorm:"foreignKey:MysteryID" json:"beats,omitempty"`
 }
 
 func (VampireMystery) TableName() string { return "vampire_mysteries" }
+
+// VampireInstanceSubplot is one subplot selected for one instance —
+// zero-or-many per instance, alongside the instance's one required
+// mystery_id. No status/ordinal; a subplot is either selected or not.
+type VampireInstanceSubplot struct {
+	InstanceID uuid.UUID `gorm:"column:instance_id;primaryKey" json:"instanceId"`
+	MysteryID  uuid.UUID `gorm:"column:mystery_id;primaryKey" json:"mysteryId"`
+	CreatedAt  time.Time `gorm:"not null" json:"createdAt"`
+}
+
+func (VampireInstanceSubplot) TableName() string { return "vampire_instance_subplots" }
 
 // VampireMysteryBeat is one discoverable fact about a mystery. Secrets
 // point at the beat they reveal; many secrets may point at the same beat.
@@ -335,6 +353,11 @@ type VampireMission struct {
 	// from SabotageHouseID. Rare — most missions just award Blood Tokens.
 	SabotageHouseID *uuid.UUID `json:"sabotageHouseId"`
 	SabotageHF      int        `gorm:"column:sabotage_hf;not null;default:0" json:"sabotageHf"`
+	// MysteryID scopes this mission to one mystery (or subplot) — same
+	// rationale and nullability posture as VampireSecret.MysteryID: a
+	// character can have a different set of missions per mystery/subplot,
+	// and a mission with no mystery is simply unusable by any instance.
+	MysteryID *uuid.UUID `gorm:"column:mystery_id" json:"mysteryId"`
 }
 
 func (VampireMission) TableName() string { return "vampire_missions" }

@@ -7,11 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// GET /gm/characters/:id — a character's full content (bios, secrets,
-// missions — shared, edited only by super users, see GET
-// /admin/characters/:id) plus this Toast's portrait and the real player
-// name from its active slot, both of which ARE per-instance and editable
-// here.
+// GET /gm/characters/:id — a character's full content (pre-event bio,
+// secrets/context/missions scoped to this Toast's mystery+subplots — shared,
+// edited only by super users, see GET /admin/characters/:id and
+// /admin/mysteries/:id/characters/:characterId/content) plus this Toast's
+// portrait and the real player name from its active slot, both of which ARE
+// per-instance and editable here.
 func (s *server) gmGetCharacter(ctx *gin.Context) {
 	instanceID := instanceIDFromContext(ctx)
 	id, err := uuid.Parse(ctx.Param("id"))
@@ -45,10 +46,17 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		playerName = slot.GuestLabel
 	}
 
-	// Scoped to this instance's mystery — not every secret/context this
-	// character has ever had across every mystery they've appeared in.
+	// Scoped to this instance's mystery plus its selected subplots — not
+	// every secret/mission/context this character has ever had across
+	// every mystery/subplot they've appeared in.
 	mysteryID := mysteryIDFromContext(ctx)
-	secretRows, err := v.ListSecretsForCharacterAndMystery(ctx, id, mysteryID)
+	mysteryIDs := mysteryAndSubplotIDsFromContext(ctx)
+	secretRows, err := v.ListSecretsForCharacterAndMysteries(ctx, id, mysteryIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	missionRows, err := v.ListMissionsForCharacterAndMysteries(ctx, id, mysteryIDs)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -62,8 +70,8 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 	for _, sec := range secretRows {
 		secrets = append(secrets, gin.H{"ordinal": sec.Ordinal, "body": sec.Body})
 	}
-	missions := make([]gin.H, 0, len(c.Missions))
-	for _, m := range c.Missions {
+	missions := make([]gin.H, 0, len(missionRows))
+	for _, m := range missionRows {
 		missions = append(missions, gin.H{
 			"ordinal":      m.Ordinal,
 			"tier":         m.Tier,
