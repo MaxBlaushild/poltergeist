@@ -220,7 +220,10 @@ type VampireMystery struct {
 	// vampire_instance_subplots and MYSTERY_REQUIREMENTS.md.
 	IsSubplot bool `gorm:"column:is_subplot;not null;default:false" json:"isSubplot"`
 
-	Beats []VampireMysteryBeat `gorm:"foreignKey:MysteryID" json:"beats,omitempty"`
+	// Beats are many-to-many via vampire_mystery_beat_links (a beat can be
+	// shared across multiple mysteries/subplots — see VampireMysteryBeatLink),
+	// so there's no direct GORM relation here; read them via
+	// db.VampireHandle's ListBeatsForMystery instead.
 }
 
 func (VampireMystery) TableName() string { return "vampire_mysteries" }
@@ -236,19 +239,35 @@ type VampireInstanceSubplot struct {
 
 func (VampireInstanceSubplot) TableName() string { return "vampire_instance_subplots" }
 
-// VampireMysteryBeat is one discoverable fact about a mystery. Secrets
-// point at the beat they reveal; many secrets may point at the same beat.
+// VampireMysteryBeat is one discoverable fact — shared, reusable content
+// that can be attached to multiple mysteries/subplots at once (see
+// VampireMysteryBeatLink), not owned by exactly one. Secrets point at the
+// beat they reveal; many secrets (across any mystery that has this beat
+// attached) may point at the same beat.
 type VampireMysteryBeat struct {
 	ID          uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt   time.Time `gorm:"not null" json:"createdAt"`
 	UpdatedAt   time.Time `gorm:"not null" json:"updatedAt"`
-	MysteryID   uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
-	Ordinal     int       `gorm:"not null;default:0" json:"ordinal"`
 	Title       string    `gorm:"not null;default:''" json:"title"`
 	Description string    `gorm:"not null;default:''" json:"description"`
 }
 
 func (VampireMysteryBeat) TableName() string { return "vampire_mystery_beats" }
+
+// VampireMysteryBeatLink attaches a beat to one mystery (or subplot), with
+// its own ordinal — the same beat can be attached to multiple
+// mysteries/subplots, each at its own position in that mystery's list.
+// Editing a beat's title/description changes it everywhere it's linked;
+// unlinking (removing it from one mystery's list) deletes only this row,
+// never the beat itself — see ReplaceMysteryBeats.
+type VampireMysteryBeatLink struct {
+	MysteryID uuid.UUID `gorm:"column:mystery_id;primaryKey" json:"mysteryId"`
+	BeatID    uuid.UUID `gorm:"column:beat_id;primaryKey" json:"beatId"`
+	Ordinal   int       `gorm:"not null;default:0" json:"ordinal"`
+	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
+}
+
+func (VampireMysteryBeatLink) TableName() string { return "vampire_mystery_beat_links" }
 
 type VampireHouse struct {
 	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`

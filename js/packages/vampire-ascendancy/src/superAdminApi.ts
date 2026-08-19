@@ -94,11 +94,16 @@ export interface AdminMystery {
   isSubplot: boolean;
   beatCount: number;
 }
+// A beat is shared, reusable content — the same beat can be attached to
+// multiple mysteries/subplots at once (see MYSTERY_REQUIREMENTS.md).
+// linkCount > 1 means editing its title/description here also changes what
+// every other mystery/subplot sharing it shows.
 export interface AdminMysteryBeat {
   id: string;
   ordinal: number;
   title: string;
   description: string;
+  linkCount: number;
 }
 export interface AdminMysteryFull {
   id: string;
@@ -121,12 +126,24 @@ export const adminUpdateMystery = (
     fullLore: string;
     active: boolean;
     isSubplot: boolean;
-    // id is omitted (or '') for a beat being created; present for one being
-    // edited — preserving it is what keeps the beat's id, and any secret's
-    // beatId pointing at it, stable across saves.
+    // id is omitted (or '') for a beat being created; present for one
+    // being edited or reattached — preserving it is what keeps the beat's
+    // id, and any secret's beatId pointing at it, stable across saves, and
+    // is also how attaching an existing (shared) beat works.
     beats: { id?: string; title: string; description: string }[];
   }
 ) => admin<{ ok: boolean }>(`/mysteries/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+
+// Every beat across every mystery/subplot — the "attach an existing beat"
+// picker, so a super user can reuse a beat that already says the same
+// thing instead of duplicating it.
+export interface AdminBeat {
+  id: string;
+  title: string;
+  description: string;
+  linkCount: number;
+}
+export const adminListBeats = () => admin<{ beats: AdminBeat[] }>('/beats');
 
 // ---- Quiz, scoped to a mystery ----
 export const adminGetMysteryQuiz = (mysteryId: string) => admin<GMQuizQuestions>(`/mysteries/${mysteryId}/quiz`);

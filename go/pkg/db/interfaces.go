@@ -530,7 +530,13 @@ type VampireHandle interface {
 	// authored for "The Crimson Toast" specifically.
 	GetMysteryByName(ctx context.Context, name string) (*models.VampireMystery, error)
 	UpdateMystery(ctx context.Context, id uuid.UUID, fields map[string]interface{}) error
-	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []models.VampireMysteryBeat) error
+	// Beats are shared, reusable content (many-to-many with mysteries/
+	// subplots via vampire_mystery_beat_links) — see MysteryBeat and
+	// ReplaceMysteryBeats' comments in vampire_mystery.go.
+	ListBeatsForMystery(ctx context.Context, mysteryID uuid.UUID) ([]MysteryBeat, error)
+	ListAllBeats(ctx context.Context) ([]MysteryBeat, error)
+	CountBeatsByMystery(ctx context.Context) (map[uuid.UUID]int, error)
+	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []MysteryBeat) error
 	// Character secrets, scoped to a mystery (or subplot — same table).
 	ListSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireSecret, error)
 	// ListSecretsForCharacterAndMysteries — see vampire_mystery.go.

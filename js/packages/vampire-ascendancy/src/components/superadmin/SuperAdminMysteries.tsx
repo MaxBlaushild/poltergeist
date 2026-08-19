@@ -11,6 +11,7 @@ import {
   adminCreateBeatSecret,
   adminUpdateSecretBody,
   adminDeleteSecret,
+  adminListBeats,
 } from '../../superAdminApi';
 import type {
   AdminMystery,
@@ -20,6 +21,7 @@ import type {
   AdminMysteryMission,
   AdminCharacter,
   AdminBeatSecret,
+  AdminBeat,
 } from '../../superAdminApi';
 import { Card } from '../gm/GameSection';
 import { CharacterBrowser } from '../gm/CharacterBrowser';
@@ -236,13 +238,32 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
           <ListEditor
             label="Beats — discoverable facts about the mystery"
             addLabel="+ Add beat"
-            onAdd={() => set('beats', [...m.beats, { id: '', ordinal: m.beats.length + 1, title: '', description: '' }])}
+            onAdd={() =>
+              set('beats', [...m.beats, { id: '', ordinal: m.beats.length + 1, title: '', description: '', linkCount: 0 }])
+            }
+            extra={
+              <AttachBeatPicker
+                excludeIds={m.beats.filter((b) => b.id).map((b) => b.id)}
+                onPick={(beat) =>
+                  set('beats', [
+                    ...m.beats,
+                    { id: beat.id, ordinal: m.beats.length + 1, title: beat.title, description: beat.description, linkCount: beat.linkCount },
+                  ])
+                }
+              />
+            }
           >
             {m.beats.map((b, i) => (
               <div key={i} className="flex flex-col gap-1">
                 <div className="flex gap-2 items-start">
                   <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
                   <div className="flex-1 flex flex-col gap-1.5">
+                    {b.linkCount > 1 && (
+                      <p className="text-gold/60 text-[10px]">
+                        ⚭ Shared with {b.linkCount - 1} other {b.linkCount - 1 === 1 ? 'mystery' : 'mysteries'} —
+                        editing this changes it there too.
+                      </p>
+                    )}
                     <input
                       className={input}
                       placeholder="Title"
@@ -259,7 +280,10 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
                       }
                     />
                   </div>
-                  <RemoveBtn onClick={() => set('beats', m.beats.filter((_, j) => j !== i))} />
+                  <RemoveBtn
+                    onClick={() => set('beats', m.beats.filter((_, j) => j !== i))}
+                    title={b.linkCount > 1 ? 'Unlink from this mystery (stays attached elsewhere)' : 'Remove'}
+                  />
                 </div>
                 {b.id ? (
                   <button
@@ -277,8 +301,10 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
             ))}
           </ListEditor>
           <p className="text-[11px] text-bone/40">
-            Renaming a beat's text keeps its id (and any secrets pointing at it) — only removing it
-            un-sets those secrets' beat rather than deleting them.
+            Beats are shared content — the same beat can be attached to multiple mysteries/subplots
+            (use "attach existing beat" to reuse one instead of duplicating it). Editing its text
+            changes it everywhere it's attached; removing it here only unlinks it from this mystery,
+            it isn't deleted while anything else still uses it.
           </p>
 
           <div className="flex items-center gap-3">
@@ -296,6 +322,79 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
 
       {section === 'quiz' && !m.isSubplot && <SuperAdminQuiz mysteryId={m.id} />}
       {section === 'secrets' && <CharacterContentEditor mysteryId={m.id} beats={m.beats} />}
+    </div>
+  );
+};
+
+// Search across every beat in the library and attach an existing one to
+// this mystery's list instead of duplicating it — the whole reason a beat
+// like "the tools to kill a vampire" can end up shared by two subplots.
+// Picking one just appends it to the local beat list; it isn't actually
+// linked until "Save" (same as a freshly-typed new beat).
+const AttachBeatPicker = ({ excludeIds, onPick }: { excludeIds: string[]; onPick: (beat: AdminBeat) => void }) => {
+  const [open, setOpen] = useState(false);
+  const [beats, setBeats] = useState<AdminBeat[] | null>(null);
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (open && beats === null) {
+      adminListBeats()
+        .then((d) => setBeats(d.beats))
+        .catch(() => setBeats([]));
+    }
+  }, [open, beats]);
+
+  const q = query.trim().toLowerCase();
+  const options = (beats ?? []).filter(
+    (b) =>
+      !excludeIds.includes(b.id) &&
+      (!q || b.title.toLowerCase().includes(q) || b.description.toLowerCase().includes(q))
+  );
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="text-xs text-gold/80 uppercase tracking-[0.15em] hover:text-gold"
+      >
+        + Attach existing beat
+      </button>
+      {open && (
+        <div className="absolute right-0 z-10 mt-2 w-72 rounded-md border border-gold/30 bg-black/95 p-2 shadow-lg">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search beats…"
+            className="w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm mb-2"
+          />
+          <div className="max-h-56 overflow-y-auto flex flex-col gap-1">
+            {beats === null && <p className="text-bone/50 text-xs p-1">Loading…</p>}
+            {beats !== null && options.length === 0 && <p className="text-bone/40 text-xs p-1">No matches.</p>}
+            {options.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => {
+                  onPick(b);
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className="text-left rounded-md p-2 hover:bg-blood/20"
+              >
+                <p className="text-bone text-sm">{b.title || '(untitled beat)'}</p>
+                {b.description && <p className="text-bone/50 text-xs truncate">{b.description}</p>}
+                {b.linkCount > 0 && (
+                  <p className="text-gold/60 text-[10px] mt-0.5">
+                    Already used by {b.linkCount} {b.linkCount === 1 ? 'mystery' : 'mysteries'}
+                  </p>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

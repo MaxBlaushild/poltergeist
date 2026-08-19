@@ -191,6 +191,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.POST("/mysteries", s.adminCreateMystery)
 	admin.GET("/mysteries/:id", s.adminGetMystery)
 	admin.PUT("/mysteries/:id", s.adminUpdateMystery)
+	// Every beat, across every mystery/subplot — the "attach an existing
+	// beat" picker (beats are shared, reusable content).
+	admin.GET("/beats", s.adminListBeats)
 	admin.GET("/mysteries/:id/quiz", s.adminGetMysteryQuiz)
 	admin.PUT("/mysteries/:id/quiz", s.adminUpdateMysteryQuiz)
 	admin.GET("/mysteries/:id/characters/:characterId/content", s.adminGetCharacterContentForMystery)

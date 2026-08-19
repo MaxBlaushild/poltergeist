@@ -47,11 +47,12 @@ func (h *vampireHandler) ListActiveMysteriesByKind(ctx context.Context, isSubplo
 	return out, nil
 }
 
+// GetMysteryByID does NOT include beats — they're many-to-many now (a beat
+// can be shared across multiple mysteries/subplots), so there's no direct
+// relation to preload. Fetch them separately via ListBeatsForMystery.
 func (h *vampireHandler) GetMysteryByID(ctx context.Context, id uuid.UUID) (*models.VampireMystery, error) {
 	var m models.VampireMystery
-	if err := h.db.WithContext(ctx).
-		Preload("Beats", func(db *gorm.DB) *gorm.DB { return db.Order("ordinal ASC") }).
-		First(&m, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&m, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -91,11 +92,147 @@ func (h *vampireHandler) UpdateMystery(ctx context.Context, id uuid.UUID, fields
 // single save, not just when a beat was actually removed. That made beat
 // ids too unstable to build anything on top of (like the beat-centric
 // secrets panel below), so this reconciles instead.
-func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []models.VampireMysteryBeat) error {
+// MysteryBeat is a beat as attached to one specific mystery: the beat's own
+// shared content (id/title/description) plus its ordinal within THIS
+// mystery's list, and how many mysteries/subplots it's linked to in total.
+// LinkCount > 1 means editing this beat's content also changes what every
+// other mystery/subplot sharing it shows — see ReplaceMysteryBeats.
+type MysteryBeat struct {
+	ID          uuid.UUID
+	Title       string
+	Description string
+	Ordinal     int
+	LinkCount   int
+}
+
+// ListBeatsForMystery returns the beats attached to one mystery, in that
+// mystery's own order.
+func (h *vampireHandler) ListBeatsForMystery(ctx context.Context, mysteryID uuid.UUID) ([]MysteryBeat, error) {
+	var links []models.VampireMysteryBeatLink
+	if err := h.db.WithContext(ctx).
+		Where("mystery_id = ?", mysteryID).
+		Order("ordinal ASC").
+		Find(&links).Error; err != nil {
+		return nil, err
+	}
+	if len(links) == 0 {
+		return []MysteryBeat{}, nil
+	}
+	ids := make([]uuid.UUID, len(links))
+	for i, l := range links {
+		ids[i] = l.BeatID
+	}
+	var beatRows []models.VampireMysteryBeat
+	if err := h.db.WithContext(ctx).Where("id IN ?", ids).Find(&beatRows).Error; err != nil {
+		return nil, err
+	}
+	beatByID := make(map[uuid.UUID]models.VampireMysteryBeat, len(beatRows))
+	for _, b := range beatRows {
+		beatByID[b.ID] = b
+	}
+	counts, err := h.countLinksByBeat(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MysteryBeat, 0, len(links))
+	for _, l := range links {
+		b, ok := beatByID[l.BeatID]
+		if !ok {
+			continue
+		}
+		out = append(out, MysteryBeat{
+			ID: b.ID, Title: b.Title, Description: b.Description,
+			Ordinal: l.Ordinal, LinkCount: counts[b.ID],
+		})
+	}
+	return out, nil
+}
+
+// ListAllBeats returns every beat across every mystery/subplot — for the
+// "attach an existing beat" picker, so a super user can reuse a beat that
+// already says the same thing instead of duplicating it.
+func (h *vampireHandler) ListAllBeats(ctx context.Context) ([]MysteryBeat, error) {
+	var beatRows []models.VampireMysteryBeat
+	if err := h.db.WithContext(ctx).Order("title ASC").Find(&beatRows).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, len(beatRows))
+	for i, b := range beatRows {
+		ids[i] = b.ID
+	}
+	counts, err := h.countLinksByBeat(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MysteryBeat, 0, len(beatRows))
+	for _, b := range beatRows {
+		out = append(out, MysteryBeat{ID: b.ID, Title: b.Title, Description: b.Description, LinkCount: counts[b.ID]})
+	}
+	return out, nil
+}
+
+// countLinksByBeat is a helper for ListBeatsForMystery/ListAllBeats — how
+// many mysteries/subplots each of the given beats is currently attached to.
+func (h *vampireHandler) countLinksByBeat(ctx context.Context, beatIDs []uuid.UUID) (map[uuid.UUID]int, error) {
+	if len(beatIDs) == 0 {
+		return map[uuid.UUID]int{}, nil
+	}
+	var rows []struct {
+		BeatID uuid.UUID
+		Count  int
+	}
+	if err := h.db.WithContext(ctx).Model(&models.VampireMysteryBeatLink{}).
+		Select("beat_id, COUNT(*) as count").
+		Where("beat_id IN ?", beatIDs).
+		Group("beat_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]int, len(rows))
+	for _, r := range rows {
+		out[r.BeatID] = r.Count
+	}
+	return out, nil
+}
+
+// CountBeatsByMystery returns how many beats each mystery/subplot has
+// linked, in one query — used by the Super Admin list view instead of one
+// ListBeatsForMystery call per row.
+func (h *vampireHandler) CountBeatsByMystery(ctx context.Context) (map[uuid.UUID]int, error) {
+	var rows []struct {
+		MysteryID uuid.UUID
+		Count     int
+	}
+	if err := h.db.WithContext(ctx).Model(&models.VampireMysteryBeatLink{}).
+		Select("mystery_id, COUNT(*) as count").
+		Group("mystery_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]int, len(rows))
+	for _, r := range rows {
+		out[r.MysteryID] = r.Count
+	}
+	return out, nil
+}
+
+// ReplaceMysteryBeats reconciles one mystery's beat list against what's
+// submitted:
+//   - a submitted beat with an id updates that beat's shared content
+//     (title/description) — which changes it everywhere it's linked, not
+//     just here — and creates or updates this mystery's link (ordinal);
+//     this is also how "attach an existing beat" works, since from this
+//     function's point of view a freshly-attached existing beat looks the
+//     same as one being reordered;
+//   - a submitted beat with no id creates a brand-new beat and links it;
+//   - a beat currently linked to this mystery but missing from the
+//     submitted list is unlinked (the link row deleted) — the beat itself
+//     is never deleted, since it may still be linked to other
+//     mysteries/subplots.
+func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []MysteryBeat) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		keepIDs := make([]uuid.UUID, 0, len(beats))
 		for i := range beats {
-			beats[i].MysteryID = mysteryID
 			if beats[i].ID != uuid.Nil {
 				keepIDs = append(keepIDs, beats[i].ID)
 			}
@@ -103,26 +240,32 @@ func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid
 
 		del := tx.Where("mystery_id = ?", mysteryID)
 		if len(keepIDs) > 0 {
-			del = del.Where("id NOT IN ?", keepIDs)
+			del = del.Where("beat_id NOT IN ?", keepIDs)
 		}
-		if err := del.Delete(&models.VampireMysteryBeat{}).Error; err != nil {
+		if err := del.Delete(&models.VampireMysteryBeatLink{}).Error; err != nil {
 			return err
 		}
 
 		for i := range beats {
 			if beats[i].ID == uuid.Nil {
-				if err := tx.Create(&beats[i]).Error; err != nil {
+				nb := models.VampireMysteryBeat{Title: beats[i].Title, Description: beats[i].Description}
+				if err := tx.Create(&nb).Error; err != nil {
 					return err
 				}
-				continue
+				beats[i].ID = nb.ID
+			} else {
+				if err := tx.Model(&models.VampireMysteryBeat{}).
+					Where("id = ?", beats[i].ID).
+					Updates(map[string]interface{}{
+						"title":       beats[i].Title,
+						"description": beats[i].Description,
+					}).Error; err != nil {
+					return err
+				}
 			}
-			if err := tx.Model(&models.VampireMysteryBeat{}).
-				Where("id = ?", beats[i].ID).
-				Updates(map[string]interface{}{
-					"ordinal":     beats[i].Ordinal,
-					"title":       beats[i].Title,
-					"description": beats[i].Description,
-				}).Error; err != nil {
+			if err := tx.Where(models.VampireMysteryBeatLink{MysteryID: mysteryID, BeatID: beats[i].ID}).
+				Assign(models.VampireMysteryBeatLink{Ordinal: beats[i].Ordinal}).
+				FirstOrCreate(&models.VampireMysteryBeatLink{}).Error; err != nil {
 				return err
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -25,7 +26,13 @@ import (
 // both so a super user can revive one). The frontend splits by isSubplot
 // into the Mysteries and Sub-plots tabs.
 func (s *server) adminListMysteries(ctx *gin.Context) {
-	mysteries, err := s.dbClient.Vampire().ListMysteries(ctx)
+	v := s.dbClient.Vampire()
+	mysteries, err := v.ListMysteries(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	beatCounts, err := v.CountBeatsByMystery(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -38,7 +45,7 @@ func (s *server) adminListMysteries(ctx *gin.Context) {
 			"summary":   m.Summary,
 			"active":    m.Active,
 			"isSubplot": m.IsSubplot,
-			"beatCount": len(m.Beats),
+			"beatCount": beatCounts[m.ID],
 		})
 	}
 	ctx.JSON(http.StatusOK, gin.H{"mysteries": out})
@@ -82,7 +89,8 @@ func (s *server) adminGetMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mystery id"})
 		return
 	}
-	m, err := s.dbClient.Vampire().GetMysteryByID(ctx, id)
+	v := s.dbClient.Vampire()
+	m, err := v.GetMysteryByID(ctx, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -91,9 +99,17 @@ func (s *server) adminGetMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "mystery not found"})
 		return
 	}
-	beats := make([]gin.H, 0, len(m.Beats))
-	for _, b := range m.Beats {
-		beats = append(beats, gin.H{"id": b.ID, "ordinal": b.Ordinal, "title": b.Title, "description": b.Description})
+	beatRows, err := v.ListBeatsForMystery(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	beats := make([]gin.H, 0, len(beatRows))
+	for _, b := range beatRows {
+		beats = append(beats, gin.H{
+			"id": b.ID, "ordinal": b.Ordinal, "title": b.Title, "description": b.Description,
+			"linkCount": b.LinkCount,
+		})
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"id":        m.ID,
@@ -107,10 +123,14 @@ func (s *server) adminGetMystery(ctx *gin.Context) {
 }
 
 // PUT /admin/mysteries/:id — save the mystery editor: core fields plus the
-// beat list (replaced wholesale, same pattern secrets/missions already
-// use). Removing a beat that a secret still points at un-sets that
-// secret's beat rather than blocking the save (ON DELETE SET NULL) — the
-// frontend warns before that happens, but doesn't hard-block it.
+// beat list, reconciled against what's attached here (see
+// ReplaceMysteryBeats — beats are shared, reusable content now, so this
+// isn't a wholesale replace: an existing beat's id keeps it linked and
+// edits its shared content, a missing one gets unlinked without being
+// deleted, and it's also how "attach an existing beat" works). Removing a
+// beat that a secret still points at un-sets that secret's beat rather
+// than blocking the save (ON DELETE SET NULL) — the frontend warns before
+// that happens, but doesn't hard-block it.
 func (s *server) adminUpdateMystery(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -155,12 +175,12 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 		return
 	}
 
-	beats := make([]models.VampireMysteryBeat, 0, len(body.Beats))
+	beats := make([]db.MysteryBeat, 0, len(body.Beats))
 	for i, b := range body.Beats {
 		if strings.TrimSpace(b.Title) == "" && strings.TrimSpace(b.Description) == "" {
 			continue
 		}
-		beat := models.VampireMysteryBeat{Ordinal: i + 1, Title: b.Title, Description: b.Description}
+		beat := db.MysteryBeat{Ordinal: i + 1, Title: b.Title, Description: b.Description}
 		if b.ID != "" {
 			bid, err := uuid.Parse(b.ID)
 			if err != nil {
@@ -178,6 +198,24 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 
 	s.logSuperUser(ctx, "update_mystery", map[string]interface{}{"id": id.String(), "beatCount": len(beats)})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// GET /admin/beats — every beat, across every mystery/subplot, with how
+// many of them each is currently linked to. Powers the Story tab's "attach
+// an existing beat" picker, so a super user can reuse a beat that already
+// says the same thing (e.g. "the tools to kill a vampire" shared by two
+// subplots) instead of duplicating it.
+func (s *server) adminListBeats(ctx *gin.Context) {
+	beats, err := s.dbClient.Vampire().ListAllBeats(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(beats))
+	for _, b := range beats {
+		out = append(out, gin.H{"id": b.ID, "title": b.Title, "description": b.Description, "linkCount": b.LinkCount})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"beats": out})
 }
 
 // ---- Per-character content, scoped to a mystery: secrets + post-Act-1
