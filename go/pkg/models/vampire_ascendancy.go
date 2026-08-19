@@ -239,12 +239,13 @@ func (VampireInstanceSubplot) TableName() string { return "vampire_instance_subp
 // VampireMysteryBeat is one discoverable fact about a mystery. Secrets
 // point at the beat they reveal; many secrets may point at the same beat.
 type VampireMysteryBeat struct {
-	ID        uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
-	CreatedAt time.Time `gorm:"not null" json:"createdAt"`
-	UpdatedAt time.Time `gorm:"not null" json:"updatedAt"`
-	MysteryID uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
-	Ordinal   int       `gorm:"not null;default:0" json:"ordinal"`
-	Body      string    `gorm:"not null;default:''" json:"body"`
+	ID          uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt   time.Time `gorm:"not null" json:"createdAt"`
+	UpdatedAt   time.Time `gorm:"not null" json:"updatedAt"`
+	MysteryID   uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
+	Ordinal     int       `gorm:"not null;default:0" json:"ordinal"`
+	Title       string    `gorm:"not null;default:''" json:"title"`
+	Description string    `gorm:"not null;default:''" json:"description"`
 }
 
 func (VampireMysteryBeat) TableName() string { return "vampire_mystery_beats" }

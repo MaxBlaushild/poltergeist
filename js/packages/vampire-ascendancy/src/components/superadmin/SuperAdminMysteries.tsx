@@ -174,7 +174,7 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
         fullLore: m.fullLore,
         active: m.active,
         isSubplot: m.isSubplot,
-        beats: m.beats.map((b) => ({ id: b.id || undefined, body: b.body })),
+        beats: m.beats.map((b) => ({ id: b.id || undefined, title: b.title, description: b.description })),
       });
       setNote('Saved.');
       onSaved();
@@ -236,18 +236,29 @@ const MysteryEditor = ({ mysteryId, onSaved }: { mysteryId: string; onSaved: () 
           <ListEditor
             label="Beats — discoverable facts about the mystery"
             addLabel="+ Add beat"
-            onAdd={() => set('beats', [...m.beats, { id: '', ordinal: m.beats.length + 1, body: '' }])}
+            onAdd={() => set('beats', [...m.beats, { id: '', ordinal: m.beats.length + 1, title: '', description: '' }])}
           >
             {m.beats.map((b, i) => (
               <div key={i} className="flex flex-col gap-1">
                 <div className="flex gap-2 items-start">
                   <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
-                  <textarea
-                    className={input}
-                    rows={2}
-                    value={b.body}
-                    onChange={(e) => set('beats', m.beats.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
-                  />
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <input
+                      className={input}
+                      placeholder="Title"
+                      value={b.title}
+                      onChange={(e) => set('beats', m.beats.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))}
+                    />
+                    <textarea
+                      className={input}
+                      rows={2}
+                      placeholder="Description — what this beat actually reveals"
+                      value={b.description}
+                      onChange={(e) =>
+                        set('beats', m.beats.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))
+                      }
+                    />
+                  </div>
                   <RemoveBtn onClick={() => set('beats', m.beats.filter((_, j) => j !== i))} />
                 </div>
                 {b.id ? (
@@ -551,7 +562,7 @@ const ContentForCharacter = ({
                 <option value="">— which beat does this reveal? —</option>
                 {beats.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.body.slice(0, 60) || '(untitled beat)'}
+                    {b.title || b.description.slice(0, 60) || '(untitled beat)'}
                   </option>
                 ))}
               </select>

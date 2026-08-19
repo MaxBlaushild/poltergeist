@@ -97,7 +97,8 @@ export interface AdminMystery {
 export interface AdminMysteryBeat {
   id: string;
   ordinal: number;
-  body: string;
+  title: string;
+  description: string;
 }
 export interface AdminMysteryFull {
   id: string;
@@ -123,7 +124,7 @@ export const adminUpdateMystery = (
     // id is omitted (or '') for a beat being created; present for one being
     // edited — preserving it is what keeps the beat's id, and any secret's
     // beatId pointing at it, stable across saves.
-    beats: { id?: string; body: string }[];
+    beats: { id?: string; title: string; description: string }[];
   }
 ) => admin<{ ok: boolean }>(`/mysteries/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 

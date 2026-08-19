@@ -93,7 +93,7 @@ func (s *server) adminGetMystery(ctx *gin.Context) {
 	}
 	beats := make([]gin.H, 0, len(m.Beats))
 	for _, b := range m.Beats {
-		beats = append(beats, gin.H{"id": b.ID, "ordinal": b.Ordinal, "body": b.Body})
+		beats = append(beats, gin.H{"id": b.ID, "ordinal": b.Ordinal, "title": b.Title, "description": b.Description})
 	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"id":        m.ID,
@@ -128,8 +128,9 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 			// edited. Preserving it is what keeps a beat's id — and any
 			// secret's beat_id pointing at it — stable across saves (see
 			// ReplaceMysteryBeats).
-			ID   string `json:"id"`
-			Body string `json:"body"`
+			ID          string `json:"id"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
 		} `json:"beats"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -156,10 +157,10 @@ func (s *server) adminUpdateMystery(ctx *gin.Context) {
 
 	beats := make([]models.VampireMysteryBeat, 0, len(body.Beats))
 	for i, b := range body.Beats {
-		if strings.TrimSpace(b.Body) == "" {
+		if strings.TrimSpace(b.Title) == "" && strings.TrimSpace(b.Description) == "" {
 			continue
 		}
-		beat := models.VampireMysteryBeat{Ordinal: i + 1, Body: b.Body}
+		beat := models.VampireMysteryBeat{Ordinal: i + 1, Title: b.Title, Description: b.Description}
 		if b.ID != "" {
 			bid, err := uuid.Parse(b.ID)
 			if err != nil {

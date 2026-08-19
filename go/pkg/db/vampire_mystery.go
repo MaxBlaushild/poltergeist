@@ -118,7 +118,11 @@ func (h *vampireHandler) ReplaceMysteryBeats(ctx context.Context, mysteryID uuid
 			}
 			if err := tx.Model(&models.VampireMysteryBeat{}).
 				Where("id = ?", beats[i].ID).
-				Updates(map[string]interface{}{"ordinal": beats[i].Ordinal, "body": beats[i].Body}).Error; err != nil {
+				Updates(map[string]interface{}{
+					"ordinal":     beats[i].Ordinal,
+					"title":       beats[i].Title,
+					"description": beats[i].Description,
+				}).Error; err != nil {
 				return err
 			}
 		}
