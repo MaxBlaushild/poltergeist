@@ -549,6 +549,12 @@ type VampireHandle interface {
 	ListSecretBeatLinksForMysteries(ctx context.Context, mysteryIDs []uuid.UUID) ([]SecretBeatLink, error)
 	ListAllBeats(ctx context.Context) ([]MysteryBeat, error)
 	CountBeatsByMystery(ctx context.Context) (map[uuid.UUID]int, error)
+	// ListAllSecrets / ListAllMysteryBeatOptions — see
+	// vampire_secrets_admin.go. Power the Super Admin Secrets tab: a flat,
+	// sortable/filterable view of every secret in the system, plus its
+	// "pick a character + a beat" creation form.
+	ListAllSecrets(ctx context.Context) ([]SecretRow, error)
+	ListAllMysteryBeatOptions(ctx context.Context) ([]MysteryBeatOption, error)
 	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []MysteryBeat) error
 	// Character secrets, scoped to a mystery (or subplot — same table).
 	ListSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireSecret, error)

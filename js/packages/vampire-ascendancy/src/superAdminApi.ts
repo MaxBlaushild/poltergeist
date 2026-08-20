@@ -204,6 +204,36 @@ export const adminUpdateSecretBody = (secretId: string, body: string) =>
   admin<{ ok: boolean }>(`/secrets/${secretId}`, { method: 'PUT', body: JSON.stringify({ body }) });
 export const adminDeleteSecret = (secretId: string) => admin<{ ok: boolean }>(`/secrets/${secretId}`, { method: 'DELETE' });
 
+// ---- Secrets tab: every secret in the system, flat, plus its creation
+// form ----
+export interface AdminSecretRow {
+  id: string;
+  characterId: string;
+  characterName: string;
+  mysteryId: string;
+  mysteryName: string;
+  isSubplot: boolean;
+  beatId: string | null;
+  beatTitle: string | null;
+  body: string;
+}
+export const adminListAllSecrets = () => admin<{ secrets: AdminSecretRow[] }>('/secrets');
+
+// A beat is picked together with which mystery/subplot it's for — a beat
+// shared across several appears once per mystery, since a secret must
+// belong to exactly one story.
+export interface AdminMysteryBeatOption {
+  mysteryId: string;
+  mysteryName: string;
+  isSubplot: boolean;
+  beatId: string;
+  beatTitle: string;
+}
+export const adminListMysteryBeatOptions = () => admin<{ options: AdminMysteryBeatOption[] }>('/mystery-beat-options');
+
+export const adminCreateSecret = (body: { characterId: string; mysteryId: string; beatId: string; body: string }) =>
+  admin<{ id: string }>('/secrets', { method: 'POST', body: JSON.stringify(body) });
+
 // ---- Super users ----
 export interface AdminSuperUser {
   userId: string;

@@ -212,6 +212,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.POST("/mysteries/:id/beats/:beatId/secrets", s.adminCreateBeatSecret)
 	admin.PUT("/secrets/:secretId", s.adminUpdateSecretBody)
 	admin.DELETE("/secrets/:secretId", s.adminDeleteSecret)
+	// Secrets tab — every secret in the system, flat, plus its beat picker
+	// (mystery+beat pairs) and creation form.
+	admin.GET("/secrets", s.adminListAllSecrets)
+	admin.POST("/secrets", s.adminCreateSecretFlat)
+	admin.GET("/mystery-beat-options", s.adminListMysteryBeatOptions)
 	admin.GET("/super-users", s.adminListSuperUsers)
 	admin.POST("/super-users", s.adminAddSuperUser)
 	admin.DELETE("/super-users/:userId", s.adminRemoveSuperUser)

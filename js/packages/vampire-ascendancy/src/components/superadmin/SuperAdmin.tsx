@@ -8,9 +8,10 @@ import { SuperAdminCharacters } from './SuperAdminCharacters';
 import { SuperAdminHouses } from './SuperAdminHouses';
 import { SuperAdminItems } from './SuperAdminItems';
 import { SuperAdminMysteries } from './SuperAdminMysteries';
+import { SuperAdminSecrets } from './SuperAdminSecrets';
 import { SuperAdminUsers } from './SuperAdminUsers';
 
-type Tab = 'mysteries' | 'subplots' | 'characters' | 'houses' | 'items' | 'users';
+type Tab = 'mysteries' | 'subplots' | 'characters' | 'secrets' | 'houses' | 'items' | 'users';
 type Status = 'checking' | 'ok' | 'forbidden' | 'signed-out';
 
 // The shared content library editor — characters, houses, items, and quiz
@@ -63,6 +64,7 @@ const SuperAdminConsole = () => {
     { id: 'mysteries', label: 'Mysteries' },
     { id: 'subplots', label: 'Sub-plots' },
     { id: 'characters', label: 'Characters' },
+    { id: 'secrets', label: 'Secrets' },
     { id: 'houses', label: 'Houses' },
     { id: 'items', label: 'Items' },
     { id: 'users', label: 'Super Users' },
@@ -103,6 +105,7 @@ const SuperAdminConsole = () => {
       {tab === 'mysteries' && <SuperAdminMysteries isSubplot={false} />}
       {tab === 'subplots' && <SuperAdminMysteries isSubplot={true} />}
       {tab === 'characters' && <SuperAdminCharacters />}
+      {tab === 'secrets' && <SuperAdminSecrets />}
       {tab === 'houses' && <SuperAdminHouses />}
       {tab === 'items' && <SuperAdminItems />}
       {tab === 'users' && <SuperAdminUsers />}
