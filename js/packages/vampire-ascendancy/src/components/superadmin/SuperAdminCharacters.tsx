@@ -5,19 +5,25 @@ import {
   adminGetCharacter,
   adminUpdateCharacter,
   adminGenerateCharacterTags,
+  adminListMysteries,
+  adminGetMystery,
+  adminGetCharacterContentForMystery,
+  adminUpdateCharacterContentForMystery,
 } from '../../superAdminApi';
-import type { AdminCharacter } from '../../superAdminApi';
+import type { AdminCharacter, AdminMystery, AdminMysteryBeat, AdminMysterySecret } from '../../superAdminApi';
 import type { GMCharacterFull } from '../../gmApi';
 import type { House } from '../../types';
 import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
-import { Field } from './SuperAdminShared';
+import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
-// The shared character roster: pre-event bio, tags. Secrets, post-Act-1
-// context, and missions are all mystery-scoped now — edited from the
-// Mysteries tab's per-character content editor instead (see
-// MYSTERY_REQUIREMENTS.md). Sigils, portraits, and the real guest playing a
-// character are per-instance — see the GM console's Players tab for those.
+// The shared character roster: pre-event bio, tags, and — per mystery —
+// secrets. Missions and post-Act-1 context stay Mysteries-tab-only for now
+// (see MYSTERY_REQUIREMENTS.md); secrets are common enough to author
+// character-first (pick who, then which mystery, then what they know) that
+// they're also editable from here, not just mystery-first. Sigils,
+// portraits, and the real guest playing a character are per-instance — see
+// the GM console's Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -214,9 +220,11 @@ const CharacterEditor = ({
       <Field label="Pre-event bio">
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />
       </Field>
+
+      <CharacterSecretsByMystery characterId={c.id} />
       <p className="text-[11px] text-bone/40 -mt-1">
-        Secrets, missions, and post-Act-1 context are all mystery-scoped now — edit them from the
-        Mysteries tab's per-character content editor instead.
+        Missions and post-Act-1 context are still mystery-scoped and edited from the Mysteries tab's
+        per-character content editor instead.
       </p>
 
       <div className="flex items-center gap-3">
@@ -226,6 +234,146 @@ const CharacterEditor = ({
           className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
         >
           {busy ? 'Saving…' : 'Save character'}
+        </button>
+        {note && <span className="text-bone/60 text-sm">{note}</span>}
+      </div>
+    </div>
+  );
+};
+
+// Character-first secrets: pick which mystery/sub-plot, then edit this
+// character's secrets for it (each with a beat) — the reverse direction of
+// the Mysteries tab's own "walk the cast" editor, for when it's easier to
+// start from a character you're already looking at. Both write to the same
+// place (PUT .../content), so edits from either side stay in sync.
+const CharacterSecretsByMystery = ({ characterId }: { characterId: string }) => {
+  const [mysteries, setMysteries] = useState<AdminMystery[]>([]);
+  const [mysteryId, setMysteryId] = useState('');
+
+  useEffect(() => {
+    adminListMysteries()
+      .then((d) => setMysteries(d.mysteries))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <Field label="Secrets — pick a mystery or sub-plot to add or edit this character's secrets for it">
+      <select
+        className="w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm"
+        value={mysteryId}
+        onChange={(e) => setMysteryId(e.target.value)}
+      >
+        <option value="">— choose a mystery or sub-plot —</option>
+        {mysteries.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+            {m.isSubplot ? ' (sub-plot)' : ''}
+          </option>
+        ))}
+      </select>
+      {mysteryId && <SecretsForMystery key={mysteryId} characterId={characterId} mysteryId={mysteryId} />}
+    </Field>
+  );
+};
+
+const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; mysteryId: string }) => {
+  const [beats, setBeats] = useState<AdminMysteryBeat[]>([]);
+  const [secrets, setSecrets] = useState<AdminMysterySecret[] | null>(null);
+  // Missions/context aren't shown here, but the save endpoint replaces a
+  // character's whole mystery-scoped content in one call — load and echo
+  // them back unchanged so saving secrets from here doesn't clobber
+  // whatever's already set on the Mysteries tab.
+  const [missions, setMissions] = useState<Parameters<typeof adminUpdateCharacterContentForMystery>[2]['missions']>(
+    []
+  );
+  const [postAct1Context, setPostAct1Context] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSecrets(null);
+    setNote(null);
+    Promise.all([adminGetMystery(mysteryId), adminGetCharacterContentForMystery(mysteryId, characterId)])
+      .then(([m, content]) => {
+        setBeats(m.beats);
+        setSecrets(content.secrets);
+        setMissions(content.missions);
+        setPostAct1Context(content.postAct1Context);
+      })
+      .catch((e) => setNote(e instanceof ApiError ? e.message : 'Could not load secrets for this mystery.'));
+  }, [mysteryId, characterId]);
+
+  if (!secrets) return <p className="text-bone/50 text-xs mt-1.5">{note || 'Loading…'}</p>;
+
+  const input = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
+
+  const save = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminUpdateCharacterContentForMystery(mysteryId, characterId, {
+        secrets: secrets.map((s) => ({ body: s.body, beatId: s.beatId })),
+        missions,
+        postAct1Context,
+      });
+      setNote('Saved.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Save failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-md border border-gold/25 bg-black/20 p-3">
+      {secrets.length === 0 && (
+        <p className="text-gold/80 text-xs mb-2">
+          No secrets yet for this mystery — this character can't be invited to a Toast running it
+          until they have at least one.
+        </p>
+      )}
+      <ListEditor
+        label="Secrets"
+        addLabel="+ Add secret"
+        onAdd={() => setSecrets([...secrets, { ordinal: secrets.length + 1, body: '', beatId: null }])}
+      >
+        {secrets.map((s, i) => (
+          <div key={i} className="flex gap-2 items-start">
+            <span className="text-gold text-xs mt-2 w-4">{i + 1}</span>
+            <div className="flex-1 flex flex-col gap-1.5">
+              <textarea
+                className={input}
+                rows={2}
+                value={s.body}
+                onChange={(e) => setSecrets(secrets.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
+              />
+              <select
+                className={input}
+                value={s.beatId ?? ''}
+                onChange={(e) =>
+                  setSecrets(secrets.map((x, j) => (j === i ? { ...x, beatId: e.target.value || null } : x)))
+                }
+              >
+                <option value="">— which beat does this reveal? —</option>
+                {beats.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.title || b.description.slice(0, 60) || '(untitled beat)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <RemoveBtn onClick={() => setSecrets(secrets.filter((_, j) => j !== i))} />
+          </div>
+        ))}
+      </ListEditor>
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
+        >
+          {busy ? 'Saving…' : 'Save secrets'}
         </button>
         {note && <span className="text-bone/60 text-sm">{note}</span>}
       </div>
