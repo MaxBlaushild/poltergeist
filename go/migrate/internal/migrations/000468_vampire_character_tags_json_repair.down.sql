@@ -1,0 +1,3 @@
+-- No-op: this is a one-time data repair (stripping leftover JSON syntax
+-- fragments from corrupted tag arrays), not a schema change, and the
+-- original corrupted values aren't worth restoring.

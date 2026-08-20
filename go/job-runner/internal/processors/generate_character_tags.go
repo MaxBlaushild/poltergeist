@@ -54,7 +54,11 @@ func (p *GenerateCharacterTagsProcessor) ProcessTask(ctx context.Context, task *
 		_ = v.SetCharacterTagsStatus(ctx, payload.CharacterID, models.CharacterTagsStatusFailed, err.Error())
 		return fmt.Errorf("deep priest tag generation failed for character %s: %w", payload.CharacterID, err)
 	}
-	tags := parseCharacterTags(ans.Answer)
+	tags, err := parseCharacterTagsAnswer(ans.Answer)
+	if err != nil {
+		_ = v.SetCharacterTagsStatus(ctx, payload.CharacterID, models.CharacterTagsStatusFailed, err.Error())
+		return fmt.Errorf("failed to parse oracle response for character %s: %w (raw: %q)", payload.CharacterID, err, ans.Answer)
+	}
 	if len(tags) == 0 {
 		_ = v.SetCharacterTagsStatus(ctx, payload.CharacterID, models.CharacterTagsStatusFailed, "the oracle returned no usable tags")
 		return fmt.Errorf("no tags parsed from oracle response for character %s: %q", payload.CharacterID, ans.Answer)
@@ -111,27 +115,55 @@ func buildCharacterTagsPrompt(c *models.VampireCharacter) string {
 			fmt.Fprintf(&b, "- %s\n", m.Prompt)
 		}
 	}
-	fmt.Fprintf(&b, "\nReply with EXACTLY a comma-separated list of %d-%d tags and nothing else — no numbering, no explanation. Each tag lowercase, one to three words, no trailing punctuation.\nExample: gambler, risk taker, secretive, loyal to house\n", 4, maxCharacterTags)
+	// The Fount forces JSON-object output on every completion regardless of
+	// what's asked for (see fount-of-erebos), so — unlike an earlier
+	// version of this prompt that asked for a bare comma-separated list and
+	// got it back JSON-wrapped anyway (garbling a naive comma-split) — ask
+	// for the JSON shape it's already going to produce and parse that.
+	fmt.Fprintf(&b, "\nReturn JSON only, shaped exactly like this: {\"tags\": [\"tag one\", \"tag two\", ...]} — %d to %d tags, nothing else. Each tag lowercase, one to three words, no trailing punctuation. Do not output markdown or commentary outside the JSON object.\n", 4, maxCharacterTags)
 	return b.String()
 }
 
-// parseCharacterTags turns the oracle's comma-separated reply into a
-// clean, deduped, capped tag list. Falls back to splitting on newlines if
-// the model ignored the comma-separated instruction.
-func parseCharacterTags(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	sep := ","
-	if !strings.Contains(raw, ",") && strings.Contains(raw, "\n") {
-		sep = "\n"
-	}
-	parts := strings.Split(raw, sep)
+// characterTagsEnvelope is the {"tags": [...]} shape the prompt asks for.
+// Tags is left as json.RawMessage so parseCharacterTagsAnswer can also
+// recover from the oracle sending a comma-separated string instead of a
+// real array, rather than failing outright.
+type characterTagsEnvelope struct {
+	Tags json.RawMessage `json:"tags"`
+}
 
-	seen := make(map[string]bool, len(parts))
-	tags := make([]string, 0, len(parts))
-	for _, p := range parts {
+// parseCharacterTagsAnswer parses the oracle's JSON reply (the Fount always
+// returns JSON — see buildCharacterTagsPrompt) into a clean, deduped,
+// capped tag list. extractGeneratedJSONObject strips markdown fences if
+// the model added any, matching the pattern every other JSON-mode
+// processor in this package uses.
+func parseCharacterTagsAnswer(raw string) ([]string, error) {
+	var env characterTagsEnvelope
+	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(raw)), &env); err != nil {
+		return nil, fmt.Errorf("could not parse oracle response as JSON: %w", err)
+	}
+
+	var asArray []string
+	if err := json.Unmarshal(env.Tags, &asArray); err == nil {
+		return sanitizeCharacterTags(asArray), nil
+	}
+
+	// Defense-in-depth: if the oracle ignored the array instruction and
+	// sent "tags" as one comma-separated string instead, salvage it rather
+	// than saving that raw string as a single garbage tag.
+	var asString string
+	if err := json.Unmarshal(env.Tags, &asString); err == nil {
+		return sanitizeCharacterTags(strings.Split(asString, ",")), nil
+	}
+
+	return nil, fmt.Errorf(`the oracle's "tags" field was neither a list of strings nor a comma-separated string`)
+}
+
+// sanitizeCharacterTags cleans, dedupes, and caps the oracle's proposed tags.
+func sanitizeCharacterTags(raw []string) []string {
+	seen := make(map[string]bool, len(raw))
+	tags := make([]string, 0, len(raw))
+	for _, p := range raw {
 		t := strings.ToLower(strings.Trim(strings.TrimSpace(p), ".- \t\"'•"))
 		if t == "" || seen[t] {
 			continue
