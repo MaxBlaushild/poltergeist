@@ -138,6 +138,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	// choose from (see character_pool.go).
 	gm.GET("/character-pool", s.gmGetCharacterPool)
 	gm.PUT("/character-pool", s.gmSetCharacterPool)
+	gm.GET("/character-pool/coverage", s.gmGetBeatCoverage)
 	gm.GET("/characters", s.gmListCharacters)
 	gm.GET("/characters/:id", s.gmGetCharacter)
 	gm.PUT("/characters/:id/portrait", s.gmSetCharacterPortrait)

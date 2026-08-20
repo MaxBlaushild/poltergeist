@@ -380,6 +380,15 @@ export const gmResendInvite = (id: string) =>
 export const gmGetCharacterPool = () => gm<{ characterIds: string[] }>('/character-pool');
 export const gmSetCharacterPool = (characterIds: string[]) =>
   gm<{ ok: boolean }>('/character-pool', { method: 'PUT', body: JSON.stringify({ characterIds }) });
+// Beats for this Toast's mystery + subplots, plus one row per secret that
+// reveals one of them — combined client-side with whichever characters are
+// currently checked (before saving) to show a live "how many secrets in my
+// current selection touch this beat" pill per beat.
+export interface GMBeatCoverage {
+  beats: { id: string; title: string }[];
+  secretBeatLinks: { characterId: string; beatId: string }[];
+}
+export const gmGetBeatCoverage = () => gm<GMBeatCoverage>('/character-pool/coverage');
 
 // ---- Co-Hosts tab: Host/Co-Host management ----
 export interface GMAdminRow {

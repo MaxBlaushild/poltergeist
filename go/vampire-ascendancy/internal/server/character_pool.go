@@ -72,3 +72,36 @@ func (s *server) gmSetCharacterPool(ctx *gin.Context) {
 	s.logGM(ctx, "set_character_pool", map[string]interface{}{"count": len(ids)})
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
+
+// GET /gm/character-pool/coverage — the beats belonging to this instance's
+// mystery and its selected subplots, plus one row per secret that reveals
+// one of them. The frontend combines this with whichever characters are
+// currently checked (before saving) to show a live "N secrets among your
+// current selection touch this beat" pill per beat — so a Host can see
+// gaps in the story's coverage while still deciding, not just after
+// saving.
+func (s *server) gmGetBeatCoverage(ctx *gin.Context) {
+	v := s.dbClient.Vampire()
+	mysteryIDs := mysteryAndSubplotIDsFromContext(ctx)
+
+	beats, err := v.ListBeatsForMysteries(ctx, mysteryIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	links, err := v.ListSecretBeatLinksForMysteries(ctx, mysteryIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	beatsOut := make([]gin.H, 0, len(beats))
+	for _, b := range beats {
+		beatsOut = append(beatsOut, gin.H{"id": b.ID, "title": b.Title})
+	}
+	linksOut := make([]gin.H, 0, len(links))
+	for _, l := range links {
+		linksOut = append(linksOut, gin.H{"characterId": l.CharacterID, "beatId": l.BeatID})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"beats": beatsOut, "secretBeatLinks": linksOut})
+}

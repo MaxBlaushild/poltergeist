@@ -542,6 +542,11 @@ type VampireHandle interface {
 	// subplots via vampire_mystery_beat_links) — see MysteryBeat and
 	// ReplaceMysteryBeats' comments in vampire_mystery.go.
 	ListBeatsForMystery(ctx context.Context, mysteryID uuid.UUID) ([]MysteryBeat, error)
+	// ListBeatsForMysteries / ListSecretBeatLinksForMysteries — see
+	// vampire_mystery.go. Power the Character Pool tab's beat-coverage
+	// pills (an instance's main mystery plus its selected subplots).
+	ListBeatsForMysteries(ctx context.Context, mysteryIDs []uuid.UUID) ([]MysteryBeat, error)
+	ListSecretBeatLinksForMysteries(ctx context.Context, mysteryIDs []uuid.UUID) ([]SecretBeatLink, error)
 	ListAllBeats(ctx context.Context) ([]MysteryBeat, error)
 	CountBeatsByMystery(ctx context.Context) (map[uuid.UUID]int, error)
 	ReplaceMysteryBeats(ctx context.Context, mysteryID uuid.UUID, beats []MysteryBeat) error

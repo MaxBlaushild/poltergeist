@@ -171,6 +171,73 @@ func (h *vampireHandler) ListAllBeats(ctx context.Context) ([]MysteryBeat, error
 	return out, nil
 }
 
+// ListBeatsForMysteries unions the beats attached to any of the given
+// mysteries (e.g. an instance's main mystery plus its selected subplots —
+// see mysteryAndSubplotIDsFromContext), deduped by beat id. Ordered by
+// title rather than ordinal, since a beat's per-mystery position isn't
+// meaningful once mixed across several mysteries' own separate orderings —
+// used by the Character Pool tab's beat-coverage pills, not the Story tab.
+func (h *vampireHandler) ListBeatsForMysteries(ctx context.Context, mysteryIDs []uuid.UUID) ([]MysteryBeat, error) {
+	if len(mysteryIDs) == 0 {
+		return []MysteryBeat{}, nil
+	}
+	var links []models.VampireMysteryBeatLink
+	if err := h.db.WithContext(ctx).Where("mystery_id IN ?", mysteryIDs).Find(&links).Error; err != nil {
+		return nil, err
+	}
+	if len(links) == 0 {
+		return []MysteryBeat{}, nil
+	}
+	seen := make(map[uuid.UUID]bool, len(links))
+	ids := make([]uuid.UUID, 0, len(links))
+	for _, l := range links {
+		if !seen[l.BeatID] {
+			seen[l.BeatID] = true
+			ids = append(ids, l.BeatID)
+		}
+	}
+	var beatRows []models.VampireMysteryBeat
+	if err := h.db.WithContext(ctx).Where("id IN ?", ids).Order("title ASC").Find(&beatRows).Error; err != nil {
+		return nil, err
+	}
+	counts, err := h.countLinksByBeat(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MysteryBeat, 0, len(beatRows))
+	for _, b := range beatRows {
+		out = append(out, MysteryBeat{ID: b.ID, Title: b.Title, Description: b.Description, LinkCount: counts[b.ID]})
+	}
+	return out, nil
+}
+
+// SecretBeatLink is one secret's (character, beat) pair — one row per
+// secret that has a beat assigned, used to compute "how many of these
+// characters' secrets touch this beat" coverage counts.
+type SecretBeatLink struct {
+	CharacterID uuid.UUID
+	BeatID      uuid.UUID
+}
+
+// ListSecretBeatLinksForMysteries returns one row per secret with a beat
+// assigned, across the given mysteries — the Character Pool tab's
+// beat-coverage pills combine this with the frontend's current selection
+// to count, per beat, how many secrets among the characters picked so far
+// touch it (recomputed locally on every toggle, no round trip needed).
+func (h *vampireHandler) ListSecretBeatLinksForMysteries(ctx context.Context, mysteryIDs []uuid.UUID) ([]SecretBeatLink, error) {
+	if len(mysteryIDs) == 0 {
+		return []SecretBeatLink{}, nil
+	}
+	var out []SecretBeatLink
+	if err := h.db.WithContext(ctx).Model(&models.VampireSecret{}).
+		Select("character_id, beat_id").
+		Where("mystery_id IN ? AND beat_id IS NOT NULL", mysteryIDs).
+		Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // countLinksByBeat is a helper for ListBeatsForMystery/ListAllBeats — how
 // many mysteries/subplots each of the given beats is currently attached to.
 func (h *vampireHandler) countLinksByBeat(ctx context.Context, beatIDs []uuid.UUID) (map[uuid.UUID]int, error) {
