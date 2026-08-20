@@ -406,7 +406,7 @@ const AttachBeatPicker = ({ excludeIds, onPick }: { excludeIds: string[]; onPick
 // happen immediately per-secret (not deferred to "Save"), same posture as
 // the character-centric editor's own save button.
 const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminMysteryBeat }) => {
-  const [characters, setCharacters] = useState<AdminCharacter[]>([]);
+  const [characters, setCharacters] = useState<AdminCharacter[] | null>(null);
   const [secrets, setSecrets] = useState<AdminBeatSecret[] | null>(null);
   const [newCharacterId, setNewCharacterId] = useState('');
   const [newBody, setNewBody] = useState('');
@@ -416,18 +416,21 @@ const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminM
   const load = () => {
     adminListBeatSecrets(mysteryId, beat.id)
       .then((d) => setSecrets(d.secrets))
-      .catch(() => setNote('Could not load secrets for this beat.'));
+      .catch((e) => setNote(e instanceof Error ? e.message : 'Could not load secrets for this beat.'));
   };
 
   useEffect(() => {
+    // Was previously a silent .catch(() => {}) — a failure here left the
+    // character dropdown permanently empty (and "+ Add" permanently
+    // disabled) with no indication anything had gone wrong.
     adminListCharacters()
       .then((d) => setCharacters(d.characters.filter((c) => c.roleType === 'player')))
-      .catch(() => {});
+      .catch((e) => setNote(e instanceof Error ? e.message : 'Could not load the character list.'));
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mysteryId, beat.id]);
 
-  const characterName = (id: string) => characters.find((c) => c.id === id)?.name || '(unknown character)';
+  const characterName = (id: string) => characters?.find((c) => c.id === id)?.name || '(unknown character)';
 
   const addSecret = async () => {
     if (!newCharacterId || !newBody.trim()) return;
@@ -478,34 +481,43 @@ const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminM
           ))}
         </>
       )}
-      <div className="flex gap-2 items-start pt-2 border-t border-gold/10">
-        <select
-          className={`${input} w-36 shrink-0`}
-          value={newCharacterId}
-          onChange={(e) => setNewCharacterId(e.target.value)}
-        >
-          <option value="">— character —</option>
-          {characters.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <textarea
-          className={input}
-          rows={2}
-          placeholder="What they know…"
-          value={newBody}
-          onChange={(e) => setNewBody(e.target.value)}
-        />
-        <button
-          onClick={addSecret}
-          disabled={busy || !newCharacterId || !newBody.trim()}
-          className="shrink-0 px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40"
-        >
-          + Add
-        </button>
-      </div>
+      {characters === null ? (
+        <p className="text-bone/50 text-xs">Loading the cast…</p>
+      ) : characters.length === 0 ? (
+        <p className="text-gold/80 text-xs">
+          No playable characters exist yet — add some from the Characters tab first.
+        </p>
+      ) : (
+        <div className="flex gap-2 items-start pt-2 border-t border-gold/10">
+          <select
+            className={`${input} w-36 shrink-0`}
+            value={newCharacterId}
+            onChange={(e) => setNewCharacterId(e.target.value)}
+          >
+            <option value="">— character —</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <textarea
+            className={input}
+            rows={2}
+            placeholder="What they know…"
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={addSecret}
+            disabled={busy || !newCharacterId || !newBody.trim()}
+            className="shrink-0 px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40"
+          >
+            + Add
+          </button>
+        </div>
+      )}
       {note && <p className="text-blood-bright text-xs">{note}</p>}
     </div>
   );

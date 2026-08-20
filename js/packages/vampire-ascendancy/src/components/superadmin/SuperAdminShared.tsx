@@ -29,7 +29,7 @@ export const ListEditor = ({
       <span className="text-[11px] uppercase tracking-[0.15em] text-bone/50">{label}</span>
       <div className="flex items-center gap-3">
         {extra}
-        <button onClick={onAdd} className="text-xs text-gold uppercase tracking-[0.15em]">
+        <button type="button" onClick={onAdd} className="text-xs text-gold uppercase tracking-[0.15em]">
           {addLabel}
         </button>
       </div>
@@ -40,6 +40,7 @@ export const ListEditor = ({
 
 export const RemoveBtn = ({ onClick, title = 'Remove' }: { onClick: () => void; title?: string }) => (
   <button
+    type="button"
     onClick={onClick}
     className="shrink-0 mt-1 w-6 h-6 rounded-full border border-blood/50 text-blood-bright text-xs leading-none"
     aria-label={title}
