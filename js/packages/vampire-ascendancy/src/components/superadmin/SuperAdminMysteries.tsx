@@ -488,9 +488,16 @@ const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminM
           No playable characters exist yet — add some from the Characters tab first.
         </p>
       ) : (
-        <div className="flex gap-2 items-start pt-2 border-t border-gold/10">
+        // Stacked, not side-by-side: this panel is nested several levels
+        // deep (ml-6 inside an already-narrow admin column), and cramming
+        // a fixed-width select + a textarea + a button into one flex row
+        // here squeezed the textarea down to a sliver too narrow to
+        // notice, let alone type into — the same select+textarea pairing
+        // stacks vertically in ContentForCharacter's secret rows above for
+        // the same reason.
+        <div className="flex flex-col gap-1.5 pt-2 border-t border-gold/10">
           <select
-            className={`${input} w-36 shrink-0`}
+            className={`${input}`}
             value={newCharacterId}
             onChange={(e) => setNewCharacterId(e.target.value)}
           >
@@ -512,7 +519,7 @@ const BeatSecretsPanel = ({ mysteryId, beat }: { mysteryId: string; beat: AdminM
             type="button"
             onClick={addSecret}
             disabled={busy || !newCharacterId || !newBody.trim()}
-            className="shrink-0 px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40"
+            className="self-start px-3 py-2 rounded-md border border-gold/50 text-gold text-xs uppercase tracking-[0.15em] disabled:opacity-40"
           >
             + Add
           </button>
