@@ -46,6 +46,25 @@ export const CharacterPoolSection = () => {
     return counts;
   }, [coverage, selected]);
 
+  // The flip side of beatCounts: which beats each character's own secrets
+  // touch, regardless of whether they're currently selected — shown on
+  // their card in the browser below so a Host can see "picking this
+  // character covers these beats" while deciding, not just the aggregate.
+  const beatsByCharacter = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    if (!coverage) return map;
+    for (const link of coverage.secretBeatLinks) {
+      if (!map.has(link.characterId)) map.set(link.characterId, new Set());
+      map.get(link.characterId)!.add(link.beatId);
+    }
+    return map;
+  }, [coverage]);
+  const beatTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    coverage?.beats.forEach((b) => map.set(b.id, b.title));
+    return map;
+  }, [coverage]);
+
   if (loading) return <Card title="Character Pool">Loading…</Card>;
 
   const toggle = (c: GMCharacter) =>
@@ -136,6 +155,23 @@ export const CharacterPoolSection = () => {
         selectedIds={selected}
         onSelect={toggle}
         emptyMessage="No characters match."
+        renderExtra={(c) => {
+          const beatIds = beatsByCharacter.get(c.id);
+          if (!beatIds || beatIds.size === 0) return null;
+          return (
+            <div className="flex gap-1 flex-wrap items-center mt-1">
+              <span className="text-[10px] uppercase tracking-[0.15em] text-bone/40">Reveals:</span>
+              {[...beatIds].map((beatId) => (
+                <span
+                  key={beatId}
+                  className="text-[10px] uppercase tracking-[0.15em] rounded-full border border-blood-bright/40 px-1.5 py-0.5 text-blood-bright/80"
+                >
+                  {beatTitleById.get(beatId) || '(untitled beat)'}
+                </span>
+              ))}
+            </div>
+          );
+        }}
       />
       {characters.length === 0 && (
         <p className="text-gold/80 text-xs mt-2">

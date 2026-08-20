@@ -22,6 +22,7 @@ export function CharacterBrowser<T extends CharacterLike>({
   selectedIds,
   onSelect,
   emptyMessage = 'No characters match.',
+  renderExtra,
 }: {
   characters: T[];
   // Single-select mode: which one row is highlighted.
@@ -32,6 +33,9 @@ export function CharacterBrowser<T extends CharacterLike>({
   selectedIds?: Set<string>;
   onSelect: (character: T) => void;
   emptyMessage?: string;
+  // Extra content rendered at the bottom of each row, below the tags —
+  // e.g. the Character Pool tab's "beats this character contributes to".
+  renderExtra?: (character: T) => React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
@@ -133,6 +137,7 @@ export function CharacterBrowser<T extends CharacterLike>({
                     ))}
                   </div>
                 )}
+                {renderExtra?.(c)}
               </div>
             );
           })
