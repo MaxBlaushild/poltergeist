@@ -138,6 +138,23 @@ func (s *server) createInstance(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// The character pool starts as every character eligible for this
+	// mystery (same set gmListCharacters/gmSetCharacterPool already treat
+	// as "eligible") — the Host trims it from the Character Pool tab
+	// rather than starting from an empty, unusable pool.
+	eligible, err := v.ListCharacterIDsWithSecretsForMystery(ctx, mysteryID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	poolIDs := make([]uuid.UUID, 0, len(eligible))
+	for id := range eligible {
+		poolIDs = append(poolIDs, id)
+	}
+	if err := v.SetCharacterPool(ctx, inst.ID, poolIDs); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	// Seed the game-state row up front so GET /gm/state never has to
 	// lazily create it on first read.
 	if _, err := v.GetGameState(ctx, inst.ID); err != nil {

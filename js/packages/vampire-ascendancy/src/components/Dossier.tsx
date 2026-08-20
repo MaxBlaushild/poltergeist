@@ -21,8 +21,7 @@ export const Dossier = ({ me }: { me: MeResponse }) => {
         <VampireMark className="w-14 h-14 mx-auto mb-3 opacity-80" />
         <h1 className="font-display text-2xl font-bold text-bone mb-2">Awaiting your seat</h1>
         <p className="text-bone/80">
-          You have entered the hall, but a role has not yet been bestowed upon you. The host will
-          seat you shortly.
+          You have entered the hall, but a role has not yet been bestowed upon you.
         </p>
       </CenteredNote>
     );

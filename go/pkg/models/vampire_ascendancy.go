@@ -402,16 +402,18 @@ type VampirePlayer struct {
 func (VampirePlayer) TableName() string { return "vampire_players" }
 
 // VampirePlayerInvite is a Host/Co-Host's invitation of a specific real
-// person (by phone number) to play a specific character in one instance.
-// Accepting it (after signing in/up with a real account, same as Hosts)
-// creates the VampirePlayer row. Replaces the old walk-up "pick your
-// character + sigil" login.
+// person (by phone number) to join one instance as a player. Character-
+// agnostic — accepting it (after signing in/up with a real account, same
+// as Hosts) creates the VampirePlayer row with no character yet; the
+// player picks their own from the instance's curated pool afterward (see
+// VampireInstanceCharacterPool). Replaces the old walk-up "pick your
+// character + sigil" login, and the version of this flow where a Host
+// assigned the character up front.
 type VampirePlayerInvite struct {
 	ID             uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt      time.Time  `gorm:"not null" json:"createdAt"`
 	UpdatedAt      time.Time  `gorm:"not null" json:"updatedAt"`
 	InstanceID     uuid.UUID  `gorm:"column:instance_id;not null" json:"instanceId"`
-	CharacterID    uuid.UUID  `gorm:"column:character_id;not null" json:"characterId"`
 	GuestName      string     `gorm:"column:guest_name;not null;default:''" json:"guestName"`
 	PhoneNumber    string     `gorm:"column:phone_number;not null;default:''" json:"phoneNumber"`
 	Token          string     `gorm:"not null" json:"-"`
@@ -419,8 +421,6 @@ type VampirePlayerInvite struct {
 	InvitedBy      *uuid.UUID `gorm:"column:invited_by" json:"invitedBy"`
 	AcceptedUserID *uuid.UUID `gorm:"column:accepted_user_id" json:"acceptedUserId"`
 	RespondedAt    *time.Time `gorm:"column:responded_at" json:"respondedAt"`
-
-	Character *VampireCharacter `gorm:"foreignKey:CharacterID" json:"character,omitempty"`
 }
 
 func (VampirePlayerInvite) TableName() string { return "vampire_player_invites" }
@@ -430,6 +430,19 @@ const (
 	PlayerInviteStatusAccepted = "accepted"
 	PlayerInviteStatusDeclined = "declined"
 )
+
+// VampireInstanceCharacterPool is one character a Host has made selectable
+// by players in one instance — curated from the full mystery-eligible set
+// (see MYSTERY_REQUIREMENTS.md's secrets-based eligibility). A character
+// not in the pool can't be self-selected at RSVP-accept time even if
+// otherwise eligible.
+type VampireInstanceCharacterPool struct {
+	InstanceID  uuid.UUID `gorm:"column:instance_id;primaryKey" json:"instanceId"`
+	CharacterID uuid.UUID `gorm:"column:character_id;primaryKey" json:"characterId"`
+	CreatedAt   time.Time `gorm:"not null" json:"createdAt"`
+}
+
+func (VampireInstanceCharacterPool) TableName() string { return "vampire_instance_character_pool" }
 
 type VampireMissionSubmission struct {
 	ID           uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`

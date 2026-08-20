@@ -445,21 +445,29 @@ type VampireHandle interface {
 	UpdatePlayerAssignment(ctx context.Context, instanceID, id uuid.UUID, characterID *uuid.UUID, guestLabel string, active bool) error
 
 	// Player invites ("RSVP") — a Host/Co-Host invites a specific real
-	// person (name + phone) to a specific character; accepting (with a real
-	// account) creates the VampirePlayer row. Replaces the old walk-up
-	// "pick your character + sigil" login.
-	// CreatePlayerInvite returns a *ConflictError if the character already
-	// has an active player, or another pending invite.
-	CreatePlayerInvite(ctx context.Context, instanceID, characterID uuid.UUID, guestName, phoneNumber string, invitedBy uuid.UUID, token string) (*models.VampirePlayerInvite, error)
+	// person (name + phone) to join as a player; accepting (with a real
+	// account) creates the VampirePlayer row with no character yet.
+	// Character-agnostic: the player picks their own afterward from the
+	// instance's curated pool — see the character pool methods below and
+	// ClaimCharacterForPlayer.
+	CreatePlayerInvite(ctx context.Context, instanceID uuid.UUID, guestName, phoneNumber string, invitedBy uuid.UUID, token string) (*models.VampirePlayerInvite, error)
 	ListPlayerInvites(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayerInvite, error)
 	GetPlayerInviteByToken(ctx context.Context, token string) (*models.VampirePlayerInvite, error)
 	DeletePlayerInvite(ctx context.Context, id uuid.UUID) error
 	// DeclinePlayerInvite returns a *ConflictError if the invite isn't pending.
 	DeclinePlayerInvite(ctx context.Context, token string) error
 	// AcceptPlayerInvite returns a *ConflictError if the invite isn't
-	// pending, or the user already holds a different character in this
-	// instance.
+	// pending, or the user already holds a character in this instance.
 	AcceptPlayerInvite(ctx context.Context, token string, userID uuid.UUID) (*models.VampirePlayer, error)
+
+	// Character pool — which mystery-eligible characters a Host has made
+	// selectable by players in this instance. See vampire_character_pool.go.
+	SetCharacterPool(ctx context.Context, instanceID uuid.UUID, characterIDs []uuid.UUID) error
+	ListCharacterPoolIDs(ctx context.Context, instanceID uuid.UUID) (map[uuid.UUID]bool, error)
+	// ClaimCharacterForPlayer returns a *ConflictError if the player already
+	// holds a character, the character isn't in the pool, or someone else
+	// already claimed it.
+	ClaimCharacterForPlayer(ctx context.Context, instanceID, playerID, characterID uuid.UUID) error
 
 	// Mission submissions
 	UpsertMissionSubmission(ctx context.Context, instanceID, playerID, missionID uuid.UUID, answer string) (*models.VampireMissionSubmission, error)

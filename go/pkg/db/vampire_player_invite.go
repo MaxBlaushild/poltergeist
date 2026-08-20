@@ -2,85 +2,37 @@ package db
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
 // CreatePlayerInvite invites a specific real person (by phone number) to
-// play a specific character in one instance. Returns a *ConflictError if
-// the character already has an accepted player, or already has another
-// pending invite (the partial unique index on (instance_id, character_id)
-// WHERE status = 'pending' enforces the latter at the DB level; this method
-// translates that into the same typed error the rest of the app uses).
-func (h *vampireHandler) CreatePlayerInvite(ctx context.Context, instanceID, characterID uuid.UUID, guestName, phoneNumber string, invitedBy uuid.UUID, token string) (*models.VampirePlayerInvite, error) {
-	var out *models.VampirePlayerInvite
-	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&models.VampirePlayer{}).
-			Where("instance_id = ? AND character_id = ? AND active = ?", instanceID, characterID, true).
-			Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return &ConflictError{Message: "this character is already played by someone in this Toast"}
-		}
-
-		// Defense-in-depth mirror of gm_players.go's gmListCharacters
-		// filter: a character with no secrets authored for this instance's
-		// mystery can't be invited, even if the id otherwise checks out
-		// (see MYSTERY_REQUIREMENTS.md).
-		var mysteryID uuid.UUID
-		if err := tx.Model(&models.VampireInstance{}).
-			Where("id = ?", instanceID).
-			Pluck("mystery_id", &mysteryID).Error; err != nil {
-			return err
-		}
-		var secretCount int64
-		if err := tx.Model(&models.VampireSecret{}).
-			Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
-			Count(&secretCount).Error; err != nil {
-			return err
-		}
-		if secretCount == 0 {
-			return &ConflictError{Message: "this character has no secrets written for this Toast's mystery yet"}
-		}
-
-		inv := &models.VampirePlayerInvite{
-			InstanceID:  instanceID,
-			CharacterID: characterID,
-			GuestName:   guestName,
-			PhoneNumber: phoneNumber,
-			Token:       token,
-			Status:      models.PlayerInviteStatusPending,
-			InvitedBy:   &invitedBy,
-		}
-		if err := tx.Create(inv).Error; err != nil {
-			return err
-		}
-		out = inv
-		return nil
-	})
-	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, &ConflictError{Message: "this character already has a pending invite — revoke it first"}
-		}
+// join this instance as a player. Character-agnostic — which character
+// they'll play is chosen by them, after accepting, from the instance's
+// curated pool (see VampireInstanceCharacterPool and ClaimCharacterForPlayer).
+func (h *vampireHandler) CreatePlayerInvite(ctx context.Context, instanceID uuid.UUID, guestName, phoneNumber string, invitedBy uuid.UUID, token string) (*models.VampirePlayerInvite, error) {
+	inv := &models.VampirePlayerInvite{
+		InstanceID:  instanceID,
+		GuestName:   guestName,
+		PhoneNumber: phoneNumber,
+		Token:       token,
+		Status:      models.PlayerInviteStatusPending,
+		InvitedBy:   &invitedBy,
+	}
+	if err := h.db.WithContext(ctx).Create(inv).Error; err != nil {
 		return nil, err
 	}
-	return out, nil
+	return inv, nil
 }
 
 // ListPlayerInvites returns every invite (any status) for an instance,
-// newest first, with the invited character preloaded — for the Invites tab.
+// newest first — for the Invites tab.
 func (h *vampireHandler) ListPlayerInvites(ctx context.Context, instanceID uuid.UUID) ([]models.VampirePlayerInvite, error) {
 	var invites []models.VampirePlayerInvite
 	if err := h.db.WithContext(ctx).
-		Preload("Character").
-		Preload("Character.House").
 		Where("instance_id = ?", instanceID).
 		Order("created_at DESC").
 		Find(&invites).Error; err != nil {
@@ -93,10 +45,7 @@ func (h *vampireHandler) ListPlayerInvites(ctx context.Context, instanceID uuid.
 // instance scoping needed, the token alone identifies it.
 func (h *vampireHandler) GetPlayerInviteByToken(ctx context.Context, token string) (*models.VampirePlayerInvite, error) {
 	var inv models.VampirePlayerInvite
-	if err := h.db.WithContext(ctx).
-		Preload("Character").
-		Preload("Character.House").
-		First(&inv, "token = ?", token).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&inv, "token = ?", token).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -134,8 +83,9 @@ func (h *vampireHandler) DeclinePlayerInvite(ctx context.Context, token string) 
 }
 
 // AcceptPlayerInvite marks the invite accepted and creates the player row
-// for the accepting (real, signed-in) account. Returns a *ConflictError if
-// the invite isn't pending, or the user already holds a different
+// for the accepting (real, signed-in) account — with no character yet; see
+// ClaimCharacterForPlayer for the self-select step that follows. Returns a
+// *ConflictError if the invite isn't pending, or the user already holds a
 // character in this instance.
 func (h *vampireHandler) AcceptPlayerInvite(ctx context.Context, token string, userID uuid.UUID) (*models.VampirePlayer, error) {
 	var out *models.VampirePlayer
@@ -171,13 +121,11 @@ func (h *vampireHandler) AcceptPlayerInvite(ctx context.Context, token string, u
 			return err
 		}
 
-		cid := inv.CharacterID
 		player := &models.VampirePlayer{
-			InstanceID:  inv.InstanceID,
-			UserID:      &userID,
-			CharacterID: &cid,
-			GuestLabel:  inv.GuestName,
-			Active:      true,
+			InstanceID: inv.InstanceID,
+			UserID:     &userID,
+			GuestLabel: inv.GuestName,
+			Active:     true,
 		}
 		if err := tx.Create(player).Error; err != nil {
 			return err
@@ -221,12 +169,4 @@ func (h *vampireHandler) ListPlayerInstancesForUser(ctx context.Context, userID 
 		return nil, err
 	}
 	return players, nil
-}
-
-// isUniqueViolation reports whether err is a Postgres unique_violation
-// (23505) — used to translate the one-pending-invite-per-character partial
-// unique index into a friendly *ConflictError.
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

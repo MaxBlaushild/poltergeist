@@ -82,18 +82,14 @@ export const acceptCoHostInvite = (token: string) =>
   request<{ instanceId: string }>(`/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });
 
 // ---- Player invites (RSVP) ----
+// Character-agnostic — no character to preview here; the invitee picks
+// their own after accepting (see api.ts's listSelectableCharacters/
+// chooseCharacter).
 export interface PlayerInvite {
   guestName: string;
   status: 'pending' | 'accepted' | 'declined';
   instanceId: string;
   instanceName?: string;
-  character?: {
-    id: string;
-    name: string;
-    title: string;
-    preEventInfo: string;
-    house?: string;
-  };
 }
 export const getPlayerInvite = (token: string) =>
   request<PlayerInvite>(`/rsvp/${encodeURIComponent(token)}`, undefined, false);

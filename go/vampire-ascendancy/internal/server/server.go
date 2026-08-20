@@ -106,6 +106,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	inst.GET("/games", s.withPlayer, s.getGames)
 	inst.GET("/inventory", s.withPlayer, s.getInventory)
 	inst.POST("/inventory/:id/target", s.withPlayer, s.setInventoryTarget)
+	// Self-select a character from the Host's curated pool, after accepting
+	// an invite — see character_self_select.go.
+	inst.GET("/selectable-characters", s.withPlayer, s.listSelectableCharacters)
+	inst.POST("/me/character", s.withPlayer, s.chooseCharacter)
 
 	// Admin routes — guarded by a real signed-in Host/Co-Host account
 	// (withInstanceAdmin), not the old shared passcode.
@@ -130,6 +134,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	gm.POST("/invites", s.gmCreateInvite)
 	gm.DELETE("/invites/:id", s.gmDeleteInvite)
 	gm.POST("/invites/:id/resend", s.gmResendInvite)
+	// Character Pool tab — which mystery-eligible characters players can
+	// choose from (see character_pool.go).
+	gm.GET("/character-pool", s.gmGetCharacterPool)
+	gm.PUT("/character-pool", s.gmSetCharacterPool)
 	gm.GET("/characters", s.gmListCharacters)
 	gm.GET("/characters/:id", s.gmGetCharacter)
 	gm.PUT("/characters/:id/portrait", s.gmSetCharacterPortrait)

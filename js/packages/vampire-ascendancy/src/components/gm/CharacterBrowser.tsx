@@ -9,19 +9,27 @@ interface CharacterLike {
   tags?: string[];
 }
 
-// The Invites tab's "who is this invite for" picker: search by name/bio,
-// filter by trait tags (musical, gambler, risk taker, …), and a fuller
-// preview per row (title, house, bio snippet, tags) than a bare name in a
-// dropdown ever gave. Tag filtering is "any of" — picking multiple tags
-// broadens the list, it doesn't require every tag on one character.
+// Search by name/bio, filter by trait tags (musical, gambler, risk taker,
+// …), and a fuller preview per row (title, house, bio snippet, tags) than
+// a bare name in a dropdown ever gave. Tag filtering is "any of" — picking
+// multiple tags broadens the list, it doesn't require every tag on one
+// character. Used for the Character Pool tab's curation picker and a
+// player's self-select at RSVP time (both multi/single via selectedIds),
+// and the Mysteries tab's per-character secrets editor (selectedId).
 export function CharacterBrowser<T extends CharacterLike>({
   characters,
   selectedId,
+  selectedIds,
   onSelect,
   emptyMessage = 'No characters match.',
 }: {
   characters: T[];
+  // Single-select mode: which one row is highlighted.
   selectedId?: string;
+  // Multi-select mode: which rows are highlighted/checkmarked. onSelect is
+  // still called with the clicked character either way — the caller
+  // decides whether that means "set" or "toggle in a set".
+  selectedIds?: Set<string>;
   onSelect: (character: T) => void;
   emptyMessage?: string;
 }) {
@@ -93,7 +101,7 @@ export function CharacterBrowser<T extends CharacterLike>({
           <p className="text-bone/50 text-sm p-2">{characters.length === 0 ? 'No characters yet.' : emptyMessage}</p>
         ) : (
           filtered.map((c) => {
-            const selected = selectedId === c.id;
+            const selected = selectedId === c.id || (selectedIds?.has(c.id) ?? false);
             return (
               <div
                 key={c.id}
@@ -103,6 +111,7 @@ export function CharacterBrowser<T extends CharacterLike>({
                 }`}
               >
                 <p className="text-bone text-sm font-semibold flex items-center flex-wrap gap-1.5">
+                  {selected && <span className="text-gold">✓</span>}
                   {c.name}
                   {c.house && (
                     <span className="text-[10px] uppercase tracking-[0.15em] rounded-full border border-blood/40 px-1.5 py-0.5 text-bone/60 font-normal">

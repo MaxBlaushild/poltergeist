@@ -11,10 +11,13 @@ import (
 )
 
 // Player invites: a Host/Co-Host invites a specific real person (name +
-// phone number) to play a specific character in their Toast. Replaces the
-// old walk-up "pick your character + sigil" login — the only way into an
-// instance as a player is now an accepted invite. See
-// MULTI_TENANT_REQUIREMENTS.md.
+// phone number) to join their Toast as a player. Character-agnostic — the
+// invite doesn't name a character; the invitee picks their own, from the
+// instance's curated pool (see character_pool.go), after accepting. Which
+// characters are even offerable is curated separately, on the Character
+// Pool tab. Replaces the old walk-up "pick your character + sigil" login,
+// and the version of this flow where a Host assigned the character up
+// front. See MULTI_TENANT_REQUIREMENTS.md and MYSTERY_REQUIREMENTS.md.
 
 // ---- Admin (gm-scoped): the Invites tab ----
 
@@ -27,34 +30,26 @@ func (s *server) gmListInvites(ctx *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(invites))
 	for _, inv := range invites {
-		row := gin.H{
+		out = append(out, gin.H{
 			"id":          inv.ID,
 			"guestName":   inv.GuestName,
 			"phoneNumber": inv.PhoneNumber,
 			"status":      inv.Status,
 			"createdAt":   inv.CreatedAt,
-		}
-		if inv.Character != nil {
-			ch := gin.H{"id": inv.Character.ID, "name": inv.Character.Name, "title": inv.Character.Title}
-			if inv.Character.House != nil {
-				ch["house"] = inv.Character.House.Name
-			}
-			row["character"] = ch
-		}
-		out = append(out, row)
+		})
 	}
 	ctx.JSON(http.StatusOK, gin.H{"invites": out})
 }
 
-// POST /gm/invites { guestName, phoneNumber, characterId } — invite a real
-// person to a character. Sends the RSVP link by SMS.
+// POST /gm/invites { guestName, phoneNumber } — invite a real person to
+// join as a player; they choose their own character after accepting. Sends
+// the RSVP link by SMS.
 func (s *server) gmCreateInvite(ctx *gin.Context) {
 	instanceID := instanceIDFromContext(ctx)
 	user := userFromContext(ctx)
 	var body struct {
 		GuestName   string `json:"guestName"`
 		PhoneNumber string `json:"phoneNumber"`
-		CharacterID string `json:"characterId"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -66,42 +61,27 @@ func (s *server) gmCreateInvite(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "a name and phone number are required"})
 		return
 	}
-	characterID, err := uuid.Parse(body.CharacterID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
-		return
-	}
 
 	v := s.dbClient.Vampire()
-	character, err := v.GetCharacterByID(ctx, characterID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if character == nil || character.RoleType != "player" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown character"})
-		return
-	}
-
 	token, err := genOpaqueToken()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	inv, err := v.CreatePlayerInvite(ctx, instanceID, characterID, guestName, phone, user.ID, token)
+	inv, err := v.CreatePlayerInvite(ctx, instanceID, guestName, phone, user.ID, token)
 	if err != nil {
 		conflictOrInternal(ctx, err)
 		return
 	}
 
-	if err := s.sendInviteSMS(ctx, guestName, phone, character.Name, token); err != nil {
+	if err := s.sendInviteSMS(ctx, guestName, phone, token); err != nil {
 		// The invite exists either way — a GM can Resend once the phone
 		// number's fixed, so don't fail the whole request over SMS delivery.
 		ctx.JSON(http.StatusOK, gin.H{"id": inv.ID, "warning": "invite created, but the text failed to send: " + err.Error()})
 		return
 	}
 
-	s.logGM(ctx, "create_invite", map[string]interface{}{"characterId": characterID.String(), "guestName": guestName})
+	s.logGM(ctx, "create_invite", map[string]interface{}{"guestName": guestName})
 	ctx.JSON(http.StatusOK, gin.H{"id": inv.ID})
 }
 
@@ -136,7 +116,7 @@ func (s *server) gmResendInvite(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	var found *inviteWithCharacterName
+	var found *inviteToResend
 	for _, inv := range invites {
 		if inv.ID != id {
 			continue
@@ -145,18 +125,14 @@ func (s *server) gmResendInvite(ctx *gin.Context) {
 			ctx.JSON(http.StatusConflict, gin.H{"error": "this invite is no longer pending"})
 			return
 		}
-		name := ""
-		if inv.Character != nil {
-			name = inv.Character.Name
-		}
-		found = &inviteWithCharacterName{token: inv.Token, guestName: inv.GuestName, phone: inv.PhoneNumber, characterName: name}
+		found = &inviteToResend{token: inv.Token, guestName: inv.GuestName, phone: inv.PhoneNumber}
 		break
 	}
 	if found == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
 		return
 	}
-	if err := s.sendInviteSMS(ctx, found.guestName, found.phone, found.characterName, found.token); err != nil {
+	if err := s.sendInviteSMS(ctx, found.guestName, found.phone, found.token); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -164,21 +140,20 @@ func (s *server) gmResendInvite(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-type inviteWithCharacterName struct {
-	token         string
-	guestName     string
-	phone         string
-	characterName string
+type inviteToResend struct {
+	token     string
+	guestName string
+	phone     string
 }
 
-// sendInviteSMS texts the RSVP link. Kept short (not the full bio — that's
-// on the RSVP page itself) since SMS bodies are metered per segment.
-func (s *server) sendInviteSMS(ctx *gin.Context, guestName, phone, characterName, token string) error {
+// sendInviteSMS texts the RSVP link. No character to name anymore — that's
+// chosen by the invitee after accepting, not known at invite time.
+func (s *server) sendInviteSMS(ctx *gin.Context, guestName, phone, token string) error {
 	if s.texterClient == nil {
 		return fmt.Errorf("texting is not configured")
 	}
 	link := fmt.Sprintf("%s/rsvp/%s", strings.TrimRight(s.siteURL, "/"), token)
-	body := fmt.Sprintf("%s, you're invited to play %s in a vampire murder-mystery night! See your character and RSVP: %s", guestName, characterName, link)
+	body := fmt.Sprintf("%s, you're invited to a vampire murder-mystery night! RSVP and choose your character: %s", guestName, link)
 	return s.texterClient.Text(ctx, &texter.Text{
 		Body:     body,
 		To:       phone,
@@ -189,9 +164,9 @@ func (s *server) sendInviteSMS(ctx *gin.Context, guestName, phone, characterName
 
 // ---- Public (RSVP page) ----
 
-// GET /rsvp/:token — the invite teaser: character name/title/house/bio and
-// who it's for. No account required. 404s for an unknown token so it can't
-// be used to probe for valid ones.
+// GET /rsvp/:token — the invite teaser: who it's for and which Toast. No
+// character to show yet (chosen after accepting) — no account required.
+// 404s for an unknown token so it can't be used to probe for valid ones.
 func (s *server) getPlayerInvite(ctx *gin.Context) {
 	token := ctx.Param("token")
 	inv, err := s.dbClient.Vampire().GetPlayerInviteByToken(ctx, token)
@@ -216,23 +191,11 @@ func (s *server) getPlayerInvite(ctx *gin.Context) {
 	if instance != nil {
 		resp["instanceName"] = instance.Name
 	}
-	if inv.Character != nil {
-		ch := gin.H{
-			"id":           inv.Character.ID,
-			"name":         inv.Character.Name,
-			"title":        inv.Character.Title,
-			"preEventInfo": inv.Character.PreEventInfo,
-		}
-		if inv.Character.House != nil {
-			ch["house"] = inv.Character.House.Name
-		}
-		resp["character"] = ch
-	}
 	ctx.JSON(http.StatusOK, resp)
 }
 
 // POST /rsvp/:token/decline — no account required; the token is the
-// credential. Frees the character up for the admin to re-invite someone else.
+// credential. Frees up an invite slot for the host to invite someone else.
 func (s *server) declinePlayerInvite(ctx *gin.Context) {
 	token := ctx.Param("token")
 	if err := s.dbClient.Vampire().DeclinePlayerInvite(ctx, token); err != nil {
@@ -243,8 +206,9 @@ func (s *server) declinePlayerInvite(ctx *gin.Context) {
 }
 
 // POST /rsvp/:token/accept — requires a signed-in account (email/password
-// or Google, same sign-up flow as Hosts). Creates the player row and
-// returns the instance id so the frontend can drop them straight into it.
+// or Google, same sign-up flow as Hosts). Creates the player row (with no
+// character yet — see character_self_select.go for the picker that follows)
+// and returns the instance id so the frontend can drop them straight into it.
 func (s *server) acceptPlayerInvite(ctx *gin.Context) {
 	token := ctx.Param("token")
 	user := userFromContext(ctx)

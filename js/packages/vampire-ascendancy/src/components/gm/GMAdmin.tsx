@@ -10,6 +10,7 @@ import { SubmissionsSection } from './SubmissionsSection';
 import { AwardsSection } from './AwardsSection';
 import { PlayersSection } from './PlayersSection';
 import { InvitesSection } from './InvitesSection';
+import { CharacterPoolSection } from './CharacterPoolSection';
 import { BroadcastSection } from './BroadcastSection';
 import { QuizSection } from './QuizSection';
 import { GamesScheduleSection } from './GamesScheduleSection';
@@ -33,6 +34,7 @@ type Tab =
   | 'standings'
   | 'notifications'
   | 'broadcast'
+  | 'characterPool'
   | 'invites'
   | 'players';
 
@@ -47,6 +49,7 @@ const GROUPS: { id: Group; label: string; tabs: { id: Tab; label: string }[] }[]
     label: 'Setup',
     tabs: [
       { id: 'content', label: 'Content' },
+      { id: 'characterPool', label: 'Character Pool' },
       { id: 'invites', label: 'Invites' },
       { id: 'players', label: 'Players' },
       { id: 'gamesSetup', label: 'Games' },
@@ -208,6 +211,7 @@ const GMConsole = () => {
       {tab === 'standings' && <StandingsSection />}
       {tab === 'notifications' && <BroadcastSection />}
       {tab === 'broadcast' && <BroadcastScreen />}
+      {tab === 'characterPool' && <CharacterPoolSection />}
       {tab === 'invites' && <InvitesSection />}
       {tab === 'players' && <PlayersSection />}
       {tab === 'cohosts' && <CoHostsSection />}

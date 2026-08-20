@@ -14,6 +14,7 @@ import { VampireMark } from './VampireMark';
 import { NotificationTakeover } from './NotificationTakeover';
 import { QuizTakeover } from './QuizTakeover';
 import { FinalReveal } from './FinalReveal';
+import { CharacterPicker } from './CharacterPicker';
 
 const DISMISSED_KEY = 'vampireDismissedNotif';
 const REVEAL_KEY = 'vampireRevealDismissed';
@@ -129,6 +130,14 @@ export const PlayerShell = () => {
         <p className="text-bone/85">The court could not be reached. Try again in a moment.</p>
       </Centered>
     );
+  }
+
+  // Accepted an invite but hasn't picked a character yet — the self-select
+  // step replaces what used to be a Host-assigned character. Takes over
+  // ahead of everything else below (quiz/notification/reveal are all
+  // meaningless without a character yet).
+  if (!me.character) {
+    return <CharacterPicker onChosen={reload} />;
   }
 
   const activeView: View = KNOWN_VIEWS.includes(view) ? view : 'summons';

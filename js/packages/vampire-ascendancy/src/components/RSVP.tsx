@@ -5,12 +5,13 @@ import type { PlayerInvite } from '../platformApi';
 import { ApiError } from '../api';
 import { useUserAuth } from '../userAuth';
 import { SignInForm } from './SignInForm';
-import { accentFor, houseLabel } from '../theme';
 import { VampireMark } from './VampireMark';
 
-// A player's invite, reached from the SMS link. Shows the character teaser
-// (name, title, house, pre-event bio) and lets them Accept (sign in/up,
-// same real-account flow as Hosts) or Decline (no account needed).
+// A player's invite, reached from the SMS link. Character-agnostic — no
+// preview here, since which character they'll play is chosen by them,
+// after accepting (see PlayerShell's character picker). Lets them Accept
+// (sign in/up, same real-account flow as Hosts) or Decline (no account
+// needed).
 export const RSVP = () => {
   const { token } = useParams();
   const { auth } = useUserAuth();
@@ -90,31 +91,17 @@ export const RSVP = () => {
     );
   }
 
-  const character = invite.character;
-  const accent = accentFor(character?.house);
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 gap-6">
       <div className="w-full max-w-sm rounded-lg border border-blood/50 bg-black/70 p-6 text-center">
+        <VampireMark className="w-12 h-12 mx-auto mb-4" />
         <p className="text-xs uppercase tracking-[0.4em] text-gold mb-4">
           {invite.instanceName || 'The Crimson Toast'}
         </p>
-        <p className="text-bone/60 uppercase tracking-[0.3em] text-xs">{invite.guestName}, you are</p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-bone">{character?.name}</h1>
-        {character?.title && <p className="text-bone/70 italic mt-1">{character.title}</p>}
-        {character?.house && (
-          <span
-            className="inline-block mt-3 px-3 py-1 rounded-full text-xs uppercase tracking-[0.25em] border"
-            style={{ color: accent, borderColor: accent }}
-          >
-            {houseLabel(character.house)}
-          </span>
-        )}
-        {character?.preEventInfo && (
-          <p className="mt-4 text-left text-bone/85 leading-relaxed whitespace-pre-wrap">
-            {character.preEventInfo}
-          </p>
-        )}
+        <p className="text-bone/60 uppercase tracking-[0.3em] text-xs">{invite.guestName}, you're invited</p>
+        <p className="mt-3 text-bone/85 leading-relaxed">
+          Accept to join the Court — you'll choose your own character once you're in.
+        </p>
 
         {error && <p className="text-blood-bright text-sm mt-4">{error}</p>}
 

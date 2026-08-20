@@ -51,6 +51,25 @@ export function getMe(): Promise<MeResponse> {
   return request<MeResponse>('/me');
 }
 
+// ---- Self-select a character, after accepting an invite ----
+// A player with no character yet (me.character === null) picks their own
+// from the Host's curated pool instead of one being assigned at invite
+// time — see PlayerShell's character-picker takeover.
+export interface SelectableCharacter {
+  id: string;
+  name: string;
+  title: string;
+  preEventInfo: string;
+  house?: string;
+  tags?: string[];
+}
+export function listSelectableCharacters(): Promise<{ characters: SelectableCharacter[] }> {
+  return request<{ characters: SelectableCharacter[] }>('/selectable-characters');
+}
+export function chooseCharacter(characterId: string): Promise<{ ok: boolean }> {
+  return request('/me/character', { method: 'POST', body: JSON.stringify({ characterId }) });
+}
+
 // ---- Public projector feed (no auth) ----
 async function publicGet<T>(instanceId: string, path: string): Promise<T> {
   const res = await fetch(`${API_BASE}/vampire-ascendancy/i/${instanceId}${path}`);

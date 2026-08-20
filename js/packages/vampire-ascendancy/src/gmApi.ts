@@ -354,24 +354,32 @@ export const gmRemovePlayerItem = (id: string) =>
 export const gmTransferPlayerItem = (id: string, playerId: string) =>
   gm<{ ok: boolean }>(`/player-items/${id}/owner`, { method: 'PUT', body: JSON.stringify({ playerId }) });
 
-// ---- Invites tab: text a real person a link to accept/decline a character ----
+// ---- Invites tab: text a real person a link to join as a player ----
+// Character-agnostic — the invitee picks their own character (from the
+// Character Pool tab's curated set) after accepting, instead of a Host
+// assigning one here.
 export interface GMInvite {
   id: string;
   guestName: string;
   phoneNumber: string;
   status: 'pending' | 'accepted' | 'declined';
   createdAt: string;
-  character?: { id: string; name: string; title: string; house?: string };
 }
 export const gmListInvites = () => gm<{ invites: GMInvite[] }>('/invites');
-export const gmCreateInvite = (guestName: string, phoneNumber: string, characterId: string) =>
+export const gmCreateInvite = (guestName: string, phoneNumber: string) =>
   gm<{ id: string; warning?: string }>('/invites', {
     method: 'POST',
-    body: JSON.stringify({ guestName, phoneNumber, characterId }),
+    body: JSON.stringify({ guestName, phoneNumber }),
   });
 export const gmDeleteInvite = (id: string) => gm<{ ok: boolean }>(`/invites/${id}`, { method: 'DELETE' });
 export const gmResendInvite = (id: string) =>
   gm<{ ok: boolean }>(`/invites/${id}/resend`, { method: 'POST' });
+
+// ---- Character Pool tab: which mystery-eligible characters players can
+// choose from when they self-select after accepting an invite ----
+export const gmGetCharacterPool = () => gm<{ characterIds: string[] }>('/character-pool');
+export const gmSetCharacterPool = (characterIds: string[]) =>
+  gm<{ ok: boolean }>('/character-pool', { method: 'PUT', body: JSON.stringify({ characterIds }) });
 
 // ---- Co-Hosts tab: Host/Co-Host management ----
 export interface GMAdminRow {
