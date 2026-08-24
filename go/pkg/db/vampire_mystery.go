@@ -481,9 +481,11 @@ func (h *vampireHandler) ListSecretsForBeat(ctx context.Context, beatID uuid.UUI
 
 // CreateSecretForCharacterMystery appends one new secret for a character in
 // a mystery, tied to the given beat. Ordinal is computed as "one past
-// however many secrets this character already has for this mystery" — fine
-// given ordinal is display-order only, never uniqueness-enforced (see the
-// model's comment).
+// however many secrets this character already has for this mystery" —
+// scoped to this mystery because the DB's uniqueness constraint on ordinal
+// is (character_id, mystery_id, ordinal), not just (character_id, ordinal):
+// the same character can be "secret #1" in more than one mystery/subplot
+// (see migration 000469).
 func (h *vampireHandler) CreateSecretForCharacterMystery(ctx context.Context, characterID, mysteryID uuid.UUID, beatID *uuid.UUID, body string) (*models.VampireSecret, error) {
 	var count int64
 	if err := h.db.WithContext(ctx).Model(&models.VampireSecret{}).

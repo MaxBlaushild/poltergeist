@@ -1,0 +1,5 @@
+ALTER TABLE vampire_secrets DROP CONSTRAINT IF EXISTS vampire_secrets_character_id_mystery_id_ordinal_key;
+ALTER TABLE vampire_secrets ADD CONSTRAINT vampire_secrets_character_id_ordinal_key UNIQUE (character_id, ordinal);
+
+ALTER TABLE vampire_missions DROP CONSTRAINT IF EXISTS vampire_missions_character_id_mystery_id_ordinal_key;
+ALTER TABLE vampire_missions ADD CONSTRAINT vampire_missions_character_id_ordinal_key UNIQUE (character_id, ordinal);
