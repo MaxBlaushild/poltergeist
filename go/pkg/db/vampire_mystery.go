@@ -480,24 +480,29 @@ func (h *vampireHandler) ListSecretsForBeat(ctx context.Context, beatID uuid.UUI
 }
 
 // CreateSecretForCharacterMystery appends one new secret for a character in
-// a mystery, tied to the given beat. Ordinal is computed as "one past
-// however many secrets this character already has for this mystery" —
-// scoped to this mystery because the DB's uniqueness constraint on ordinal
-// is (character_id, mystery_id, ordinal), not just (character_id, ordinal):
-// the same character can be "secret #1" in more than one mystery/subplot
-// (see migration 000469).
+// a mystery, tied to the given beat. Ordinal is computed as "one past the
+// highest ordinal this character already has for this mystery" — MAX, not
+// COUNT: once a secret has been deleted, the count of remaining secrets is
+// no longer contiguous with the ordinals still in use, so COUNT+1 could
+// recompute an ordinal that collides with one that survived the deletion
+// (the DB's uniqueness constraint on ordinal is (character_id, mystery_id,
+// ordinal), not just (character_id, ordinal) — see migration 000469).
 func (h *vampireHandler) CreateSecretForCharacterMystery(ctx context.Context, characterID, mysteryID uuid.UUID, beatID *uuid.UUID, body string) (*models.VampireSecret, error) {
-	var count int64
+	var maxOrdinal *int
 	if err := h.db.WithContext(ctx).Model(&models.VampireSecret{}).
 		Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
-		Count(&count).Error; err != nil {
+		Select("MAX(ordinal)").Scan(&maxOrdinal).Error; err != nil {
 		return nil, err
+	}
+	nextOrdinal := 1
+	if maxOrdinal != nil {
+		nextOrdinal = *maxOrdinal + 1
 	}
 	s := models.VampireSecret{
 		CharacterID: characterID,
 		MysteryID:   &mysteryID,
 		BeatID:      beatID,
-		Ordinal:     int(count) + 1,
+		Ordinal:     nextOrdinal,
 		Body:        body,
 	}
 	if err := h.db.WithContext(ctx).Create(&s).Error; err != nil {
