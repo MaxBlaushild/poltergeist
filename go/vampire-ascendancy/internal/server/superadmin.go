@@ -120,6 +120,7 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"isOptional":           c.IsOptional,
 		"houseId":              c.HouseID,
 		"preEventInfo":         c.PreEventInfo,
+		"bio":                  c.Bio,
 		"tags":                 tags,
 		"tagsGenerationStatus": c.TagsGenerationStatus,
 		"tagsGenerationError":  c.TagsGenerationError,
@@ -189,6 +190,7 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		RoleType     string   `json:"roleType"`
 		HouseID      *string  `json:"houseId"`
 		PreEventInfo string   `json:"preEventInfo"`
+		Bio          string   `json:"bio"`
 		Tags         []string `json:"tags"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -214,6 +216,7 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 		"title":          body.Title,
 		"role_type":      body.RoleType,
 		"pre_event_info": body.PreEventInfo,
+		"bio":            body.Bio,
 		"tags":           models.StringArray(tags),
 	}
 	if body.HouseID != nil {

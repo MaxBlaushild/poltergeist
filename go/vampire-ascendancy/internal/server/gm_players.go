@@ -140,6 +140,7 @@ func (s *server) gmListCharacters(ctx *gin.Context) {
 			"roleType":     c.RoleType,
 			"isOptional":   c.IsOptional,
 			"preEventInfo": c.PreEventInfo,
+			"bio":          c.Bio,
 			"tags":         tags,
 		}
 		if c.House != nil {

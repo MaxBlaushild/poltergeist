@@ -56,6 +56,7 @@ func (s *server) listSelectableCharacters(ctx *gin.Context) {
 			"name":         c.Name,
 			"title":        c.Title,
 			"preEventInfo": c.PreEventInfo,
+			"bio":          c.Bio,
 			"tags":         tags,
 		}
 		if c.House != nil {

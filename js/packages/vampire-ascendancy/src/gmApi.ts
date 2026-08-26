@@ -67,6 +67,7 @@ export interface GMCharacter {
   isOptional: boolean;
   house?: string;
   preEventInfo?: string;
+  bio?: string;
   tags?: string[];
 }
 
@@ -275,6 +276,7 @@ export interface GMCharacterFull {
   isOptional: boolean;
   houseId: string | null;
   preEventInfo: string;
+  bio: string;
   postAct1Context: string;
   imageUrl: string;
   sigil: string;
@@ -293,6 +295,7 @@ export interface GMCharacterUpdate {
   roleType: string;
   houseId: string | null;
   preEventInfo: string;
+  bio: string;
   postAct1Context: string;
   imageUrl: string;
   playerName: string;

@@ -85,6 +85,7 @@ func (s *server) getMe(ctx *gin.Context) {
 		"title":        character.Title,
 		"roleType":     character.RoleType,
 		"preEventInfo": character.PreEventInfo,
+		"bio":          character.Bio,
 		"imageUrl":     imageURL,
 	}
 	if character.House != nil {

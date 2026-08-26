@@ -145,6 +145,7 @@ const CharacterEditor = ({
         roleType: c.roleType,
         houseId: c.houseId,
         preEventInfo: c.preEventInfo,
+        bio: c.bio,
         tags: c.tags,
       });
       setNote('Saved.');
@@ -216,6 +217,9 @@ const CharacterEditor = ({
           )}
           {tagsError && <p className="text-blood-bright text-xs">{tagsError}</p>}
         </div>
+      </Field>
+      <Field label="Bio">
+        <textarea className={input} rows={4} value={c.bio} onChange={(e) => set('bio', e.target.value)} />
       </Field>
       <Field label="Pre-event bio">
         <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />

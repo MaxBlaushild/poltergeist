@@ -89,6 +89,7 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"isOptional":      c.IsOptional,
 		"houseId":         c.HouseID,
 		"preEventInfo":    c.PreEventInfo,
+		"bio":             c.Bio,
 		"postAct1Context": postAct1Context,
 		"imageUrl":        imageURL,
 		"playerName":      playerName,
