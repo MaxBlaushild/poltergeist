@@ -277,6 +277,7 @@ export interface GMCharacterFull {
   houseId: string | null;
   preEventInfo: string;
   bio: string;
+  preAct1Context: string;
   postAct1Context: string;
   imageUrl: string;
   sigil: string;

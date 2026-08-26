@@ -49,13 +49,13 @@ export interface AdminCharacter {
   tags?: string[];
 }
 export const adminListCharacters = () => admin<{ characters: AdminCharacter[] }>('/characters');
-// Secrets, post-Act-1 context, and missions are all excluded — every one of
-// them is mystery-scoped now and edited from the Mysteries tab's
+// Secrets, pre-/post-Act-1 context, and missions are all excluded — every
+// one of them is mystery-scoped now and edited from the Mysteries tab's
 // per-character content editor instead (see MYSTERY_REQUIREMENTS.md).
 export const adminGetCharacter = (id: string) =>
-  admin<Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context' | 'missions'>>(
-    `/characters/${id}`
-  );
+  admin<
+    Omit<GMCharacterFull, 'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'preAct1Context' | 'postAct1Context' | 'missions'>
+  >(`/characters/${id}`);
 export const adminUpdateCharacter = (
   id: string,
   body: Omit<GMCharacterUpdate, 'imageUrl' | 'playerName' | 'postAct1Context' | 'missions'>
@@ -150,7 +150,7 @@ export const adminGetMysteryQuiz = (mysteryId: string) => admin<GMQuizQuestions>
 export const adminUpdateMysteryQuiz = (mysteryId: string, body: GMQuizQuestions) =>
   admin<{ ok: boolean }>(`/mysteries/${mysteryId}/quiz`, { method: 'PUT', body: JSON.stringify(body) });
 
-// ---- Character content, scoped to a mystery: secrets + missions + post-Act-1 context ----
+// ---- Character content, scoped to a mystery: secrets + missions + pre-/post-Act-1 context ----
 export interface AdminMysterySecret {
   ordinal: number;
   body: string;
@@ -166,6 +166,7 @@ export interface AdminMysteryMission {
 export interface AdminMysteryCharacterContent {
   secrets: AdminMysterySecret[];
   missions: AdminMysteryMission[];
+  preAct1Context: string;
   postAct1Context: string;
 }
 export const adminGetCharacterContentForMystery = (mysteryId: string, characterId: string) =>
@@ -176,6 +177,7 @@ export const adminUpdateCharacterContentForMystery = (
   body: {
     secrets: { body: string; beatId: string | null }[];
     missions: { tier: string; rewardBt: number; prompt: string; answerFormat: string }[];
+    preAct1Context: string;
     postAct1Context: string;
   }
 ) =>

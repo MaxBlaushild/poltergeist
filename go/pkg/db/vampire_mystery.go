@@ -558,34 +558,35 @@ func (h *vampireHandler) ListCharacterIDsWithSecretsForMystery(ctx context.Conte
 	return out, nil
 }
 
-// ---- Character post-Act-1 context, scoped to a mystery ----
+// ---- Character pre- and post-Act-1 context, scoped to a mystery ----
 // Same rationale as secrets — the same character cast in two different
-// mysteries knows a different version of "what happens after Act One" in
-// each. Unlike secrets this is a single string, not a list, so it's
-// upserted rather than wholesale-replaced.
+// mysteries has a different "who they are going in" and "what happens to
+// them after Act One" in each. Unlike secrets these are single strings, not
+// lists, so they're upserted rather than wholesale-replaced.
 
 // GetCharacterMysteryContext is the player-/GM-facing read path (see me.go
-// and gm_content.go) — one character's post-Act-1 context for one specific
-// mystery. Returns "" (not an error) if nothing has been written yet.
-func (h *vampireHandler) GetCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID) (string, error) {
+// and gm_content.go) — one character's pre- and post-Act-1 context for one
+// specific mystery. Returns "" for either (not an error) if nothing has
+// been written yet.
+func (h *vampireHandler) GetCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID) (string, string, error) {
 	var row models.VampireCharacterMysteryContext
 	if err := h.db.WithContext(ctx).
 		Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
 		First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", nil
+			return "", "", nil
 		}
-		return "", err
+		return "", "", err
 	}
-	return row.PostAct1Context, nil
+	return row.PreAct1Context, row.PostAct1Context, nil
 }
 
-// UpsertCharacterMysteryContext creates or overwrites a character's
-// post-Act-1 context for one mystery, leaving their context for any other
-// mystery untouched.
-func (h *vampireHandler) UpsertCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID, postAct1Context string) error {
+// UpsertCharacterMysteryContext creates or overwrites a character's pre-
+// and post-Act-1 context for one mystery, leaving their context for any
+// other mystery untouched.
+func (h *vampireHandler) UpsertCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID, preAct1Context, postAct1Context string) error {
 	return h.db.WithContext(ctx).
 		Where(models.VampireCharacterMysteryContext{CharacterID: characterID, MysteryID: mysteryID}).
-		Assign(models.VampireCharacterMysteryContext{PostAct1Context: postAct1Context}).
+		Assign(models.VampireCharacterMysteryContext{PreAct1Context: preAct1Context, PostAct1Context: postAct1Context}).
 		FirstOrCreate(&models.VampireCharacterMysteryContext{}).Error
 }

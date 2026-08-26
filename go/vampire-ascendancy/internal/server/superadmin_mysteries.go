@@ -248,7 +248,7 @@ func (s *server) adminGetCharacterContentForMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	postAct1Context, err := v.GetCharacterMysteryContext(ctx, characterID, mysteryID)
+	preAct1Context, postAct1Context, err := v.GetCharacterMysteryContext(ctx, characterID, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -267,7 +267,12 @@ func (s *server) adminGetCharacterContentForMystery(ctx *gin.Context) {
 			"answerFormat": m.AnswerFormat,
 		})
 	}
-	ctx.JSON(http.StatusOK, gin.H{"secrets": secretsOut, "missions": missionsOut, "postAct1Context": postAct1Context})
+	ctx.JSON(http.StatusOK, gin.H{
+		"secrets":         secretsOut,
+		"missions":        missionsOut,
+		"preAct1Context":  preAct1Context,
+		"postAct1Context": postAct1Context,
+	})
 }
 
 // PUT /admin/mysteries/:id/characters/:characterId/content — replace this
@@ -297,6 +302,7 @@ func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 			Prompt       string `json:"prompt"`
 			AnswerFormat string `json:"answerFormat"`
 		} `json:"missions"`
+		PreAct1Context  string `json:"preAct1Context"`
 		PostAct1Context string `json:"postAct1Context"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
@@ -348,7 +354,7 @@ func (s *server) adminUpdateCharacterContentForMystery(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := v.UpsertCharacterMysteryContext(ctx, characterID, mysteryID, body.PostAct1Context); err != nil {
+	if err := v.UpsertCharacterMysteryContext(ctx, characterID, mysteryID, body.PreAct1Context, body.PostAct1Context); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

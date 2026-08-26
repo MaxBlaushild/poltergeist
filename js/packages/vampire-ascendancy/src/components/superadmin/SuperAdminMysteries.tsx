@@ -604,6 +604,7 @@ const ContentForCharacter = ({
 }) => {
   const [secrets, setSecrets] = useState<AdminMysterySecret[] | null>(null);
   const [missions, setMissions] = useState<AdminMysteryMission[]>([]);
+  const [preAct1Context, setPreAct1Context] = useState('');
   const [postAct1Context, setPostAct1Context] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -611,11 +612,13 @@ const ContentForCharacter = ({
   useEffect(() => {
     setSecrets(null);
     setMissions([]);
+    setPreAct1Context('');
     setPostAct1Context('');
     adminGetCharacterContentForMystery(mysteryId, character.id)
       .then((d) => {
         setSecrets(d.secrets);
         setMissions(d.missions);
+        setPreAct1Context(d.preAct1Context);
         setPostAct1Context(d.postAct1Context);
       })
       .catch(() => setNote('Could not load this character.'));
@@ -637,6 +640,7 @@ const ContentForCharacter = ({
           prompt: m.prompt,
           answerFormat: m.answerFormat,
         })),
+        preAct1Context,
         postAct1Context,
       });
       setNote('Saved.');
@@ -738,6 +742,14 @@ const ContentForCharacter = ({
         ))}
       </ListEditor>
 
+      <Field label="Pre-Act-1 context — who they are going into this mystery specifically">
+        <textarea
+          className={`${input} mt-1.5`}
+          rows={4}
+          value={preAct1Context}
+          onChange={(e) => setPreAct1Context(e.target.value)}
+        />
+      </Field>
       <Field label="Post-Act-1 context — what happens to them after Act One, in this mystery">
         <textarea
           className={`${input} mt-1.5`}

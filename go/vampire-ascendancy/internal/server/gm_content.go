@@ -61,7 +61,7 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	postAct1Context, err := v.GetCharacterMysteryContext(ctx, id, mysteryID)
+	preAct1Context, postAct1Context, err := v.GetCharacterMysteryContext(ctx, id, mysteryID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -90,6 +90,7 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"houseId":         c.HouseID,
 		"preEventInfo":    c.PreEventInfo,
 		"bio":             c.Bio,
+		"preAct1Context":  preAct1Context,
 		"postAct1Context": postAct1Context,
 		"imageUrl":        imageURL,
 		"playerName":      playerName,

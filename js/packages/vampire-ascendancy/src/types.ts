@@ -35,6 +35,11 @@ export interface Character {
   title: string;
   roleType: string;
   preEventInfo: string;
+  bio?: string;
+  // The mystery-scoped equivalent of preEventInfo — who this character is
+  // going into THIS Toast's mystery specifically. Ungated, like
+  // preEventInfo/bio.
+  preAct1Context?: string;
   imageUrl?: string;
   house?: House;
   // Gated — only present once content is unlocked.

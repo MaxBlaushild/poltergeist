@@ -79,14 +79,26 @@ func (s *server) getMe(ctx *gin.Context) {
 		imageURL = ic.ImageURL
 	}
 
+	// Scoped to this instance's mystery — not whatever context this
+	// character has for every mystery they've ever appeared in.
+	// preAct1Context is ungated, same as preEventInfo/bio above (it's who
+	// they are going in, available before the host opens the evening);
+	// postAct1Context stays gated below.
+	preAct1Context, postAct1Context, err := s.dbClient.Vampire().GetCharacterMysteryContext(ctx, character.ID, mysteryIDFromContext(ctx))
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	charResp := gin.H{
-		"id":           character.ID,
-		"name":         character.Name,
-		"title":        character.Title,
-		"roleType":     character.RoleType,
-		"preEventInfo": character.PreEventInfo,
-		"bio":          character.Bio,
-		"imageUrl":     imageURL,
+		"id":             character.ID,
+		"name":           character.Name,
+		"title":          character.Title,
+		"roleType":       character.RoleType,
+		"preEventInfo":   character.PreEventInfo,
+		"bio":            character.Bio,
+		"preAct1Context": preAct1Context,
+		"imageUrl":       imageURL,
 	}
 	if character.House != nil {
 		charResp["house"] = gin.H{"id": character.House.ID, "name": character.House.Name, "tagline": character.House.Tagline}
@@ -94,13 +106,6 @@ func (s *server) getMe(ctx *gin.Context) {
 
 	// Gated content — only revealed after the host opens the evening.
 	if state.ContentUnlocked {
-		// Scoped to this instance's mystery — not whatever context this
-		// character has for every mystery they've ever appeared in.
-		postAct1Context, err := s.dbClient.Vampire().GetCharacterMysteryContext(ctx, character.ID, mysteryIDFromContext(ctx))
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
 		charResp["postAct1Context"] = postAct1Context
 		// Scoped to this instance's mystery plus its selected subplots —
 		// not every secret/mission this character has ever had across

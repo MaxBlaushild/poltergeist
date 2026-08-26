@@ -99,7 +99,7 @@ const CharacterEditor = ({
 }) => {
   const [c, setC] = useState<Omit<
     GMCharacterFull,
-    'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'postAct1Context' | 'missions'
+    'sigil' | 'imageUrl' | 'playerName' | 'secrets' | 'preAct1Context' | 'postAct1Context' | 'missions'
   > | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -290,6 +290,7 @@ const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; my
   const [missions, setMissions] = useState<Parameters<typeof adminUpdateCharacterContentForMystery>[2]['missions']>(
     []
   );
+  const [preAct1Context, setPreAct1Context] = useState('');
   const [postAct1Context, setPostAct1Context] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -302,6 +303,7 @@ const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; my
         setBeats(m.beats);
         setSecrets(content.secrets);
         setMissions(content.missions);
+        setPreAct1Context(content.preAct1Context);
         setPostAct1Context(content.postAct1Context);
       })
       .catch((e) => setNote(e instanceof ApiError ? e.message : 'Could not load secrets for this mystery.'));
@@ -318,6 +320,7 @@ const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; my
       await adminUpdateCharacterContentForMystery(mysteryId, characterId, {
         secrets: secrets.map((s) => ({ body: s.body, beatId: s.beatId })),
         missions,
+        preAct1Context,
         postAct1Context,
       });
       setNote('Saved.');

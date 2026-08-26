@@ -24,6 +24,7 @@ const buildMe = (c: GMCharacterFull, houses: House[], unlocked: boolean): MeResp
       title: c.title,
       roleType: c.roleType,
       preEventInfo: c.preEventInfo,
+      preAct1Context: c.preAct1Context,
       imageUrl: c.imageUrl || undefined,
       house: house ? { id: house.id, name: house.name, tagline: house.tagline } : undefined,
       postAct1Context: c.postAct1Context,
@@ -52,7 +53,7 @@ export const DossierPreview = ({
   const gaps: string[] = [];
   if (!character.title.trim()) gaps.push('title');
   if (!character.houseId) gaps.push('house');
-  if (!character.preEventInfo.trim()) gaps.push('pre-event bio');
+  if (!character.preAct1Context.trim() && !character.preEventInfo.trim()) gaps.push('pre-event bio');
   if (!character.postAct1Context.trim()) gaps.push('post-act bio');
   if (character.secrets.length === 0) gaps.push('secrets');
   if (character.secrets.some((s) => !s.body.trim())) gaps.push('an empty secret');

@@ -30,7 +30,7 @@ type VampireInstance struct {
 	// MysteryID is chosen once at "Host a Toast" time and never changes —
 	// see MYSTERY_REQUIREMENTS.md. Every quiz question and character secret
 	// available in this instance is scoped to this mystery.
-	MysteryID uuid.UUID   `gorm:"column:mystery_id;not null" json:"mysteryId"`
+	MysteryID uuid.UUID       `gorm:"column:mystery_id;not null" json:"mysteryId"`
 	Mystery   *VampireMystery `gorm:"foreignKey:MysteryID" json:"mystery,omitempty"`
 }
 
@@ -282,15 +282,15 @@ type VampireHouse struct {
 func (VampireHouse) TableName() string { return "vampire_houses" }
 
 type VampireCharacter struct {
-	ID              uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
-	CreatedAt       time.Time  `gorm:"not null" json:"createdAt"`
-	UpdatedAt       time.Time  `gorm:"not null" json:"updatedAt"`
-	Name            string     `gorm:"not null" json:"name"`
-	Title           string     `gorm:"not null;default:''" json:"title"`
-	HouseID         *uuid.UUID `json:"houseId"`
-	RoleType        string     `gorm:"not null;default:'player'" json:"roleType"` // player | gm | npc
-	IsOptional      bool       `gorm:"not null;default:false" json:"isOptional"`
-	PreEventInfo    string     `gorm:"not null;default:''" json:"preEventInfo"`
+	ID           uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt    time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt    time.Time  `gorm:"not null" json:"updatedAt"`
+	Name         string     `gorm:"not null" json:"name"`
+	Title        string     `gorm:"not null;default:''" json:"title"`
+	HouseID      *uuid.UUID `json:"houseId"`
+	RoleType     string     `gorm:"not null;default:'player'" json:"roleType"` // player | gm | npc
+	IsOptional   bool       `gorm:"not null;default:false" json:"isOptional"`
+	PreEventInfo string     `gorm:"not null;default:''" json:"preEventInfo"`
 	// Bio is the character's actual biography — separate from PreEventInfo
 	// ("Pre-event bio" in the admin UI), which predates mystery-scoping and
 	// doubles as GM/player prep material. Backfilled from PreEventInfo when
@@ -326,10 +326,12 @@ type VampireCharacter struct {
 
 func (VampireCharacter) TableName() string { return "vampire_characters" }
 
-// VampireCharacterMysteryContext is a character's post-Act-1 context for one
-// specific mystery — the mystery-scoped equivalent of the old
-// VampireCharacter.PostAct1Context column. One row per (character, mystery);
-// unlike secrets this is a single string, so it's upserted, not
+// VampireCharacterMysteryContext is a character's pre- and post-Act-1
+// context for one specific mystery — the mystery-scoped equivalent of the
+// old VampireCharacter.PostAct1Context column, joined by PreAct1Context
+// (mystery-scoped from the start; the old character-global equivalent was
+// PreEventInfo — see migration 000471). One row per (character, mystery);
+// unlike secrets these are single strings, so they're upserted, not
 // wholesale-replaced.
 type VampireCharacterMysteryContext struct {
 	ID              uuid.UUID `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
@@ -337,6 +339,7 @@ type VampireCharacterMysteryContext struct {
 	UpdatedAt       time.Time `gorm:"not null" json:"updatedAt"`
 	CharacterID     uuid.UUID `gorm:"column:character_id;not null" json:"characterId"`
 	MysteryID       uuid.UUID `gorm:"column:mystery_id;not null" json:"mysteryId"`
+	PreAct1Context  string    `gorm:"column:pre_act1_context;not null;default:''" json:"preAct1Context"`
 	PostAct1Context string    `gorm:"column:post_act1_context;not null;default:''" json:"postAct1Context"`
 }
 

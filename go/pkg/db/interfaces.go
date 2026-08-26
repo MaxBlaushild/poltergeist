@@ -581,12 +581,14 @@ type VampireHandle interface {
 	CreateSecretForCharacterMystery(ctx context.Context, characterID, mysteryID uuid.UUID, beatID *uuid.UUID, body string) (*models.VampireSecret, error)
 	UpdateSecretBody(ctx context.Context, id uuid.UUID, body string) error
 	DeleteSecret(ctx context.Context, id uuid.UUID) error
-	// Character post-Act-1 context, scoped to a mystery — the mystery-scoped
-	// equivalent of the old VampireCharacter.PostAct1Context column. A
-	// single string per (character, mystery), so it's upserted rather than
-	// wholesale-replaced like secrets.
-	GetCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID) (string, error)
-	UpsertCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID, postAct1Context string) error
+	// Character pre- and post-Act-1 context, scoped to a mystery — the
+	// mystery-scoped equivalent of the old VampireCharacter.PostAct1Context
+	// column, joined by PreAct1Context (mystery-scoped from the start; the
+	// old character-global equivalent was PreEventInfo — see migration
+	// 000471). A single string pair per (character, mystery), so it's
+	// upserted rather than wholesale-replaced like secrets.
+	GetCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID) (preAct1Context, postAct1Context string, err error)
+	UpsertCharacterMysteryContext(ctx context.Context, characterID, mysteryID uuid.UUID, preAct1Context, postAct1Context string) error
 
 	// GM audit log
 	LogGMAction(ctx context.Context, instanceID uuid.UUID, gmName, action string, payload []byte) error
