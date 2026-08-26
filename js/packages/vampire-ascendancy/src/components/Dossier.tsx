@@ -75,7 +75,7 @@ export const Dossier = ({ me }: { me: MeResponse }) => {
         </SegButton>
       </div>
 
-      {seg === 'bio' && <Prose text={character.preAct1Context || character.preEventInfo} />}
+      {seg === 'bio' && <Prose text={character.preAct1Context || character.bio} />}
 
       {seg === 'postAct' &&
         (unlocked && character.postAct1Context ? (

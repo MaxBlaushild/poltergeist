@@ -59,7 +59,7 @@ export interface SelectableCharacter {
   id: string;
   name: string;
   title: string;
-  preEventInfo: string;
+  bio: string;
   house?: string;
   tags?: string[];
 }

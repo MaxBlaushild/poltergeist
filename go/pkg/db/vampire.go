@@ -156,7 +156,7 @@ func (h *vampireHandler) UpsertCharacter(ctx context.Context, c *models.VampireC
 			Columns: []clause.Column{{Name: "name"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"title", "house_id", "role_type", "is_optional",
-				"pre_event_info", "updated_at",
+				"bio", "updated_at",
 			}),
 		}).
 		Create(c).Error; err != nil {

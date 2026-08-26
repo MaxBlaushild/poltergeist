@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// GET /gm/characters/:id — a character's full content (pre-event bio,
+// GET /gm/characters/:id — a character's full content (bio,
 // secrets/context/missions scoped to this Toast's mystery+subplots — shared,
 // edited only by super users, see GET /admin/characters/:id and
 // /admin/mysteries/:id/characters/:characterId/content) plus this Toast's
@@ -88,7 +88,6 @@ func (s *server) gmGetCharacter(ctx *gin.Context) {
 		"roleType":        c.RoleType,
 		"isOptional":      c.IsOptional,
 		"houseId":         c.HouseID,
-		"preEventInfo":    c.PreEventInfo,
 		"bio":             c.Bio,
 		"preAct1Context":  preAct1Context,
 		"postAct1Context": postAct1Context,

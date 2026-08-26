@@ -282,19 +282,19 @@ type VampireHouse struct {
 func (VampireHouse) TableName() string { return "vampire_houses" }
 
 type VampireCharacter struct {
-	ID           uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
-	CreatedAt    time.Time  `gorm:"not null" json:"createdAt"`
-	UpdatedAt    time.Time  `gorm:"not null" json:"updatedAt"`
-	Name         string     `gorm:"not null" json:"name"`
-	Title        string     `gorm:"not null;default:''" json:"title"`
-	HouseID      *uuid.UUID `json:"houseId"`
-	RoleType     string     `gorm:"not null;default:'player'" json:"roleType"` // player | gm | npc
-	IsOptional   bool       `gorm:"not null;default:false" json:"isOptional"`
-	PreEventInfo string     `gorm:"not null;default:''" json:"preEventInfo"`
-	// Bio is the character's actual biography — separate from PreEventInfo
-	// ("Pre-event bio" in the admin UI), which predates mystery-scoping and
-	// doubles as GM/player prep material. Backfilled from PreEventInfo when
-	// added (see migration 000470); free to diverge from there.
+	ID         uuid.UUID  `gorm:"primary_key;default:uuid_generate_v4()" json:"id"`
+	CreatedAt  time.Time  `gorm:"not null" json:"createdAt"`
+	UpdatedAt  time.Time  `gorm:"not null" json:"updatedAt"`
+	Name       string     `gorm:"not null" json:"name"`
+	Title      string     `gorm:"not null;default:''" json:"title"`
+	HouseID    *uuid.UUID `json:"houseId"`
+	RoleType   string     `gorm:"not null;default:'player'" json:"roleType"` // player | gm | npc
+	IsOptional bool       `gorm:"not null;default:false" json:"isOptional"`
+	// Bio is the character's biography — the character-global counterpart
+	// to the mystery-scoped PreAct1Context/PostAct1Context on
+	// VampireCharacterMysteryContext. Replaces the old PreEventInfo column
+	// (dropped in migration 000472); PreEventInfo's content was backfilled
+	// here first, in 000470.
 	Bio string `gorm:"not null;default:''" json:"bio"`
 	// Tags are free-text personality/trait labels ("musical", "gambler",
 	// "risk taker") — shared content, edited by super users (by hand, or

@@ -5,7 +5,7 @@ interface CharacterLike {
   name: string;
   title: string;
   house?: string;
-  preEventInfo?: string;
+  bio?: string;
   tags?: string[];
 }
 
@@ -50,7 +50,7 @@ export function CharacterBrowser<T extends CharacterLike>({
     return characters.filter((c) => {
       if (activeTags.size > 0 && !(c.tags ?? []).some((t) => activeTags.has(t))) return false;
       if (!q) return true;
-      return c.name.toLowerCase().includes(q) || (c.preEventInfo || '').toLowerCase().includes(q);
+      return c.name.toLowerCase().includes(q) || (c.bio || '').toLowerCase().includes(q);
     });
   }, [characters, query, activeTags]);
 
@@ -124,7 +124,7 @@ export function CharacterBrowser<T extends CharacterLike>({
                   )}
                 </p>
                 {c.title && <p className="text-xs text-bone/60 italic">{c.title}</p>}
-                {c.preEventInfo && <p className="text-xs text-bone/60 mt-0.5 line-clamp-2">{c.preEventInfo}</p>}
+                {c.bio && <p className="text-xs text-bone/60 mt-0.5 line-clamp-2">{c.bio}</p>}
                 {c.tags && c.tags.length > 0 && (
                   <div className="flex gap-1 flex-wrap mt-1">
                     {c.tags.map((t) => (

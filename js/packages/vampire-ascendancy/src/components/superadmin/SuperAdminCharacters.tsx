@@ -17,13 +17,13 @@ import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
 import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
-// The shared character roster: pre-event bio, tags, and — per mystery —
-// secrets. Missions and post-Act-1 context stay Mysteries-tab-only for now
-// (see MYSTERY_REQUIREMENTS.md); secrets are common enough to author
+// The shared character roster: bio, tags, and — per mystery — secrets and
+// pre-/post-Act-1 context. Missions stay Mysteries-tab-only for now (see
+// MYSTERY_REQUIREMENTS.md); the rest is common enough to author
 // character-first (pick who, then which mystery, then what they know) that
-// they're also editable from here, not just mystery-first. Sigils,
-// portraits, and the real guest playing a character are per-instance — see
-// the GM console's Players tab for those.
+// it's also editable from here, not just mystery-first. Sigils, portraits,
+// and the real guest playing a character are per-instance — see the GM
+// console's Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -144,7 +144,6 @@ const CharacterEditor = ({
         title: c.title,
         roleType: c.roleType,
         houseId: c.houseId,
-        preEventInfo: c.preEventInfo,
         bio: c.bio,
         tags: c.tags,
       });
@@ -221,14 +220,10 @@ const CharacterEditor = ({
       <Field label="Bio">
         <textarea className={input} rows={4} value={c.bio} onChange={(e) => set('bio', e.target.value)} />
       </Field>
-      <Field label="Pre-event bio">
-        <textarea className={input} rows={4} value={c.preEventInfo} onChange={(e) => set('preEventInfo', e.target.value)} />
-      </Field>
 
       <CharacterSecretsByMystery characterId={c.id} />
       <p className="text-[11px] text-bone/40 -mt-1">
-        Missions and post-Act-1 context are still mystery-scoped and edited from the Mysteries tab's
-        per-character content editor instead.
+        Missions are still only edited from the Mysteries tab's per-character content editor.
       </p>
 
       <div className="flex items-center gap-3">
@@ -283,10 +278,10 @@ const CharacterSecretsByMystery = ({ characterId }: { characterId: string }) => 
 const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; mysteryId: string }) => {
   const [beats, setBeats] = useState<AdminMysteryBeat[]>([]);
   const [secrets, setSecrets] = useState<AdminMysterySecret[] | null>(null);
-  // Missions/context aren't shown here, but the save endpoint replaces a
+  // Missions aren't shown here, but the save endpoint replaces a
   // character's whole mystery-scoped content in one call — load and echo
-  // them back unchanged so saving secrets from here doesn't clobber
-  // whatever's already set on the Mysteries tab.
+  // them back unchanged so saving from here doesn't clobber whatever's
+  // already set on the Mysteries tab.
   const [missions, setMissions] = useState<Parameters<typeof adminUpdateCharacterContentForMystery>[2]['missions']>(
     []
   );
@@ -373,6 +368,26 @@ const SecretsForMystery = ({ characterId, mysteryId }: { characterId: string; my
           </div>
         ))}
       </ListEditor>
+
+      <div className="mt-3 flex flex-col gap-3">
+        <Field label="Pre-Act-1 context — who they are going into this mystery specifically">
+          <textarea
+            className={`${input} mt-1.5`}
+            rows={3}
+            value={preAct1Context}
+            onChange={(e) => setPreAct1Context(e.target.value)}
+          />
+        </Field>
+        <Field label="Post-Act-1 context — what happens to them after Act One, in this mystery">
+          <textarea
+            className={`${input} mt-1.5`}
+            rows={3}
+            value={postAct1Context}
+            onChange={(e) => setPostAct1Context(e.target.value)}
+          />
+        </Field>
+      </div>
+
       <div className="mt-3 flex items-center gap-3">
         <button
           type="button"

@@ -107,8 +107,8 @@ func (s *server) gmUpdatePlayer(ctx *gin.Context) {
 // with none can't be invited (see MYSTERY_REQUIREMENTS.md's eligibility
 // gating; CreatePlayerInvite enforces the same rule server-side as
 // defense-in-depth, this filtering is just so the picker doesn't offer
-// them in the first place). Carries preEventInfo and tags so the picker
-// can search/filter/preview without a second round trip per character.
+// them in the first place). Carries bio and tags so the picker can
+// search/filter/preview without a second round trip per character.
 func (s *server) gmListCharacters(ctx *gin.Context) {
 	v := s.dbClient.Vampire()
 	chars, err := v.ListCharacters(ctx)
@@ -134,14 +134,13 @@ func (s *server) gmListCharacters(ctx *gin.Context) {
 			tags = []string{}
 		}
 		row := gin.H{
-			"id":           c.ID,
-			"name":         c.Name,
-			"title":        c.Title,
-			"roleType":     c.RoleType,
-			"isOptional":   c.IsOptional,
-			"preEventInfo": c.PreEventInfo,
-			"bio":          c.Bio,
-			"tags":         tags,
+			"id":         c.ID,
+			"name":       c.Name,
+			"title":      c.Title,
+			"roleType":   c.RoleType,
+			"isOptional": c.IsOptional,
+			"bio":        c.Bio,
+			"tags":       tags,
 		}
 		if c.House != nil {
 			row["house"] = c.House.Name

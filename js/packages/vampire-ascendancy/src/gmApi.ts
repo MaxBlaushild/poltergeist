@@ -66,7 +66,6 @@ export interface GMCharacter {
   roleType: string;
   isOptional: boolean;
   house?: string;
-  preEventInfo?: string;
   bio?: string;
   tags?: string[];
 }
@@ -275,7 +274,6 @@ export interface GMCharacterFull {
   roleType: string;
   isOptional: boolean;
   houseId: string | null;
-  preEventInfo: string;
   bio: string;
   preAct1Context: string;
   postAct1Context: string;
@@ -295,7 +293,6 @@ export interface GMCharacterUpdate {
   title: string;
   roleType: string;
   houseId: string | null;
-  preEventInfo: string;
   bio: string;
   postAct1Context: string;
   imageUrl: string;

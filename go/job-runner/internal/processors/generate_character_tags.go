@@ -89,8 +89,8 @@ func buildCharacterTagsPrompt(c *models.VampireCharacter) string {
 	if c.House != nil {
 		fmt.Fprintf(&b, "HOUSE: %s\n", c.House.Name)
 	}
-	if c.PreEventInfo != "" {
-		fmt.Fprintf(&b, "\nPRE-EVENT BIO:\n%s\n", c.PreEventInfo)
+	if c.Bio != "" {
+		fmt.Fprintf(&b, "\nBIO:\n%s\n", c.Bio)
 	}
 	if len(c.PostAct1Contexts) > 0 {
 		// Spans every mystery this character's been cast in, same as

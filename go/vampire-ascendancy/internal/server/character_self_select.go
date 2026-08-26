@@ -52,12 +52,11 @@ func (s *server) listSelectableCharacters(ctx *gin.Context) {
 			tags = []string{}
 		}
 		row := gin.H{
-			"id":           c.ID,
-			"name":         c.Name,
-			"title":        c.Title,
-			"preEventInfo": c.PreEventInfo,
-			"bio":          c.Bio,
-			"tags":         tags,
+			"id":    c.ID,
+			"name":  c.Name,
+			"title": c.Title,
+			"bio":   c.Bio,
+			"tags":  tags,
 		}
 		if c.House != nil {
 			row["house"] = c.House.Name

@@ -155,12 +155,16 @@ func main() {
 		}
 
 		character, err := v.UpsertCharacter(ctx, &models.VampireCharacter{
-			Name:         c.Name,
-			Title:        c.Title,
-			HouseID:      houseID,
-			RoleType:     c.RoleType,
-			IsOptional:   c.IsOptional,
-			PreEventInfo: c.PreEventInfo,
+			Name:       c.Name,
+			Title:      c.Title,
+			HouseID:    houseID,
+			RoleType:   c.RoleType,
+			IsOptional: c.IsOptional,
+			// c.PreEventInfo parses the "pre_event_info" key from
+			// characters.json — that JSON key stays as-is (it's what
+			// extract.py produces), but it now seeds the character-global
+			// Bio column instead of a since-removed PreEventInfo one.
+			Bio: c.PreEventInfo,
 		})
 		if err != nil {
 			log.Fatalf("failed to upsert character %q: %v", c.Name, err)

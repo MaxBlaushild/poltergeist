@@ -34,11 +34,9 @@ export interface Character {
   name: string;
   title: string;
   roleType: string;
-  preEventInfo: string;
-  bio?: string;
-  // The mystery-scoped equivalent of preEventInfo — who this character is
-  // going into THIS Toast's mystery specifically. Ungated, like
-  // preEventInfo/bio.
+  bio: string;
+  // The mystery-scoped equivalent of bio — who this character is going
+  // into THIS Toast's mystery specifically. Ungated, like bio.
   preAct1Context?: string;
   imageUrl?: string;
   house?: House;

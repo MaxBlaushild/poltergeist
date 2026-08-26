@@ -81,9 +81,9 @@ func (s *server) getMe(ctx *gin.Context) {
 
 	// Scoped to this instance's mystery — not whatever context this
 	// character has for every mystery they've ever appeared in.
-	// preAct1Context is ungated, same as preEventInfo/bio above (it's who
-	// they are going in, available before the host opens the evening);
-	// postAct1Context stays gated below.
+	// preAct1Context is ungated, same as bio above (it's who they are going
+	// in, available before the host opens the evening); postAct1Context
+	// stays gated below.
 	preAct1Context, postAct1Context, err := s.dbClient.Vampire().GetCharacterMysteryContext(ctx, character.ID, mysteryIDFromContext(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -95,7 +95,6 @@ func (s *server) getMe(ctx *gin.Context) {
 		"name":           character.Name,
 		"title":          character.Title,
 		"roleType":       character.RoleType,
-		"preEventInfo":   character.PreEventInfo,
 		"bio":            character.Bio,
 		"preAct1Context": preAct1Context,
 		"imageUrl":       imageURL,

@@ -86,11 +86,11 @@ func (s *server) adminListCharacters(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"characters": out})
 }
 
-// GET /admin/characters/:id — a character's full editable content:
-// pre-event bio, tags. No sigil/portrait/player name — those are
-// per-instance (see GET /gm/characters/:id instead). No secrets,
-// post-Act-1 context, or missions either — all three are mystery-scoped
-// now (see MYSTERY_REQUIREMENTS.md) and edited from the Mysteries tab's
+// GET /admin/characters/:id — a character's full editable content: bio,
+// tags. No sigil/portrait/player name — those are per-instance (see GET
+// /gm/characters/:id instead). No secrets, pre-/post-Act-1 context, or
+// missions either — all three are mystery-scoped now (see
+// MYSTERY_REQUIREMENTS.md) and edited from the Mysteries tab's
 // per-character content editor instead, not here.
 func (s *server) adminGetCharacter(ctx *gin.Context) {
 	id, err := uuid.Parse(ctx.Param("id"))
@@ -119,7 +119,6 @@ func (s *server) adminGetCharacter(ctx *gin.Context) {
 		"roleType":             c.RoleType,
 		"isOptional":           c.IsOptional,
 		"houseId":              c.HouseID,
-		"preEventInfo":         c.PreEventInfo,
 		"bio":                  c.Bio,
 		"tags":                 tags,
 		"tagsGenerationStatus": c.TagsGenerationStatus,
@@ -185,13 +184,12 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	}
 
 	var body struct {
-		Name         string   `json:"name"`
-		Title        string   `json:"title"`
-		RoleType     string   `json:"roleType"`
-		HouseID      *string  `json:"houseId"`
-		PreEventInfo string   `json:"preEventInfo"`
-		Bio          string   `json:"bio"`
-		Tags         []string `json:"tags"`
+		Name     string   `json:"name"`
+		Title    string   `json:"title"`
+		RoleType string   `json:"roleType"`
+		HouseID  *string  `json:"houseId"`
+		Bio      string   `json:"bio"`
+		Tags     []string `json:"tags"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -212,12 +210,11 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 
 	v := s.dbClient.Vampire()
 	fields := map[string]interface{}{
-		"name":           body.Name,
-		"title":          body.Title,
-		"role_type":      body.RoleType,
-		"pre_event_info": body.PreEventInfo,
-		"bio":            body.Bio,
-		"tags":           models.StringArray(tags),
+		"name":      body.Name,
+		"title":     body.Title,
+		"role_type": body.RoleType,
+		"bio":       body.Bio,
+		"tags":      models.StringArray(tags),
 	}
 	if body.HouseID != nil {
 		if *body.HouseID == "" {
