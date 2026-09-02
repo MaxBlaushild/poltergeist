@@ -9,21 +9,29 @@ import {
   adminGetMystery,
   adminGetCharacterContentForMystery,
   adminUpdateCharacterContentForMystery,
+  adminGetGeneralMissions,
+  adminUpdateGeneralMissions,
 } from '../../superAdminApi';
-import type { AdminCharacter, AdminMystery, AdminMysteryBeat, AdminMysterySecret } from '../../superAdminApi';
+import type {
+  AdminCharacter,
+  AdminMystery,
+  AdminMysteryBeat,
+  AdminMysterySecret,
+  AdminMysteryMission,
+} from '../../superAdminApi';
 import type { GMCharacterFull } from '../../gmApi';
 import type { House } from '../../types';
 import { ApiError } from '../../api';
 import { Card } from '../gm/GameSection';
 import { Field, ListEditor, RemoveBtn } from './SuperAdminShared';
 
-// The shared character roster: bio, tags, and — per mystery — secrets and
-// pre-/post-Act-1 context. Missions stay Mysteries-tab-only for now (see
-// MYSTERY_REQUIREMENTS.md); the rest is common enough to author
-// character-first (pick who, then which mystery, then what they know) that
-// it's also editable from here, not just mystery-first. Sigils, portraits,
-// and the real guest playing a character are per-instance — see the GM
-// console's Players tab for those.
+// The shared character roster: bio, tags, general missions, and — per
+// mystery — secrets and pre-/post-Act-1 context. Mystery-scoped missions
+// stay Mysteries-tab-only (see MYSTERY_REQUIREMENTS.md); the rest is common
+// enough to author character-first (pick who, then which mystery, then
+// what they know) that it's also editable from here, not just
+// mystery-first. Sigils, portraits, and the real guest playing a character
+// are per-instance — see the GM console's Players tab for those.
 export const SuperAdminCharacters = () => {
   const [characters, setCharacters] = useState<AdminCharacter[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
@@ -221,9 +229,12 @@ const CharacterEditor = ({
         <textarea className={input} rows={4} value={c.bio} onChange={(e) => set('bio', e.target.value)} />
       </Field>
 
+      <GeneralMissionsEditor characterId={c.id} />
+
       <CharacterSecretsByMystery characterId={c.id} />
       <p className="text-[11px] text-bone/40 -mt-1">
-        Missions are still only edited from the Mysteries tab's per-character content editor.
+        Mystery-specific missions are still edited from the Mysteries tab's per-character content
+        editor instead.
       </p>
 
       <div className="flex items-center gap-3">
@@ -237,6 +248,115 @@ const CharacterEditor = ({
         {note && <span className="text-bone/60 text-sm">{note}</span>}
       </div>
     </div>
+  );
+};
+
+const blankGeneralMission = (): AdminMysteryMission => ({
+  ordinal: 0,
+  tier: 'easy',
+  rewardBt: 2,
+  prompt: '',
+  answerFormat: '',
+});
+
+// A character's missions with no mystery attached — assigned regardless of
+// which story an instance is running (a task that's always relevant, not
+// tied to this story's specific beats). Mystery-scoped missions stay on
+// the Mysteries tab's per-character editor instead.
+const GeneralMissionsEditor = ({ characterId }: { characterId: string }) => {
+  const [missions, setMissions] = useState<AdminMysteryMission[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMissions(null);
+    setNote(null);
+    adminGetGeneralMissions(characterId)
+      .then((d) => setMissions(d.missions))
+      .catch((e) => setNote(e instanceof ApiError ? e.message : 'Could not load general missions.'));
+  }, [characterId]);
+
+  if (!missions) return <p className="text-bone/50 text-sm">{note || 'Loading general missions…'}</p>;
+
+  const input = 'w-full rounded-md bg-black/60 border border-blood/40 p-2 text-bone text-sm';
+
+  const save = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminUpdateGeneralMissions(
+        characterId,
+        missions.map((m) => ({ tier: m.tier, rewardBt: m.rewardBt, prompt: m.prompt, answerFormat: m.answerFormat }))
+      );
+      setNote('Saved.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Save failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Field label="General missions — not tied to any mystery, available no matter which story a Toast is running">
+      <ListEditor
+        label="Missions"
+        addLabel="+ Add mission"
+        onAdd={() => setMissions([...missions, { ...blankGeneralMission(), ordinal: missions.length + 1 }])}
+      >
+        {missions.map((mn, i) => (
+          <div key={i} className="rounded-md border border-blood/30 p-2 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-gold text-xs w-4">{i + 1}</span>
+              <select
+                className={`${input} w-28`}
+                value={mn.tier}
+                onChange={(e) => setMissions(missions.map((x, j) => (j === i ? { ...x, tier: e.target.value } : x)))}
+              >
+                <option value="easy">easy</option>
+                <option value="medium">medium</option>
+                <option value="hard">hard</option>
+              </select>
+              <input
+                type="number"
+                className={`${input} w-20`}
+                value={mn.rewardBt}
+                onChange={(e) =>
+                  setMissions(missions.map((x, j) => (j === i ? { ...x, rewardBt: Number(e.target.value) || 0 } : x)))
+                }
+              />
+              <span className="text-bone/40 text-xs">BT</span>
+              <RemoveBtn onClick={() => setMissions(missions.filter((_, j) => j !== i))} />
+            </div>
+            <textarea
+              className={input}
+              rows={2}
+              placeholder="Mission prompt"
+              value={mn.prompt}
+              onChange={(e) => setMissions(missions.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
+            />
+            <input
+              className={input}
+              placeholder="What to submit (answer format)"
+              value={mn.answerFormat}
+              onChange={(e) =>
+                setMissions(missions.map((x, j) => (j === i ? { ...x, answerFormat: e.target.value } : x)))
+              }
+            />
+          </div>
+        ))}
+      </ListEditor>
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          className="py-2 px-5 rounded-md bg-blood text-bone uppercase tracking-[0.15em] text-sm disabled:opacity-40"
+        >
+          {busy ? 'Saving…' : 'Save general missions'}
+        </button>
+        {note && <span className="text-bone/60 text-sm">{note}</span>}
+      </div>
+    </Field>
   );
 };
 

@@ -399,13 +399,20 @@ func (h *vampireHandler) ReplaceSecretsForCharacterAndMystery(ctx context.Contex
 	})
 }
 
-// ---- Character missions, scoped to a mystery ----
+// ---- Character missions, scoped to a mystery — or general ----
 // Same rationale and shape as secrets above: a character can have a
-// different set of missions per mystery/subplot they're cast in.
+// different set of missions per mystery/subplot they're cast in. Unlike
+// secrets, a mission can also be "general" (MysteryID nil) — assigned to a
+// character regardless of which mystery/subplot an instance is running
+// (e.g. a task that's always relevant, not tied to this story's specific
+// beats). General missions are authored separately (see
+// ListGeneralMissionsForCharacter/ReplaceGeneralMissionsForCharacter below)
+// but always included alongside mystery-scoped ones on read.
 
 // ListMissionsForCharacterAndMystery is used by the Super Admin character
 // content editor — a character's missions for exactly one mystery (or
-// subplot) at a time.
+// subplot) at a time. Deliberately excludes general missions — those are
+// edited from the Characters tab instead, not walked per-mystery.
 func (h *vampireHandler) ListMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireMission, error) {
 	var out []models.VampireMission
 	if err := h.db.WithContext(ctx).
@@ -420,25 +427,25 @@ func (h *vampireHandler) ListMissionsForCharacterAndMystery(ctx context.Context,
 // ListMissionsForCharacterAndMysteries is the player-/GM-facing read path
 // (see me.go/gm_content.go) — a character's missions across a set of
 // mysteries, combining an instance's one required mystery with however
-// many subplots it has selected into a single flat list, exactly like
-// ListSecretsForCharacterAndMysteries.
+// many subplots it has selected, PLUS their general (mystery_id IS NULL)
+// missions, into a single flat list.
 func (h *vampireHandler) ListMissionsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireMission, error) {
-	if len(mysteryIDs) == 0 {
-		return []models.VampireMission{}, nil
+	q := h.db.WithContext(ctx)
+	if len(mysteryIDs) > 0 {
+		q = q.Where("character_id = ? AND (mystery_id IN ? OR mystery_id IS NULL)", characterID, mysteryIDs)
+	} else {
+		q = q.Where("character_id = ? AND mystery_id IS NULL", characterID)
 	}
 	var out []models.VampireMission
-	if err := h.db.WithContext(ctx).
-		Where("character_id = ? AND mystery_id IN ?", characterID, mysteryIDs).
-		Order("ordinal ASC").
-		Find(&out).Error; err != nil {
+	if err := q.Order("ordinal ASC").Find(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 // ReplaceMissionsForCharacterAndMystery removes a character's existing
-// missions for one mystery (leaving their missions for any other mystery
-// untouched) and inserts the new set.
+// missions for one mystery (leaving their missions for any other mystery,
+// and their general missions, untouched) and inserts the new set.
 func (h *vampireHandler) ReplaceMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, missions []models.VampireMission) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("character_id = ? AND mystery_id = ?", characterID, mysteryID).
@@ -448,6 +455,40 @@ func (h *vampireHandler) ReplaceMissionsForCharacterAndMystery(ctx context.Conte
 		for i := range missions {
 			missions[i].CharacterID = characterID
 			missions[i].MysteryID = &mysteryID
+		}
+		if len(missions) == 0 {
+			return nil
+		}
+		return tx.Create(&missions).Error
+	})
+}
+
+// ListGeneralMissionsForCharacter is the Characters tab's read path for a
+// character's general missions — the ones with no mystery, assigned
+// regardless of which story an instance is running.
+func (h *vampireHandler) ListGeneralMissionsForCharacter(ctx context.Context, characterID uuid.UUID) ([]models.VampireMission, error) {
+	var out []models.VampireMission
+	if err := h.db.WithContext(ctx).
+		Where("character_id = ? AND mystery_id IS NULL", characterID).
+		Order("ordinal ASC").
+		Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReplaceGeneralMissionsForCharacter removes a character's existing general
+// missions (leaving their mystery-scoped missions, for every mystery,
+// untouched) and inserts the new set.
+func (h *vampireHandler) ReplaceGeneralMissionsForCharacter(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("character_id = ? AND mystery_id IS NULL", characterID).
+			Delete(&models.VampireMission{}).Error; err != nil {
+			return err
+		}
+		for i := range missions {
+			missions[i].CharacterID = characterID
+			missions[i].MysteryID = nil
 		}
 		if len(missions) == 0 {
 			return nil

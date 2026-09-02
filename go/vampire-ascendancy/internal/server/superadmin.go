@@ -237,6 +237,86 @@ func (s *server) adminUpdateCharacter(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ---- General missions — a character's missions with no mystery attached,
+// assigned regardless of which story an instance is running. Sit alongside
+// Bio as character-global content; mystery-scoped missions stay on the
+// Mysteries tab's per-character editor instead (see superadmin_mysteries.go). ----
+
+// GET /admin/characters/:id/general-missions
+func (s *server) adminGetGeneralMissions(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+		return
+	}
+	missions, err := s.dbClient.Vampire().ListGeneralMissionsForCharacter(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(missions))
+	for _, m := range missions {
+		out = append(out, gin.H{
+			"ordinal":      m.Ordinal,
+			"tier":         m.Tier,
+			"rewardBt":     m.RewardBT,
+			"prompt":       m.Prompt,
+			"answerFormat": m.AnswerFormat,
+		})
+	}
+	ctx.JSON(http.StatusOK, gin.H{"missions": out})
+}
+
+// PUT /admin/characters/:id/general-missions — replace a character's
+// general missions wholesale, leaving their mystery-scoped missions (for
+// every mystery) untouched.
+func (s *server) adminUpdateGeneralMissions(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character id"})
+		return
+	}
+	var body struct {
+		Missions []struct {
+			Tier         string `json:"tier"`
+			RewardBt     int    `json:"rewardBt"`
+			Prompt       string `json:"prompt"`
+			AnswerFormat string `json:"answerFormat"`
+		} `json:"missions"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	missions := make([]models.VampireMission, 0, len(body.Missions))
+	for _, m := range body.Missions {
+		if strings.TrimSpace(m.Prompt) == "" {
+			continue
+		}
+		tier := m.Tier
+		if tier == "" {
+			tier = "easy"
+		}
+		missions = append(missions, models.VampireMission{
+			Ordinal:      len(missions) + 1,
+			Tier:         tier,
+			RewardBT:     m.RewardBt,
+			Prompt:       m.Prompt,
+			AnswerFormat: m.AnswerFormat,
+		})
+	}
+
+	if err := s.dbClient.Vampire().ReplaceGeneralMissionsForCharacter(ctx, id, missions); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.logSuperUser(ctx, "update_general_missions", map[string]interface{}{
+		"characterId": id.String(), "missionCount": len(missions),
+	})
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // ---- Items ----
 
 // GET /admin/items — the full catalog (not filtered to any instance's

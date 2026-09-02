@@ -186,6 +186,22 @@ export const adminUpdateCharacterContentForMystery = (
     body: JSON.stringify(body),
   });
 
+// ---- General missions — a character's missions with no mystery attached,
+// assigned regardless of which story an instance is running. Sit alongside
+// Bio as character-global content on the Characters tab; mystery-scoped
+// missions stay in the content editor above. Same AdminMysteryMission shape
+// (ordinal/tier/rewardBt/prompt/answerFormat), just never tied to a mystery. ----
+export const adminGetGeneralMissions = (characterId: string) =>
+  admin<{ missions: AdminMysteryMission[] }>(`/characters/${characterId}/general-missions`);
+export const adminUpdateGeneralMissions = (
+  characterId: string,
+  missions: { tier: string; rewardBt: number; prompt: string; answerFormat: string }[]
+) =>
+  admin<{ ok: boolean }>(`/characters/${characterId}/general-missions`, {
+    method: 'PUT',
+    body: JSON.stringify({ missions }),
+  });
+
 // ---- Beat-centric secrets: who knows this beat, across the whole cast ----
 // Complements the character-centric content editor above — the Story tab's
 // beat panel, for assigning secrets to characters right where a beat is

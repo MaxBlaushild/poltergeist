@@ -562,10 +562,19 @@ type VampireHandle interface {
 	ListSecretsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireSecret, error)
 	ReplaceSecretsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, secrets []models.VampireSecret) error
 	// Character missions, scoped to a mystery (or subplot) — same shape as
-	// secrets above.
+	// secrets above. Unlike secrets, a mission can also be "general"
+	// (MysteryID nil) — assigned to a character regardless of which
+	// mystery/subplot an instance is running. ListMissionsForCharacterAndMysteries
+	// (the player-/GM-facing read) always includes a character's general
+	// missions alongside whichever mystery-scoped ones match; the mystery-
+	// and general-scoped write paths stay separate (ReplaceMissionsForCharacterAndMystery
+	// vs ReplaceGeneralMissionsForCharacter), same split as the Mysteries
+	// tab's per-mystery editor vs the Characters tab's general-missions editor.
 	ListMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID) ([]models.VampireMission, error)
 	ListMissionsForCharacterAndMysteries(ctx context.Context, characterID uuid.UUID, mysteryIDs []uuid.UUID) ([]models.VampireMission, error)
 	ReplaceMissionsForCharacterAndMystery(ctx context.Context, characterID, mysteryID uuid.UUID, missions []models.VampireMission) error
+	ListGeneralMissionsForCharacter(ctx context.Context, characterID uuid.UUID) ([]models.VampireMission, error)
+	ReplaceGeneralMissionsForCharacter(ctx context.Context, characterID uuid.UUID, missions []models.VampireMission) error
 	// CharacterHasSecretsForMystery / ListCharacterIDsWithSecretsForMystery
 	// back the "can't invite a character with no secrets for this
 	// instance's mystery" rule — the latter for the Invites tab's picker

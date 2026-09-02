@@ -190,6 +190,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	admin.GET("/characters/:id", s.adminGetCharacter)
 	admin.PUT("/characters/:id", s.adminUpdateCharacter)
 	admin.POST("/characters/:id/generate-tags", s.adminGenerateCharacterTags)
+	// General missions — not tied to any mystery/subplot (see superadmin.go).
+	admin.GET("/characters/:id/general-missions", s.adminGetGeneralMissions)
+	admin.PUT("/characters/:id/general-missions", s.adminUpdateGeneralMissions)
 	admin.GET("/items", s.adminListItems)
 	admin.POST("/items", s.adminCreateItem)
 	admin.PUT("/items/:id", s.adminUpdateItem)
