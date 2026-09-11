@@ -4,6 +4,7 @@ import 'package:travel_angels/screens/advice_screen.dart';
 import 'package:travel_angels/screens/documents_screen.dart';
 import 'package:travel_angels/screens/profile_screen.dart';
 import 'package:travel_angels/screens/my_network_screen.dart';
+import 'package:travel_angels/screens/travel_calendar_screen.dart';
 import 'package:travel_angels/utils/platform_utils.dart';
 import 'package:travel_angels/widgets/main_navbar.dart';
 
@@ -19,6 +20,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = const [
+    TravelCalendarScreen(),
     DiscoverScreen(),
     MyNetworkScreen(),
     ProfileScreen(),

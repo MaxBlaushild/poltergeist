@@ -3,6 +3,7 @@ import 'package:travel_angels/utils/platform_utils.dart';
 
 /// Enum for navigation destinations
 enum NavDestination {
+  calendar(Icons.calendar_month, 'Calendar'),
   discover(Icons.explore, 'Discover'),
   myCircle(Icons.people, 'My Circle'),
   profile(Icons.person, 'Profile'),
@@ -32,10 +33,12 @@ class MainNavbar extends StatelessWidget {
         selectedIndex: currentIndex,
         onDestinationSelected: onDestinationChanged,
         destinations: NavDestination.values
-            .map((dest) => NavigationDestination(
-                  icon: Icon(dest.icon),
-                  label: dest.label,
-                ))
+            .map(
+              (dest) => NavigationDestination(
+                icon: Icon(dest.icon),
+                label: dest.label,
+              ),
+            )
             .toList(),
       );
     }
@@ -46,10 +49,10 @@ class MainNavbar extends StatelessWidget {
       onDestinationSelected: onDestinationChanged,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       destinations: NavDestination.values
-          .map((dest) => NavigationDestination(
-                icon: Icon(dest.icon),
-                label: dest.label,
-              ))
+          .map(
+            (dest) =>
+                NavigationDestination(icon: Icon(dest.icon), label: dest.label),
+          )
           .toList(),
     );
   }
@@ -69,7 +72,7 @@ class MainNavbarAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return AppBar(
       title: const Text('Travel Angels'),
       bottom: PreferredSize(
@@ -79,7 +82,7 @@ class MainNavbarAppBar extends StatelessWidget implements PreferredSizeWidget {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.2),
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
@@ -110,7 +113,7 @@ class MainNavbarAppBar extends StatelessWidget implements PreferredSizeWidget {
                           size: 20,
                           color: isSelected
                               ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurface.withOpacity(0.7),
+                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                         const SizedBox(width: 8),
                         Text(
@@ -118,9 +121,10 @@ class MainNavbarAppBar extends StatelessWidget implements PreferredSizeWidget {
                           style: theme.textTheme.labelLarge?.copyWith(
                             color: isSelected
                                 ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurface.withOpacity(0.7),
-                            fontWeight:
-                                isSelected ? FontWeight.w600 : FontWeight.normal,
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                           ),
                         ),
                       ],

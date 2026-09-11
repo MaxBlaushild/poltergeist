@@ -1,30 +1,51 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travel_angels/main.dart';
+import 'package:travel_angels/services/travel_calendar_service.dart';
+
+class _SharedCalendarService extends TravelCalendarService {
+  @override
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, dynamic>? query,
+  }) async => {
+    'calendar': {
+      'id': 'calendar-1',
+      'title': 'Our travel calendar',
+      'canManage': false,
+    },
+    'stops': [
+      {
+        'id': 'stop-1',
+        'title': 'Meet us in Lisbon',
+        'destination': 'Lisbon, Portugal',
+        'startDate': '2032-12-20',
+        'endDate': '2033-01-10',
+        'datePrecision': 'fixed',
+        'status': 'confirmed',
+        'published': true,
+        'joinOpen': true,
+      },
+    ],
+  };
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('shared links open permitted plans without the app login gate', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      MyApp(
+        initialRoute: '/calendar/example_shared_token_123456789',
+        calendarService: _SharedCalendarService(),
+        listenForDeepLinks: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Meet us in Lisbon'), findsOneWidget);
+    expect(find.text('Our travel calendar'), findsOneWidget);
+    expect(find.text('Phone number'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

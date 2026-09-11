@@ -1,0 +1,11 @@
+ALTER TABLE tc_grants DROP CONSTRAINT IF EXISTS tc_grants_guest_recipient_fk;
+DROP TABLE IF EXISTS tc_calendar_notices;
+DROP TABLE IF EXISTS tc_calendar_deliveries;
+DROP TABLE IF EXISTS tc_calendar_broadcasts;
+DROP TABLE IF EXISTS tc_subscription_exclusions;
+DROP TABLE IF EXISTS tc_calendar_subscriptions;
+DROP TABLE IF EXISTS tc_calendar_invitations;
+DROP TABLE IF EXISTS tc_guest_rate_limits;
+DROP TABLE IF EXISTS tc_guest_tokens;
+DROP TABLE IF EXISTS tc_guest_challenges;
+DROP TABLE IF EXISTS tc_guest_recipients;

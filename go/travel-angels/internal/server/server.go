@@ -1,16 +1,24 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dropbox"
+	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/googledrive"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
+	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/travelcalendar"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +31,7 @@ type server struct {
 	billingClient     billing.Client
 	googleMapsClient  googlemaps.Client
 	baseURL           string
+	calendar          *travelcalendar.Service
 }
 
 type Server interface {
@@ -40,7 +49,7 @@ func NewServer(
 	googleMapsClient googlemaps.Client,
 	baseURL string,
 ) Server {
-	return &server{
+	s := &server{
 		authClient:        authClient,
 		dbClient:          dbClient,
 		googleDriveClient: googleDriveClient,
@@ -50,9 +59,38 @@ func NewServer(
 		googleMapsClient:  googleMapsClient,
 		baseURL:           baseURL,
 	}
+	// Shared by standalone Travel Angels and the aggregated core service.
+	// No second connection pool or automatic production schema migration.
+	connection, err := db.GormConnection(dbClient)
+	if err == nil {
+		webURL := strings.TrimRight(os.Getenv("TRAVEL_ANGELS_WEB_URL"), "/")
+		s.calendar = travelcalendar.New(connection, s.GetAuthenticatedUser, webURL)
+		var sender email.EmailClient
+		from := os.Getenv("TRAVEL_ANGELS_EMAIL_FROM")
+		if from == "" {
+			from = os.Getenv("EMAIL_FROM_ADDRESS")
+		}
+		if from != "" && os.Getenv("TWILIO_ACCOUNT_SID") != "" && os.Getenv("TWILIO_AUTH_TOKEN") != "" && webURL != "" {
+			sender = email.NewClient(email.ClientConfig{
+				AccountSid: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"),
+				FromAddress: from, FromName: "Travel Angels", WebHost: webURL,
+				HTTPClient: &http.Client{Timeout: 30 * time.Second},
+			})
+		}
+		s.calendar.ConfigureDelivery(travelcalendar.GuestDeliveryConfig{Sender: sender, BaseURL: webURL})
+		if sender != nil {
+			go s.calendar.RunDeliveryWorker(context.Background())
+		}
+	} else {
+		log.Printf("travel calendar routes unavailable: %v", err)
+	}
+	return s
 }
 
 func (s *server) SetupRoutes(r *gin.Engine) {
+	if s.calendar != nil {
+		s.calendar.RegisterRoutes(r)
+	}
 	r.GET("/travel-angels/health", s.GetHealth)
 	r.POST("/travel-angels/login", s.login)
 	r.POST("/travel-angels/register", s.register)

@@ -39,6 +39,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/email v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googledrive v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
@@ -48,6 +49,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/nguyenthenguyen/docx v0.0.0-20230621112118-9c8e795a11db
 	github.com/spf13/viper v1.21.0
+	gorm.io/driver/postgres v1.5.2
+	gorm.io/gorm v1.30.0
 	rsc.io/pdf v0.1.1
 )
 
@@ -136,6 +139,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gorm.io/datatypes v1.2.7 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
-	gorm.io/driver/postgres v1.5.2 // indirect
-	gorm.io/gorm v1.30.0 // indirect
 )

@@ -1,6 +1,9 @@
 class ApiConstants {
   // Base URL - should be configured via environment or config
-  static const String baseUrl = 'https://api.unclaimedstreets.com';
+  static const String baseUrl = String.fromEnvironment(
+    'TRAVEL_ANGELS_API_URL',
+    defaultValue: 'https://api.unclaimedstreets.com',
+  );
 
   // Authenticator endpoints
   static const String verificationCodeEndpoint =
