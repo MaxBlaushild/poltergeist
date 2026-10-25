@@ -20,6 +20,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
+	golang.org/x/net v0.49.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.265.0
 )
@@ -60,7 +61,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
