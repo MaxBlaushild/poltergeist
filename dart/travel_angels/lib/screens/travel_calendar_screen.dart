@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/screens/travel_trip_screen.dart';
 import 'package:travel_angels/widgets/travel_account_claim.dart';
 import 'package:travel_angels/widgets/travel_calendar_delivery.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
 import 'package:travel_angels/widgets/travel_calendar_views.dart';
+import 'package:travel_angels/widgets/travel_trip_settings.dart';
 
 /// An ongoing personal calendar, or its account-free shared browser view.
 class TravelCalendarScreen extends StatefulWidget {
@@ -285,7 +287,10 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       builder: (context) => TravelStopEditor(
         service: _service,
         stop: stop,
-        calendars: [_calendar, ..._editableCalendars],
+        calendars: [
+          _calendar,
+          ..._editableCalendars,
+        ].where((calendar) => calendar['canCreateTrips'] != false).toList(),
       ),
     );
     if (saved == true) await _load();
@@ -313,7 +318,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     context: context,
     builder: (context) => TravelInvitationsDialog(
       service: _service,
-      calendarId: _calendar['id'] as String,
+      calendarId: (stop?['calendarId'] ?? _calendar['id']) as String,
       stop: stop,
     ),
   );
@@ -322,7 +327,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     context: context,
     builder: (context) => TravelBroadcastDialog(
       service: _service,
-      calendarId: _calendar['id'] as String,
+      calendarId: (stop?['calendarId'] ?? _calendar['id']) as String,
       stops: _stops,
       initialStop: stop,
     ),
@@ -367,7 +372,11 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         stop == null
             ? '/calendar/share-link'
             : '/calendar/stops/${stop['id']}/share-link',
-        data: {'enabled': true, 'rotate': false},
+        data: {
+          'enabled': true,
+          'rotate': false,
+          if (stop?['revision'] != null) 'revision': stop!['revision'],
+        },
       );
       await _load();
       if (!mounted) return;
@@ -431,6 +440,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     final data = <String, dynamic>{
       'enabled': choice == 'rotate',
       'rotate': choice == 'rotate',
+      if (stop?['revision'] != null) 'revision': stop!['revision'],
     };
     setState(() => _busy = true);
     try {
@@ -512,16 +522,11 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     }
   }
 
-  bool _eligible(TravelStop stop) {
-    final participation = stop['ownParticipation'];
-    return stop['published'] == true &&
-        stop['joinOpen'] == true &&
-        stop['status'] != 'cancelled' &&
-        stop['acceptingParticipation'] != false &&
-        !(participation is Map && participation['status'] == 'removed');
-  }
-
-  Future<void> _selectStop(TravelStop stop) async {
+  Future<void> _selectStop(
+    TravelStop stop, {
+    String? preset,
+    bool submitImmediately = false,
+  }) async {
     final id = stop['id'] as String;
     final prior =
         _selections[id] ??
@@ -529,13 +534,38 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
             ? Map<String, dynamic>.from(stop['ownParticipation'] as Map)
             : <String, dynamic>{});
     String action =
+        preset ??
+        ([
+              'requested',
+              'joined',
+              'needs_reconfirmation',
+            ].contains(prior['status'])
+            ? 'requested'
+            : 'interested');
+    final settings = stop['tripSettings'] is Map
+        ? stop['tripSettings'] as Map
+        : const {};
+    final capacity = stop['capacity'] is Map
+        ? stop['capacity'] as Map
+        : const {};
+    final canRequest =
+        capacity['full'] != true ||
+        prior['reserved'] == true ||
         [
-          'requested',
           'joined',
+          'requested',
           'needs_reconfirmation',
-        ].contains(prior['status'])
-        ? 'requested'
-        : 'interested';
+        ].contains(prior['status']);
+    final canWaitlist =
+        settings['waitlistEnabled'] == true || prior['status'] == 'waitlisted';
+    if (action == 'requested' && !canRequest) {
+      action = canWaitlist ? 'waitlisted' : 'interested';
+    }
+    if (action == 'waitlisted' && !canWaitlist) action = 'interested';
+    final rosterVersion = stop['rosterVersion'] as int?;
+    bool rosterConsent =
+        rosterVersion != null && prior['rosterConsentVersion'] == rosterVersion;
+    bool shareDates = prior['shareDates'] == true;
     final fixed = stop['datePrecision'] == 'fixed';
     if (!fixed) action = 'interested';
     final first = travelDate(stop['startDate']);
@@ -591,10 +621,15 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                         value: 'interested',
                         child: Text('Interested'),
                       ),
-                      if (fixed && range != null)
+                      if (fixed && range != null && canRequest)
                         const DropdownMenuItem(
                           value: 'requested',
                           child: Text('Request to join'),
+                        ),
+                      if (fixed && range != null && canWaitlist)
+                        const DropdownMenuItem(
+                          value: 'waitlisted',
+                          child: Text('Join waitlist'),
                         ),
                     ],
                     onChanged: (value) => setDialogState(() => action = value!),
@@ -629,6 +664,34 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
+                  if (rosterVersion != null) ...[
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: rosterConsent,
+                      onChanged: (value) =>
+                          setDialogState(() => rosterConsent = value ?? false),
+                      title: Text(
+                        settings['rosterVisibility'] == 'hosts'
+                            ? 'Trip hosts can see my name and avatar.'
+                            : 'Trip hosts and confirmed attendees can see my name and avatar when I attend.',
+                      ),
+                      subtitle: const Text(
+                        'Your contact details stay private. Required to request attendance or join the waitlist.',
+                      ),
+                    ),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: shareDates,
+                      onChanged: (value) =>
+                          setDialogState(() => shareDates = value ?? false),
+                      title: const Text(
+                        'Also share my selected dates with confirmed attendees',
+                      ),
+                      subtitle: const Text(
+                        'Optional. Hosts can always see the dates you request.',
+                      ),
+                    ),
+                  ],
                   const Text(
                     'Nothing is submitted yet. You will review your selections and claim or sign into your account before confirming. Joining requires host approval.',
                   ),
@@ -642,13 +705,24 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, {
-                'stopId': id,
-                'status': action,
-                'startDate': range == null ? '' : travelDateValue(range!.start),
-                'endDate': range == null ? '' : travelDateValue(range!.end),
-              }),
-              child: const Text('Add to selections'),
+              onPressed:
+                  rosterVersion != null &&
+                      action != 'interested' &&
+                      !rosterConsent
+                  ? null
+                  : () => Navigator.pop(context, {
+                      'stopId': id,
+                      'status': action,
+                      'startDate': range == null
+                          ? ''
+                          : travelDateValue(range!.start),
+                      'endDate': range == null
+                          ? ''
+                          : travelDateValue(range!.end),
+                      if (rosterConsent) 'rosterConsentVersion': rosterVersion,
+                      'shareDates': shareDates,
+                    }),
+              child: Text(submitImmediately ? 'Continue' : 'Add to selections'),
             ),
           ],
         ),
@@ -660,11 +734,15 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         _selectionNotice = null;
       });
       await _saveSelections();
-      _message('Selection saved. Review and submit when ready.');
+      if (submitImmediately) {
+        await _reviewSelections(onlyStopId: id);
+      } else {
+        _message('Selection saved. Review and submit when ready.');
+      }
     }
   }
 
-  Future<void> _reviewSelections() async {
+  Future<void> _reviewSelections({String? onlyStopId}) async {
     if (_selections.isEmpty) return;
     final authenticated =
         context.read<AuthProvider?>()?.isAuthenticated ?? false;
@@ -702,8 +780,26 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       if (!mounted || _selections.isEmpty || _error != null) return;
     }
     if (!mounted) return;
-    final reviewSelections = _visibleSelections;
+    final reviewSelections = Map<String, Map<String, dynamic>>.fromEntries(
+      _visibleSelections.entries.where(
+        (entry) => onlyStopId == null || entry.key == onlyStopId,
+      ),
+    );
     if (reviewSelections.isEmpty) return;
+    for (final entry in reviewSelections.entries) {
+      final current = _stops
+          .where((stop) => stop['id'] == entry.key)
+          .firstOrNull;
+      if (current?['rosterVersion'] != null &&
+          entry.value['status'] != 'interested' &&
+          entry.value['rosterConsentVersion'] != current!['rosterVersion']) {
+        _message(
+          'The attendee privacy setting changed. Review it before submitting.',
+        );
+        await _selectStop(current, submitImmediately: true);
+        return;
+      }
+    }
     final reviewIdentityGeneration = _identityGeneration;
     final reviewAccountId = _auth?.user?.id;
     final titles = {for (final stop in _stops) stop['id']: stop['title']};
@@ -882,19 +978,20 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       await _mutate(() async {
         await _service.post(
           '/calendar/stops/${stop['id']}/${published ? 'publish' : 'unpublish'}',
+          data: {if (stop['revision'] != null) 'revision': stop['revision']},
         );
       });
     }
   }
 
-  Future<void> _participants(TravelStop stop) => showDialog<void>(
-    context: context,
-    builder: (context) => _TravelParticipantsDialog(
-      service: _service,
-      stop: stop,
-      onChanged: _load,
-    ),
-  );
+  Future<void> _participants(TravelStop stop) async {
+    await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          TravelTripParticipantsDialog(service: _service, stop: stop),
+    );
+    if (mounted) await _load();
+  }
 
   Future<void> _notifications() async {
     final stopId = await showDialog<String>(
@@ -914,180 +1011,133 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     }
   }
 
-  Future<void> _showStop(TravelStop stop) async {
-    final action = await showModalBottomSheet<String>(
+  Future<void> _acceptHost(Map<String, dynamic> invitation) async {
+    bool attending = false;
+    bool consent = false;
+    final fullHost = invitation['isHost'] == true;
+    final version = invitation['rosterVersion'] as int?;
+    final choice = await showDialog<bool>(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .85,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Accept hosting invitation'),
+          content: SizedBox(
+            width: 440,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  stop['title'] as String? ?? 'Travel stop',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  fullHost
+                      ? 'As a host you can edit this trip, manage its audience, invite hosts, and approve attendees.'
+                      : 'Accept the collaboration permissions granted by the trip owner.',
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  stop['destination'] as String? ?? '',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                Text(travelDateLabel(stop)),
-                if (stop['datePrecision'] == 'fixed' &&
-                    (stop['timeZone'] as String?)?.isNotEmpty == true)
-                  Text(
-                    'Destination time zone: ${stop['timeZone']}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                const SizedBox(height: 12),
-                Text(
-                  '${travelStatusLabel(stop['status'])}${stop['published'] == true ? '' : ' · Draft'}',
-                ),
-                if ((stop['description'] as String?)?.isNotEmpty == true) ...[
-                  const SizedBox(height: 16),
-                  Text(stop['description'] as String),
-                ],
-                if (stop['canManage'] == true) ...[
-                  const Divider(height: 32),
-                  Text(
-                    'Manage this stop',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    'Audience: ${travelVisibilityLabel(stop['visibility'] as String?)}',
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.pop(context, 'edit'),
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Edit draft'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.pop(context, 'preview'),
-                        icon: const Icon(Icons.visibility_outlined),
-                        label: const Text('Preview draft'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context, 'publish'),
-                        child: Text(
-                          stop['published'] == true
-                              ? 'Publish draft changes'
-                              : 'Publish stop',
-                        ),
-                      ),
-                      if (stop['published'] == true)
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, 'unpublish'),
-                          child: const Text('Unpublish'),
-                        ),
-                      OutlinedButton(
-                        onPressed: () => Navigator.pop(context, 'participants'),
-                        child: const Text('Participants'),
-                      ),
-                      if (stop['published'] == true) ...[
-                        OutlinedButton(
-                          onPressed: () => Navigator.pop(context, 'invite'),
-                          child: const Text('Invite friends'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.pop(context, 'broadcast'),
-                          child: const Text('Broadcast update'),
-                        ),
-                      ],
-                      if (stop['canManagePermissions'] == true) ...[
-                        OutlinedButton(
-                          onPressed: () =>
-                              Navigator.pop(context, 'permissions'),
-                          child: const Text('Audience'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.pop(context, 'share'),
-                          child: const Text('Share link'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, 'links'),
-                          child: const Text('Replace / disable link'),
-                        ),
-                      ],
-                      if (stop['canManageCollaborators'] == true ||
-                          _canManageCalendarPermissions &&
-                              stop['calendarId'] == _calendar['id'])
-                        OutlinedButton(
-                          onPressed: () =>
-                              Navigator.pop(context, 'collaborators'),
-                          child: const Text('Co-hosts'),
-                        ),
-                    ],
-                  ),
-                ],
-                if (stop['published'] == true) ...[
-                  const Divider(height: 32),
-                  if (stop['ownParticipation'] is Map) ...[
-                    Text(
-                      'Your participation: ${travelStatusLabel((stop['ownParticipation'] as Map)['status'])}',
+                if (fullHost) ...[
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: attending,
+                    onChanged: version == null
+                        ? null
+                        : (value) => update(() => attending = value ?? false),
+                    title: const Text('I am also attending'),
+                    subtitle: const Text(
+                      'Attending hosts count toward the trip maximum. You can change this on the trip page.',
                     ),
-                    if ((stop['ownParticipation'] as Map)['status'] ==
-                        'needs_reconfirmation')
-                      const Text(
-                        'The plan changed. Review the current dates and resubmit for approval.',
-                      ),
-                    if (![
-                      'withdrawn',
-                      'removed',
-                      'cancelled',
-                    ].contains((stop['ownParticipation'] as Map)['status']))
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, 'withdraw'),
-                        child: const Text('Withdraw participation'),
-                      ),
-                  ],
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (_eligible(stop))
-                        FilledButton.icon(
-                          onPressed: () => Navigator.pop(context, 'select'),
-                          icon: const Icon(Icons.add_task),
-                          label: Text(
-                            _selections.containsKey(stop['id'])
-                                ? 'Edit selection'
-                                : 'Choose dates / interest',
-                          ),
-                        ),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.pop(context, 'follow'),
-                        icon: const Icon(Icons.notifications_none),
-                        label: const Text('Follow / manage updates'),
-                      ),
-                    ],
                   ),
-                  if (!_eligible(stop))
-                    const Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: Text(
-                        'This stop is not accepting new participation.',
+                  if (attending)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: consent,
+                      onChanged: (value) =>
+                          update(() => consent = value ?? false),
+                      title: Text(
+                        invitation['rosterVisibility'] == 'hosts'
+                            ? 'Hosts can see my attendance.'
+                            : 'Hosts and confirmed attendees can see my name and avatar.',
                       ),
                     ),
                 ],
               ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: attending && !consent
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('Accept'),
+            ),
+          ],
         ),
       ),
     );
-    if (!mounted) return;
+    if (choice != true || !mounted) return;
+    await _mutate(() async {
+      await _service.post(
+        '/calendar/collaborators/${invitation['id']}/accept',
+        data: {
+          'attending': attending,
+          if (consent && version != null) 'rosterConsentVersion': version,
+          'shareDates': false,
+        },
+      );
+    });
+  }
+
+  Future<TravelStop> _loadTrip([String? stopId]) async {
+    final accountId = _auth?.user?.id;
+    final generation = _identityGeneration;
+    final result = await _service.get(
+      widget.stopToken != null
+          ? '/shared/stops/${Uri.encodeComponent(widget.stopToken!)}'
+          : '/calendar/stops/${Uri.encodeComponent(stopId!)}',
+      query: _accessQuery,
+    );
+    if (!mounted ||
+        generation != _identityGeneration ||
+        accountId != _auth?.user?.id ||
+        result['stop'] is! Map) {
+      throw const TravelCalendarException(
+        'This trip is unavailable or requires access.',
+      );
+    }
+    final trip = Map<String, dynamic>.from(result['stop'] as Map);
+    if (mounted) {
+      final index = _stops.indexWhere((s) => s['id'] == trip['id']);
+      setState(() {
+        if (index < 0) {
+          _stops.add(trip);
+        } else {
+          _stops[index] = trip;
+        }
+      });
+    }
+    return trip;
+  }
+
+  Future<void> _showStop(TravelStop stop) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TravelTripScreen(
+          initialStop: stop,
+          service: _service,
+          accessQuery: _accessQuery,
+          loadStop: () => _loadTrip(stop['id'] as String),
+          onAction: _tripAction,
+          onVerify: _verify,
+          onDeleted: () {
+            Navigator.of(context).pop();
+          },
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _tripAction(String action, TravelStop stop) async {
     switch (action) {
       case 'edit':
         await _edit(stop);
@@ -1104,6 +1154,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       case 'participants':
         await _participants(stop);
       case 'collaborators':
+      case 'hosts':
         await _collaborators(stop);
       case 'invite':
         await _invitations(stop);
@@ -1111,6 +1162,18 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         await _broadcast(stop);
       case 'select':
         await _selectStop(stop);
+      case 'request':
+      case 'interested':
+      case 'waitlist':
+        await _selectStop(
+          stop,
+          preset: action == 'request'
+              ? 'requested'
+              : action == 'waitlist'
+              ? 'waitlisted'
+              : 'interested',
+          submitImmediately: true,
+        );
       case 'follow':
         await _follow(stop);
       case 'preview':
@@ -1133,6 +1196,15 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.stopToken != null) {
+      return TravelTripScreen(
+        service: _service,
+        accessQuery: _accessQuery,
+        loadStop: _loadTrip,
+        onAction: _tripAction,
+        onVerify: _verify,
+      );
+    }
     final theme = Theme.of(context);
     final visibleSelections = _visibleSelections;
     final filtered = filterTravelStops(
@@ -1249,11 +1321,12 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          if (_canManageCalendar)
+                          if (_canManageCalendar &&
+                              _calendar['canCreateTrips'] != false)
                             FilledButton.icon(
                               onPressed: _busy ? null : _edit,
                               icon: const Icon(Icons.add),
-                              label: const Text('Add stop'),
+                              label: const Text('Create trip'),
                             ),
                           if (_canManageCalendarPermissions)
                             OutlinedButton.icon(
@@ -1292,20 +1365,19 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                           child: ListTile(
                             leading: const Icon(Icons.group_add_outlined),
                             title: Text(
-                              invitation['title'] as String? ??
-                                  'Co-host invitation',
+                              (invitation['tripTitle'] ?? invitation['title'])
+                                      as String? ??
+                                  'Hosting invitation',
                             ),
-                            subtitle: const Text(
-                              'Accept to show this shared stop on your calendar.',
+                            subtitle: Text(
+                              invitation['isHost'] == true
+                                  ? '${invitation['ownerDisplayName'] ?? 'The trip owner'} invited you to host. Review the role and choose whether you’re attending.'
+                                  : 'Accept to show this shared trip on your calendar.',
                             ),
                             trailing: TextButton(
                               onPressed: _busy
                                   ? null
-                                  : () => _mutate(() async {
-                                      await _service.post(
-                                        '/calendar/collaborators/${invitation['id']}/accept',
-                                      );
-                                    }),
+                                  : () => _acceptHost(invitation),
                               child: const Text('Accept'),
                             ),
                           ),
@@ -1550,166 +1622,4 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       ),
     );
   }
-}
-
-class _TravelParticipantsDialog extends StatefulWidget {
-  const _TravelParticipantsDialog({
-    required this.service,
-    required this.stop,
-    required this.onChanged,
-  });
-  final TravelCalendarService service;
-  final TravelStop stop;
-  final Future<void> Function() onChanged;
-
-  @override
-  State<_TravelParticipantsDialog> createState() =>
-      _TravelParticipantsDialogState();
-}
-
-class _TravelParticipantsDialogState extends State<_TravelParticipantsDialog> {
-  List<Map<String, dynamic>> _participants = [];
-  bool _busy = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final data = await widget.service.get(
-        '/calendar/stops/${widget.stop['id']}/participations',
-      );
-      if (mounted) {
-        setState(() => _participants = travelMaps(data['participations']));
-      }
-    } catch (error) {
-      if (mounted) setState(() => _error = travelError(error));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _update(Map<String, dynamic> participant, String status) async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await widget.service.put(
-        '/calendar/stops/${widget.stop['id']}/participations/${participant['id']}',
-        data: {'status': status},
-      );
-      await _load();
-      await widget.onChanged();
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = travelError(error);
-          _busy = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Participants'),
-    content: SizedBox(
-      width: 600,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Only approved Joined participants are confirmed. Date changes need renewed approval.',
-            ),
-            if (_busy) const LinearProgressIndicator(),
-            if (!_busy && _participants.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('No participation yet.'),
-              ),
-            for (final participant in _participants)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (participant['displayName'] ??
-                                participant['name'] ??
-                                participant['username'] ??
-                                participant['userId'] ??
-                                'Traveler')
-                            .toString(),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(travelStatusLabel(participant['status'])),
-                      Text(
-                        '${participant['startDate'] ?? ''} – ${participant['endDate'] ?? ''}',
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          if (participant['status'] == 'requested') ...[
-                            FilledButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _update(participant, 'joined'),
-                              child: const Text('Approve'),
-                            ),
-                            TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _update(participant, 'declined'),
-                              child: const Text('Decline'),
-                            ),
-                          ],
-                          if ([
-                            'joined',
-                            'requested',
-                            'interested',
-                            'needs_reconfirmation',
-                          ].contains(participant['status']))
-                            TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _update(participant, 'removed'),
-                              child: const Text('Remove'),
-                            ),
-                          if (participant['status'] == 'removed')
-                            TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _update(participant, 'withdrawn'),
-                              child: const Text('Allow requesting again'),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-          ],
-        ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Done'),
-      ),
-    ],
-  );
 }

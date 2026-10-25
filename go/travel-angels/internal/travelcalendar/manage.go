@@ -17,6 +17,7 @@ type grantInput struct {
 	Name        string     `json:"name"`
 }
 type permissionInput struct {
+	Revision       *int          `json:"revision"`
 	Visibility     string        `json:"visibility"`
 	Grants         *[]grantInput `json:"grants"`
 	ConfirmRemoval bool          `json:"confirmRemoval"`
@@ -56,6 +57,7 @@ func (s *Service) getPermissions(c *gin.Context) {
 	var grants []Grant
 	var collaborators []Collaborator
 	visibility := ""
+	revision := 0
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		cal, stop, e := s.permissionScope(tx, c, u.ID)
 		if e != nil {
@@ -64,6 +66,7 @@ func (s *Service) getPermissions(c *gin.Context) {
 		scope, id := scopeWhere(cal, stop)
 		if stop != nil {
 			visibility = stop.Visibility
+			revision = stop.Revision
 		} else {
 			visibility = cal.Visibility
 		}
@@ -90,9 +93,9 @@ func (s *Service) getPermissions(c *gin.Context) {
 	}
 	collaboratorRows := make([]gin.H, 0, len(collaborators))
 	for _, person := range collaborators {
-		collaboratorRows = append(collaboratorRows, gin.H{"id": person.ID, "calendarId": person.CalendarID, "stopId": person.StopID, "userId": person.UserID, "canManagePermissions": person.CanManagePermissions, "accepted": person.Accepted, "displayName": s.userDisplayName(person.UserID)})
+		collaboratorRows = append(collaboratorRows, gin.H{"id": person.ID, "calendarId": person.CalendarID, "stopId": person.StopID, "userId": person.UserID, "canManagePermissions": person.CanManagePermissions, "accepted": person.Accepted, "isHost": person.IsHost, "displayName": s.userDisplayName(person.UserID)})
 	}
-	c.JSON(200, gin.H{"visibility": visibility, "grants": rows, "collaborators": collaboratorRows})
+	c.JSON(200, gin.H{"visibility": visibility, "grants": rows, "collaborators": collaboratorRows, "revision": revision})
 }
 func (s *Service) previewPermissions(c *gin.Context) { s.savePermissions(c, true) }
 func (s *Service) updatePermissions(c *gin.Context)  { s.savePermissions(c, false) }
@@ -107,10 +110,17 @@ func (s *Service) savePermissions(c *gin.Context, preview bool) {
 		return
 	}
 	removed := 0
+	revision := 0
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		cal, stop, e := s.permissionScope(tx, c, u.ID)
 		if e != nil {
 			return e
+		}
+		if stop != nil {
+			if e = s.checkTripRevision(stop, b.Revision); e != nil {
+				return e
+			}
+			revision = stop.Revision
 		}
 		scope, id := scopeWhere(cal, stop)
 		if b.Visibility != "" {
@@ -212,11 +222,21 @@ func (s *Service) savePermissions(c *gin.Context, preview bool) {
 				return e
 			}
 		}
+		for i := range stops {
+			if stop != nil || stops[i].Visibility == "inherit" {
+				if e = s.saveTripChange(tx, &stops[i], u.ID, "permissions_updated", gin.H{"visibility": b.Visibility, "removedParticipationCount": removed}); e != nil {
+					return e
+				}
+				if stop != nil {
+					revision = stops[i].Revision
+				}
+			}
+		}
 		return nil
 	})
 	if errors.Is(e, errPreview) {
 		if preview {
-			c.JSON(200, gin.H{"removedParticipationCount": removed})
+			c.JSON(200, gin.H{"removedParticipationCount": removed, "revision": revision})
 			return
 		}
 		c.JSON(409, gin.H{"error": "Confirm ending participation for people losing access", "removedParticipationCount": removed})
@@ -226,13 +246,13 @@ func (s *Service) savePermissions(c *gin.Context, preview bool) {
 		respondError(c, e)
 		return
 	}
-	c.JSON(200, gin.H{"updated": true, "removedParticipationCount": removed})
+	c.JSON(200, gin.H{"updated": true, "removedParticipationCount": removed, "revision": revision})
 }
 func (s *Service) reconcileParticipationAccess(tx *gorm.DB, stop *Stop, apply bool) (int, error) {
 	// An unpublished draft alone is not a grant revocation; managers may keep
 	// drafting while participants await reconfirmation after republishing.
 	var ps []Participation
-	if e := tx.Where("stop_id = ? AND status IN ('interested','requested','joined','needs_reconfirmation')", stop.ID).Find(&ps).Error; e != nil {
+	if e := tx.Where("stop_id = ? AND status IN ('interested','requested','joined','needs_reconfirmation','waitlisted')", stop.ID).Find(&ps).Error; e != nil {
 		return 0, e
 	}
 	removed := 0
@@ -250,6 +270,7 @@ func (s *Service) reconcileParticipationAccess(tx *gorm.DB, stop *Stop, apply bo
 		removed++
 		if apply {
 			p.Status = "removed"
+			p.Reserved = false
 			if e := tx.Save(p).Error; e != nil {
 				return 0, e
 			}
@@ -266,6 +287,7 @@ func (s *Service) updateShareLink(c *gin.Context) {
 		return
 	}
 	var b struct {
+		Revision       *int `json:"revision"`
 		Enabled        bool `json:"enabled"`
 		Rotate         bool `json:"rotate"`
 		ConfirmRemoval bool `json:"confirmRemoval"`
@@ -276,10 +298,17 @@ func (s *Service) updateShareLink(c *gin.Context) {
 	}
 	token := ""
 	removed := 0
+	revision := 0
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		cal, stop, e := s.permissionScope(tx, c, u.ID)
 		if e != nil {
 			return e
+		}
+		if stop != nil {
+			if e = s.checkTripRevision(stop, b.Revision); e != nil {
+				return e
+			}
+			revision = stop.Revision
 		}
 		stops := []Stop{}
 		if stop != nil {
@@ -318,17 +347,25 @@ func (s *Service) updateShareLink(c *gin.Context) {
 		if removed > 0 && !b.ConfirmRemoval {
 			return errPreview
 		}
+		for i := range stops {
+			if e = s.saveTripChange(tx, &stops[i], u.ID, "sharing_link_updated", gin.H{"enabled": b.Enabled, "rotated": b.Rotate, "removedParticipationCount": removed}); e != nil {
+				return e
+			}
+			if stop != nil {
+				revision = stops[i].Revision
+			}
+		}
 		return nil
 	})
 	if errors.Is(e, errPreview) {
-		c.JSON(409, gin.H{"error": "Confirm ending participation for people losing access", "removedParticipationCount": removed})
+		c.JSON(409, gin.H{"error": "Confirm ending participation for people losing access", "removedParticipationCount": removed, "revision": revision})
 		return
 	}
 	if e != nil {
 		respondError(c, e)
 		return
 	}
-	c.JSON(200, gin.H{"shareToken": token, "sharingEnabled": b.Enabled, "removedParticipationCount": removed})
+	c.JSON(200, gin.H{"shareToken": token, "sharingEnabled": b.Enabled, "removedParticipationCount": removed, "revision": revision})
 }
 func (s *Service) collaboratorScope(tx *gorm.DB, c *gin.Context, userID uuid.UUID) (*Calendar, *Stop, error) {
 	cal, stop, e := s.permissionScope(tx, c, userID)
@@ -340,136 +377,12 @@ func (s *Service) collaboratorScope(tx *gorm.DB, c *gin.Context, userID uuid.UUI
 		if e = tx.First(&owner, "id = ?", stop.CalendarID).Error; e != nil {
 			return nil, nil, e
 		}
-		if owner.OwnerID != userID {
+		if owner.OwnerID != userID && !stop.HostModel {
 			return nil, nil, errForbidden
 		}
 	}
 	return cal, stop, nil
 }
-func (s *Service) addCollaborator(c *gin.Context) {
-	u, ok := s.requireUser(c)
-	if !ok {
-		return
-	}
-	var b struct {
-		UserID               uuid.UUID `json:"userId"`
-		CanManagePermissions bool      `json:"canManagePermissions"`
-	}
-	if c.ShouldBindJSON(&b) != nil || b.UserID == uuid.Nil || b.UserID == u.ID {
-		respondError(c, bad("Choose another claimed account"))
-		return
-	}
-	var result Collaborator
-	e := s.db.Transaction(func(tx *gorm.DB) error {
-		cal, stop, e := s.collaboratorScope(tx, c, u.ID)
-		if e != nil {
-			return e
-		}
-		scope, id := scopeWhere(cal, stop)
-		var n int64
-		if tx.Table("users").Where("id = ?", b.UserID).Count(&n).Error != nil || n != 1 {
-			return bad("Choose an existing account")
-		}
-		e = tx.Where(scope+" = ? AND user_id = ?", id, b.UserID).First(&result).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			result = Collaborator{ID: uuid.New(), UserID: b.UserID, CanManagePermissions: b.CanManagePermissions, Accepted: stop == nil}
-			if stop != nil {
-				result.StopID = &id
-			} else {
-				result.CalendarID = &id
-			}
-			return tx.Create(&result).Error
-		}
-		if e != nil {
-			return e
-		}
-		result.CanManagePermissions = b.CanManagePermissions
-		return tx.Save(&result).Error
-	})
-	if e != nil {
-		respondError(c, e)
-		return
-	}
-	c.JSON(200, result)
-}
-func (s *Service) removeCollaborator(c *gin.Context) {
-	u, ok := s.requireUser(c)
-	if !ok {
-		return
-	}
-	collabID, e := uuid.Parse(c.Param("collaboratorId"))
-	if e != nil {
-		respondError(c, errUnavailable)
-		return
-	}
-	removed := 0
-	preview := c.Request.Method == "POST"
-	e = s.db.Transaction(func(tx *gorm.DB) error {
-		cal, stop, e := s.collaboratorScope(tx, c, u.ID)
-		if e != nil {
-			return e
-		}
-		scope, id := scopeWhere(cal, stop)
-		if e = tx.Where("id = ? AND "+scope+" = ?", collabID, id).Delete(&Collaborator{}).Error; e != nil {
-			return e
-		}
-		stops := []Stop{}
-		if stop != nil {
-			stops = append(stops, *stop)
-		} else if e = tx.Where("calendar_id = ?", cal.ID).Find(&stops).Error; e != nil {
-			return e
-		}
-		for i := range stops {
-			n, e := s.reconcileParticipationAccess(tx, &stops[i], true)
-			if e != nil {
-				return e
-			}
-			removed += n
-			if e = s.reconcileGuestAccess(tx, &stops[i]); e != nil {
-				return e
-			}
-		}
-		if preview || (removed > 0 && c.Query("confirmRemoval") != "true") {
-			return errPreview
-		}
-		return nil
-	})
-	if errors.Is(e, errPreview) {
-		if preview {
-			c.JSON(200, gin.H{"removedParticipationCount": removed})
-		} else {
-			c.JSON(409, gin.H{"error": "Confirm ending participation for people losing management access", "removedParticipationCount": removed})
-		}
-		return
-	}
-	if e != nil {
-		respondError(c, e)
-		return
-	}
-	c.JSON(200, gin.H{"removed": true})
-}
-func (s *Service) acceptCollaborator(c *gin.Context) {
-	u, ok := s.requireUser(c)
-	if !ok {
-		return
-	}
-	id, e := uuid.Parse(c.Param("collaboratorId"))
-	if e != nil {
-		respondError(c, errUnavailable)
-		return
-	}
-	r := s.db.Model(&Collaborator{}).Where("id = ? AND user_id = ?", id, u.ID).Update("accepted", true)
-	if r.Error != nil {
-		respondError(c, r.Error)
-		return
-	}
-	if r.RowsAffected == 0 {
-		respondError(c, errUnavailable)
-		return
-	}
-	c.JSON(200, gin.H{"accepted": true})
-}
-
 func normalizedStatus(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // previewStop evaluates the intended published policy without inheriting the
@@ -484,7 +397,7 @@ func (s *Service) previewStop(c *gin.Context) {
 		Email    string     `json:"email"`
 		UserID   *uuid.UUID `json:"userId"`
 	}
-	if c.ShouldBindJSON(&b) != nil || (b.Audience != "anonymous" && b.Audience != "recipient") {
+	if c.ShouldBindJSON(&b) != nil || (b.Audience != "anonymous" && b.Audience != "recipient" && b.Audience != "attendee") {
 		respondError(c, bad("Choose anonymous or recipient preview"))
 		return
 	}
@@ -516,9 +429,21 @@ func (s *Service) previewStop(c *gin.Context) {
 		draft := stop.Draft
 		preview.Published = &draft
 		allowed := s.canViewStop(tx, &preview, v)
+		if b.Audience == "attendee" {
+			allowed = true
+		}
 		result = gin.H{"canView": allowed, "draft": true}
 		if allowed {
-			result["stop"] = gin.H{"id": stop.ID, "calendarId": stop.CalendarID, "title": draft.Title, "destination": draft.Destination, "startDate": draft.StartDate, "endDate": draft.EndDate, "datePrecision": draft.DatePrecision, "timeZone": effectiveTimeZone(draft.TimeZone), "description": draft.Description, "status": draft.Status, "joinOpen": draft.JoinOpen, "published": true, "canManage": false, "canManagePermissions": false}
+			row := gin.H{"id": stop.ID, "calendarId": stop.CalendarID, "title": draft.Title, "destination": draft.Destination, "startDate": draft.StartDate, "endDate": draft.EndDate, "datePrecision": draft.DatePrecision, "timeZone": effectiveTimeZone(draft.TimeZone), "description": draft.Description, "status": draft.Status, "joinOpen": draft.JoinOpen, "published": true, "canManage": false, "canManagePermissions": false}
+			for key, value := range filteredTripLogistics(&draft, uuid.Nil, false, b.Audience == "attendee") {
+				row[key] = value
+			}
+			if draft.Hero != nil {
+				hero := *draft.Hero
+				hero.URL = tripHeroURL(stop.ID, hero.MediaID)
+				row["hero"] = hero
+			}
+			result["stop"] = row
 		}
 		return nil
 	})

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata"
+	"unicode/utf8"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -30,15 +31,18 @@ type Calendar struct {
 func (Calendar) TableName() string { return "tc_calendars" }
 
 type StopContent struct {
-	TimeZone      string `json:"timeZone"`
-	Title         string `json:"title"`
-	Destination   string `json:"destination"`
-	StartDate     string `json:"startDate"`
-	EndDate       string `json:"endDate"`
-	DatePrecision string `json:"datePrecision"`
-	Description   string `json:"description"`
-	Status        string `json:"status"`
-	JoinOpen      bool   `json:"joinOpen"`
+	Lodging       []TripLodging `json:"lodging,omitempty"`
+	Flights       []TripFlight  `json:"flights,omitempty"`
+	Hero          *TripHero     `json:"hero,omitempty"`
+	TimeZone      string        `json:"timeZone"`
+	Title         string        `json:"title"`
+	Destination   string        `json:"destination"`
+	StartDate     string        `json:"startDate"`
+	EndDate       string        `json:"endDate"`
+	DatePrecision string        `json:"datePrecision"`
+	Description   string        `json:"description"`
+	Status        string        `json:"status"`
+	JoinOpen      bool          `json:"joinOpen"`
 }
 
 func (c *StopContent) validate() error {
@@ -52,7 +56,7 @@ func (c *StopContent) validate() error {
 
 	c.Title = strings.TrimSpace(c.Title)
 	c.Destination = strings.TrimSpace(c.Destination)
-	if c.Title == "" || c.Destination == "" || len(c.Title) > 200 || len(c.Destination) > 300 || len(c.Description) > 10000 {
+	if c.Title == "" || c.Destination == "" || utf8.RuneCountInString(c.Title) > 200 || utf8.RuneCountInString(c.Destination) > 300 || utf8.RuneCountInString(c.Description) > 10000 {
 		return errors.New("title and destination are required; content exceeds limits")
 	}
 	if c.DatePrecision == "" {
@@ -70,12 +74,12 @@ func (c *StopContent) validate() error {
 	if c.DatePrecision == "tbd" {
 		c.StartDate = ""
 		c.EndDate = ""
-		return nil
+		return validateTripLogistics(c)
 	}
 	if !validDate(c.StartDate) || !validDate(c.EndDate) || c.EndDate < c.StartDate {
 		return errors.New("dates must be ordered local dates in YYYY-MM-DD format")
 	}
-	return nil
+	return validateTripLogistics(c)
 }
 func validDate(s string) bool {
 	t, e := time.Parse("2006-01-02", s)
@@ -83,15 +87,22 @@ func validDate(s string) bool {
 }
 
 type Stop struct {
-	ID             uuid.UUID    `json:"id" gorm:"type:uuid;primaryKey"`
-	CalendarID     uuid.UUID    `json:"calendarId" gorm:"type:uuid;index"`
-	Draft          StopContent  `json:"draft" gorm:"serializer:json;type:jsonb"`
-	Published      *StopContent `json:"-" gorm:"serializer:json;type:jsonb"`
-	Visibility     string       `json:"visibility"`
-	ShareToken     string       `json:"shareToken" gorm:"uniqueIndex"`
-	SharingEnabled bool         `json:"sharingEnabled"`
-	CreatedAt      time.Time    `json:"createdAt"`
-	UpdatedAt      time.Time    `json:"updatedAt"`
+	HostModel         bool         `json:"hostModel"`
+	Revision          int          `json:"revision" gorm:"default:1"`
+	MaxAttendees      *int         `json:"maxAttendees"`
+	WaitlistEnabled   bool         `json:"waitlistEnabled"`
+	RosterVisibility  string       `json:"rosterVisibility" gorm:"default:attendees"`
+	ShowAttendeeCount bool         `json:"showAttendeeCount"`
+	RosterVersion     int          `json:"rosterVersion" gorm:"default:1"`
+	ID                uuid.UUID    `json:"id" gorm:"type:uuid;primaryKey"`
+	CalendarID        uuid.UUID    `json:"calendarId" gorm:"type:uuid;index"`
+	Draft             StopContent  `json:"draft" gorm:"serializer:json;type:jsonb"`
+	Published         *StopContent `json:"-" gorm:"serializer:json;type:jsonb"`
+	Visibility        string       `json:"visibility"`
+	ShareToken        string       `json:"shareToken" gorm:"uniqueIndex"`
+	SharingEnabled    bool         `json:"sharingEnabled"`
+	CreatedAt         time.Time    `json:"createdAt"`
+	UpdatedAt         time.Time    `json:"updatedAt"`
 }
 
 func (Stop) TableName() string { return "tc_stops" }
@@ -108,6 +119,7 @@ type Grant struct {
 func (Grant) TableName() string { return "tc_grants" }
 
 type Collaborator struct {
+	IsHost               bool       `json:"isHost"`
 	ID                   uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
 	CalendarID           *uuid.UUID `json:"calendarId,omitempty" gorm:"type:uuid;index"`
 	StopID               *uuid.UUID `json:"stopId,omitempty" gorm:"type:uuid;index"`
@@ -120,6 +132,9 @@ type Collaborator struct {
 func (Collaborator) TableName() string { return "tc_collaborators" }
 
 type Participation struct {
+	Reserved              bool      `json:"reserved"`
+	RosterConsentVersion  int       `json:"rosterConsentVersion"`
+	ShareDates            bool      `json:"shareDates"`
 	CalendarLinkTokenHash string    `json:"-"`
 	StopLinkTokenHash     string    `json:"-"`
 	ID                    uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`

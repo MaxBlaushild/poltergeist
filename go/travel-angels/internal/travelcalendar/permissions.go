@@ -51,12 +51,21 @@ func (s *Service) canManageStop(tx *gorm.DB, stop *Stop, v Viewer) bool {
 		return true
 	}
 	var n int64
-	if tx.Model(&Collaborator{}).Where("user_id = ? AND accepted = ? AND (calendar_id = ? OR stop_id = ?)", v.UserID, true, stop.CalendarID, stop.ID).Count(&n).Error != nil {
+	query := tx.Model(&Collaborator{}).Where("user_id = ? AND accepted = ?", v.UserID, true)
+	if stop.HostModel {
+		query = query.Where("stop_id = ? AND is_host = ?", stop.ID, true)
+	} else {
+		query = query.Where("calendar_id = ? OR stop_id = ?", stop.CalendarID, stop.ID)
+	}
+	if query.Count(&n).Error != nil {
 		return false
 	}
 	return n > 0
 }
 func (s *Service) canManagePermissions(tx *gorm.DB, stop *Stop, v Viewer) bool {
+	if stop.HostModel {
+		return s.canManageStop(tx, stop, v)
+	}
 	if v.UserID == uuid.Nil {
 		return false
 	}
@@ -96,5 +105,5 @@ func (s *Service) canViewStop(tx *gorm.DB, stop *Stop, v Viewer) bool {
 	return allowsView(viewPolicy{Published: stop.Published != nil, Manager: s.canManageStop(tx, stop, v), Visibility: stop.Visibility, CalendarVisibility: cal.Visibility, StopGrant: hasGrant(tx, "stop_id", stop.ID, v), CalendarGrant: hasGrant(tx, "calendar_id", cal.ID, v), HasEnabledLink: (v.StopLinkID == stop.ID && stop.SharingEnabled) || (v.CalendarLinkID == cal.ID && cal.SharingEnabled)})
 }
 func activeParticipation(status string) bool {
-	return status == "interested" || status == "requested" || status == "joined" || status == "needs_reconfirmation"
+	return status == "interested" || status == "requested" || status == "joined" || status == "needs_reconfirmation" || status == "waitlisted"
 }

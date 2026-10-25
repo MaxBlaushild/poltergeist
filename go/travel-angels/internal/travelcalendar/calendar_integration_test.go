@@ -23,11 +23,21 @@ func calendarTestContent(title string) gin.H {
 	return gin.H{"title": title, "destination": "Lisbon, Portugal", "startDate": "2032-12-20", "endDate": "2033-01-10", "datePrecision": "fixed", "description": "Meet us for the holidays", "status": "confirmed", "joinOpen": true}
 }
 
-func calendarCreateStop(t *testing.T, f *guestTestFixture, title string) (string, string) {
+// These scenarios exercise compatibility with the calendar collaboration model
+// that predates explicit full hosts. New-model creation/revisions are covered by
+// the trip HTTP tests; seed real legacy rows without inventing attendance here.
+func calendarCreateLegacyStop(t *testing.T, f *guestTestFixture, title string) (string, string) {
 	t.Helper()
-	result := calendarResponse(t, f, "POST", "/calendar/stops", calendarTestContent(title), f.owner, "", 201)
-	stop := result["stop"].(map[string]interface{})
-	return stop["id"].(string), stop["shareToken"].(string)
+	cal, err := f.service.primaryCalendar(f.db, f.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := StopContent{Title: title, Destination: "Lisbon, Portugal", StartDate: "2032-12-20", EndDate: "2033-01-10", DatePrecision: "fixed", TimeZone: "UTC", Description: "Meet us for the holidays", Status: "confirmed", JoinOpen: true}
+	stop := Stop{ID: uuid.New(), CalendarID: cal.ID, Draft: content, Visibility: "inherit", ShareToken: newToken(), SharingEnabled: true, HostModel: false, ShowAttendeeCount: true}
+	if err = f.db.Create(&stop).Error; err != nil {
+		t.Fatal(err)
+	}
+	return stop.ID.String(), stop.ShareToken
 }
 
 func TestCalendarPublishingAndReplacingPermissions(t *testing.T) {
@@ -39,7 +49,7 @@ func TestCalendarPublishingAndReplacingPermissions(t *testing.T) {
 		t.Fatal("a user must retain one initially private ongoing calendar")
 	}
 	calendarResponse(t, f, "PUT", "/calendar/permissions", gin.H{"visibility": "link"}, f.owner, "", 200)
-	id, token := calendarCreateStop(t, f, "Original public title")
+	id, token := calendarCreateLegacyStop(t, f, "Original public title")
 	sharedPath := "/shared/calendars/" + cal["shareToken"].(string)
 	draftView := calendarResponse(t, f, "GET", sharedPath, nil, uuid.Nil, "", 200)
 	if len(draftView["stops"].([]interface{})) != 0 {
@@ -70,7 +80,7 @@ func TestCalendarPublishingAndReplacingPermissions(t *testing.T) {
 
 func TestCalendarClaimParticipationChangesAndRevocation(t *testing.T) {
 	f := newGuestTestFixture(t)
-	id, link := calendarCreateStop(t, f, "Restricted Lisbon stop")
+	id, link := calendarCreateLegacyStop(t, f, "Restricted Lisbon stop")
 	calendarResponse(t, f, "POST", "/calendar/stops/"+id+"/publish", nil, f.owner, "", 200)
 	guest, recipient := f.verify(t, "calendar-friend@example.com")
 	calendarResponse(t, f, "PUT", "/calendar/stops/"+id+"/permissions", gin.H{"visibility": "specific", "grants": []gin.H{{"recipientId": recipient}}}, f.owner, "", 200)
@@ -125,7 +135,7 @@ func TestCalendarClaimParticipationChangesAndRevocation(t *testing.T) {
 
 func TestCalendarCohostReferencesDoNotExpandAudience(t *testing.T) {
 	f := newGuestTestFixture(t)
-	id, _ := calendarCreateStop(t, f, "Private shared stop")
+	id, _ := calendarCreateLegacyStop(t, f, "Private shared stop")
 	calendarResponse(t, f, "POST", "/calendar/stops/"+id+"/publish", nil, f.owner, "", 200)
 	partner, editor := uuid.New(), uuid.New()
 	if err := f.db.Exec("INSERT INTO users(id) VALUES (?), (?)", partner, editor).Error; err != nil {
@@ -151,8 +161,8 @@ func TestCalendarMigrationsCanRollbackAndReapply(t *testing.T) {
 	f := newGuestTestFixture(t)
 	_, source, _, _ := runtime.Caller(0)
 	for _, name := range []string{
-		"000474_travel_calendar_guests.down.sql", "000473_travel_calendars.down.sql",
-		"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql",
+		"000475_travel_trip_pages.down.sql", "000474_travel_calendar_guests.down.sql", "000473_travel_calendars.down.sql",
+		"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql", "000475_travel_trip_pages.up.sql",
 	} {
 		contents, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../../migrate/internal/migrations", name))
 		if err != nil {

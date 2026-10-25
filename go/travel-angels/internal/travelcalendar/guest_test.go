@@ -132,11 +132,11 @@ func newGuestTestFixture(t *testing.T) *guestTestFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Exec("DROP SCHEMA " + schema + " CASCADE"); sqlDB.Close() })
-	if err := db.Exec("CREATE TABLE users (id uuid PRIMARY KEY, email text UNIQUE)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE users (id uuid PRIMARY KEY, email text UNIQUE, name text NOT NULL DEFAULT '', username text, profile_picture_url text NOT NULL DEFAULT '')").Error; err != nil {
 		t.Fatal(err)
 	}
 	_, source, _, _ := runtime.Caller(0)
-	for _, migration := range []string{"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql"} {
+	for _, migration := range []string{"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql", "000475_travel_trip_pages.up.sql"} {
 		path := filepath.Join(filepath.Dir(source), "../../../migrate/internal/migrations", migration)
 		data, err := os.ReadFile(path)
 		if err != nil {

@@ -7,6 +7,9 @@ import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/friend_service.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_calendar_views.dart';
+import 'package:travel_angels/widgets/travel_trip_design.dart';
+import 'package:travel_angels/widgets/travel_trip_hero.dart';
+import 'package:travel_angels/widgets/travel_trip_logistics.dart';
 
 String travelError(Object error) {
   if (error is TravelCalendarException) return error.message;
@@ -99,6 +102,10 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
     });
     try {
       final data = <String, dynamic>{
+        if (widget.stop?['draft'] is Map)
+          ...Map<String, dynamic>.from(widget.stop!['draft'] as Map),
+        if (widget.stop?['revision'] != null)
+          'revision': widget.stop!['revision'],
         if (widget.stop == null && _calendarId != null)
           'calendarId': _calendarId,
         'title': _title.text.trim(),
@@ -129,7 +136,7 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.stop == null ? 'Add a travel stop' : 'Edit stop draft'),
+    title: Text(widget.stop == null ? 'Create a trip' : 'Edit trip draft'),
     content: SizedBox(
       width: 520,
       child: SingleChildScrollView(
@@ -142,6 +149,12 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
               const Text(
                 'Save a draft, then review its audience and publish when ready.',
               ),
+              if (widget.stop == null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'You will be the first host and listed as attending. You can change your attendance on the trip page.',
+                ),
+              ],
               const SizedBox(height: 16),
               if (widget.stop == null && widget.calendars.length > 1)
                 DropdownButtonFormField<String>(
@@ -168,9 +181,9 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
               TextFormField(
                 controller: _title,
                 decoration: const InputDecoration(labelText: 'Title'),
-                maxLength: 160,
+                maxLength: 200,
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Give this stop a title.'
+                    ? 'Give this trip a name.'
                     : null,
               ),
               TextFormField(
@@ -258,18 +271,23 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _description,
-                decoration: const InputDecoration(labelText: 'About this stop'),
+                decoration: const InputDecoration(labelText: 'About this trip'),
                 minLines: 3,
                 maxLines: 6,
                 maxLength: 5000,
               ),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Open to friends joining'),
-                subtitle: const Text('Requests need host approval.'),
-                value: _joinOpen,
-                onChanged: (value) => setState(() => _joinOpen = value),
-              ),
+              if (widget.stop?['hostModel'] == true)
+                const Text(
+                  'Use Attendance & privacy on the trip page to open or close requests immediately.',
+                )
+              else
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Open to friends joining'),
+                  subtitle: const Text('Requests need host approval.'),
+                  value: _joinOpen,
+                  onChanged: (value) => setState(() => _joinOpen = value),
+                ),
               if (_error != null)
                 Text(
                   _error!,
@@ -309,6 +327,7 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
   final _email = TextEditingController();
   bool _busy = true;
   String? _error;
+  int? _revision;
   String get _path => widget.stop == null
       ? '/calendar/permissions'
       : '/calendar/stops/${widget.stop!['id']}/permissions';
@@ -330,6 +349,8 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
       final data = await widget.service.get(_path);
       if (!mounted) return;
       setState(() {
+        _revision =
+            data['revision'] as int? ?? widget.stop?['revision'] as int?;
         _visibility = data['visibility'] as String? ?? 'private';
         _grants = travelMaps(data['grants']);
       });
@@ -366,6 +387,7 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
     });
     try {
       final data = <String, dynamic>{
+        if (_revision != null) 'revision': _revision,
         'visibility': _visibility,
         'grants': _grants.map((grant) {
           if (grant['userId'] != null) return {'userId': grant['userId']};
@@ -414,7 +436,7 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.stop == null ? 'Calendar audience' : 'Stop audience'),
+    title: Text(widget.stop == null ? 'Calendar audience' : 'Trip audience'),
     content: SizedBox(
       width: 480,
       child: SingleChildScrollView(
@@ -452,7 +474,9 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
             Text(switch (_visibility) {
               'inherit' => 'Uses the owning calendar’s current audience.',
               'private' =>
-                'Only the owner, calendar editors, and stop co-hosts.',
+                widget.stop?['hostModel'] == true
+                    ? 'Only the owner and accepted trip hosts.'
+                    : 'Only the owner, calendar editors, and stop co-hosts.',
               'specific' =>
                 'Only selected accounts or verified invited contacts, plus managers. This replaces the calendar audience.',
               _ =>
@@ -677,6 +701,7 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
   bool _permissions = false;
   bool _busy = true;
   String? _error;
+  int? _revision;
   String get _base => widget.stop == null
       ? '/calendar'
       : '/calendar/stops/${widget.stop!['id']}';
@@ -697,7 +722,11 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
     try {
       final result = await widget.service.get('$_base/permissions');
       if (mounted) {
-        setState(() => _collaborators = travelMaps(result['collaborators']));
+        setState(() {
+          _collaborators = travelMaps(result['collaborators']);
+          _revision =
+              result['revision'] as int? ?? widget.stop?['revision'] as int?;
+        });
       }
     } catch (error) {
       if (mounted) setState(() => _error = travelError(error));
@@ -732,7 +761,11 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
     try {
       await widget.service.post(
         '$_base/collaborators',
-        data: {'userId': user.id, 'canManagePermissions': _permissions},
+        data: {
+          'userId': user.id,
+          'canManagePermissions': _permissions,
+          if (_revision != null) 'revision': _revision,
+        },
       );
       if (mounted) setState(() => _users = []);
       await _load();
@@ -754,6 +787,7 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
     try {
       final preview = await widget.service.post(
         '$_base/collaborators/${collaborator['id']}/removal-preview',
+        data: {if (_revision != null) 'revision': _revision},
       );
       if (!mounted) return;
       final count = preview['removedParticipationCount'] as int? ?? 0;
@@ -783,6 +817,7 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
       }
       await widget.service.delete(
         '$_base/collaborators/${collaborator['id']}?confirmRemoval=true',
+        data: {if (_revision != null) 'revision': _revision},
       );
       await _load();
     } catch (error) {
@@ -807,7 +842,7 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
           children: [
             Text(
               widget.stop == null
-                  ? 'Editors can see and manage every stop owned by this calendar, including private stops. References to another calendar keep their own permissions.'
+                  ? 'Editors manage legacy plans on this calendar. New trips have their own accepted hosts. Calendar editing does not grant access to those trips. References keep their own permissions.'
                   : 'Co-hosts can manage only this stop. They accept the invitation in their calendar before it appears there. Adding it to their calendar does not expand its audience.',
             ),
             if (_busy) const LinearProgressIndicator(),
@@ -973,6 +1008,10 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
                     value: 'recipient',
                     child: Text('Invited email recipient'),
                   ),
+                  DropdownMenuItem(
+                    value: 'attendee',
+                    child: Text('Confirmed attendee'),
+                  ),
                 ],
                 onChanged: _busy
                     ? null
@@ -981,7 +1020,7 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
                           _audience = value!;
                           _preview = null;
                         });
-                        if (value == 'anonymous') _load();
+                        if (value != 'recipient') _load();
                       },
               ),
               if (_audience == 'recipient') ...[
@@ -1014,6 +1053,24 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
                     'This visitor cannot view the stop. The shared page will not reveal its details.',
                   )
                 else ...[
+                  if (_audience == 'attendee')
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Preview for a confirmed attendee with trip access. Named traveler assignments and host-only notes stay hidden.',
+                      ),
+                    ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: TripProtectedHero(
+                        hero: tripMap(stop['hero']),
+                        service: widget.service,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     stop['title'] as String? ?? '',
                     style: Theme.of(context).textTheme.titleLarge,
@@ -1021,7 +1078,27 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
                   Text(stop['destination'] as String? ?? ''),
                   Text(travelDateLabel(stop)),
                   const SizedBox(height: 12),
-                  Text(stop['description'] as String? ?? ''),
+                  TripDescription(stop['description'] as String? ?? ''),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Lodging',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  if (tripMaps(stop['lodging']).isEmpty)
+                    const Text('No lodging shared yet.'),
+                  for (final entry in tripMaps(stop['lodging']))
+                    TravelTripLodgingCard(entry: entry),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Flights',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  if (tripMaps(stop['flights']).isEmpty)
+                    const Text('No flights shared yet.'),
+                  for (final entry in tripMaps(stop['flights']))
+                    TravelTripFlightCard(entry: entry),
                 ],
               ],
             ],

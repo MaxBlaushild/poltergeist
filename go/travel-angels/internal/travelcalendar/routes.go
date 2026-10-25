@@ -22,6 +22,11 @@ type requestError struct{ message string }
 func (e requestError) Error() string { return e.message }
 func bad(message string) error       { return requestError{message} }
 func respondError(c *gin.Context, e error) {
+	var conflict tripConflict
+	if errors.As(e, &conflict) {
+		c.JSON(409, gin.H{"error": conflict.message, "revision": conflict.revision})
+		return
+	}
 	if errors.Is(e, errUnavailable) || errors.Is(e, gorm.ErrRecordNotFound) {
 		c.JSON(404, gin.H{"error": "This plan is unavailable or requires access"})
 		return
@@ -72,6 +77,8 @@ func (s *Service) RegisterRoutes(r *gin.Engine) {
 	g.PUT("/calendar/stops/:id/participations/:participationId", s.reviewParticipation)
 	g.GET("/shared/calendars/:token", s.getSharedCalendar)
 	g.GET("/shared/stops/:token", s.getSharedStop)
+	s.registerTripRoutes(g)
+	s.registerTripMediaRoutes(g)
 	s.registerGuestRoutes(r)
 }
 func (s *Service) primaryCalendar(tx *gorm.DB, userID uuid.UUID) (*Calendar, error) {
@@ -92,7 +99,7 @@ func (s *Service) calendarDTO(cal *Calendar, v Viewer) gin.H {
 		s.db.Model(&Collaborator{}).Where("calendar_id = ? AND user_id = ? AND accepted = ?", cal.ID, v.UserID, true).Count(&count)
 		manager = count > 0
 	}
-	dto := gin.H{"id": cal.ID, "title": "Travel calendar", "canManage": manager, "canManagePermissions": v.UserID == cal.OwnerID}
+	dto := gin.H{"id": cal.ID, "title": "Travel calendar", "canManage": manager, "canManagePermissions": v.UserID == cal.OwnerID, "canCreateTrips": v.UserID == cal.OwnerID}
 	authorized := manager || (cal.Visibility == "specific" && hasGrant(s.db, "calendar_id", cal.ID, v)) || (cal.Visibility == "link" && cal.SharingEnabled && v.CalendarLinkID == cal.ID)
 	if !authorized {
 		var stops []Stop
@@ -149,6 +156,12 @@ func (s *Service) stopDTO(stop *Stop, v Viewer) gin.H {
 			}
 		}
 	}
+	for key, value := range s.tripPageDTO(stop, v, manager) {
+		dto[key] = value
+	}
+	for key, value := range s.tripLogisticsDTO(stop, content, v, manager) {
+		dto[key] = value
+	}
 	return dto
 }
 func (s *Service) visibleStops(stops []Stop, v Viewer, c *gin.Context) []gin.H {
@@ -193,7 +206,7 @@ func (s *Service) getCalendar(c *gin.Context) {
 		return
 	}
 	var stops []Stop
-	e = s.db.Where(`calendar_id = ? OR calendar_id IN (SELECT calendar_id FROM tc_collaborators WHERE user_id = ? AND accepted = true AND calendar_id IS NOT NULL) OR id IN (SELECT stop_id FROM tc_collaborators WHERE user_id = ? AND accepted = true AND stop_id IS NOT NULL) OR id IN (SELECT stop_id FROM tc_participations WHERE user_id = ? AND status IN ('joined','needs_reconfirmation'))`, cal.ID, u.ID, u.ID, u.ID).Find(&stops).Error
+	e = s.db.Where(`calendar_id = ? OR calendar_id IN (SELECT calendar_id FROM tc_collaborators WHERE user_id = ? AND accepted = true AND calendar_id IS NOT NULL) OR id IN (SELECT stop_id FROM tc_collaborators WHERE user_id = ? AND accepted = true AND stop_id IS NOT NULL) OR id IN (SELECT stop_id FROM tc_participations WHERE user_id = ? AND (status IN ('joined','needs_reconfirmation') OR reserved = true))`, cal.ID, u.ID, u.ID, u.ID).Find(&stops).Error
 	if e != nil {
 		respondError(c, e)
 		return
@@ -203,7 +216,7 @@ func (s *Service) getCalendar(c *gin.Context) {
 	// Owning a calendar is not a bearer capability for a referenced stop. Link
 	// access is granted only when the referenced owning calendar still enables it.
 	var invitations []Collaborator
-	if e = s.db.Where("user_id = ? AND accepted = ?", u.ID, false).Find(&invitations).Error; e != nil {
+	if e = s.db.Where("user_id = ? AND accepted = ? AND (stop_id IS NULL OR is_host = true OR stop_id IN (SELECT id FROM tc_stops WHERE host_model = false))", u.ID, false).Find(&invitations).Error; e != nil {
 		respondError(c, e)
 		return
 	}
@@ -216,7 +229,28 @@ func (s *Service) getCalendar(c *gin.Context) {
 	for i := range editable {
 		editableDTO = append(editableDTO, s.calendarDTO(&editable[i], v))
 	}
-	c.JSON(200, gin.H{"calendar": s.calendarDTO(cal, v), "stops": s.visiblePersonalStops(stops, v, c), "cohostInvitations": invitations, "editableCalendars": editableDTO})
+	invitationDTO := []gin.H{}
+	for _, invite := range invitations {
+		row := gin.H{"id": invite.ID, "userId": invite.UserID, "stopId": invite.StopID, "calendarId": invite.CalendarID, "isHost": invite.IsHost, "canManagePermissions": invite.CanManagePermissions, "accepted": invite.Accepted}
+		if invite.StopID != nil {
+			var invited Stop
+			if s.db.First(&invited, "id = ?", *invite.StopID).Error == nil {
+				row["rosterVersion"] = invited.RosterVersion
+				row["rosterVisibility"] = invited.RosterVisibility
+				row["revision"] = invited.Revision
+				row["hostModel"] = invited.HostModel
+				row["tripTitle"] = "Trip host invitation"
+				if invited.Published != nil {
+					row["tripTitle"] = invited.Published.Title
+				}
+				if owner, e := s.tripOwner(s.db, &invited); e == nil {
+					row["ownerDisplayName"] = s.userDisplayName(owner)
+				}
+			}
+		}
+		invitationDTO = append(invitationDTO, row)
+	}
+	c.JSON(200, gin.H{"calendar": s.calendarDTO(cal, v), "stops": s.visiblePersonalStops(stops, v, c), "cohostInvitations": invitationDTO, "editableCalendars": editableDTO})
 }
 func (s *Service) visiblePersonalStops(stops []Stop, v Viewer, c *gin.Context) []gin.H {
 	// A joined reference remembers that the participant obtained a public link.
@@ -225,7 +259,7 @@ func (s *Service) visiblePersonalStops(stops []Stop, v Viewer, c *gin.Context) [
 	for _, stop := range stops {
 		sv := v
 		var participation Participation
-		if s.db.Where("stop_id = ? AND user_id = ? AND status IN ('joined','needs_reconfirmation')", stop.ID, v.UserID).First(&participation).Error == nil {
+		if s.db.Where("stop_id = ? AND user_id = ? AND (status IN ('joined','needs_reconfirmation') OR reserved = true)", stop.ID, v.UserID).First(&participation).Error == nil {
 			stored := s.storedParticipationViewer(s.db, &stop, &participation)
 			sv.CalendarLinkID = stored.CalendarLinkID
 			sv.StopLinkID = stored.StopLinkID
@@ -349,14 +383,25 @@ func (s *Service) createStop(c *gin.Context) {
 				return errUnavailable
 			}
 			if cal.OwnerID != u.ID {
-				var count int64
-				if tx.Model(&Collaborator{}).Where("calendar_id = ? AND user_id = ? AND accepted = ?", cal.ID, u.ID, true).Count(&count).Error != nil || count == 0 {
-					return errForbidden
-				}
+				return errForbidden
 			}
 		}
-		stop = Stop{ID: uuid.New(), CalendarID: cal.ID, Draft: b.StopContent, Visibility: "inherit", ShareToken: newToken(), SharingEnabled: true}
-		return tx.Create(&stop).Error
+		stop = Stop{ID: uuid.New(), CalendarID: cal.ID, Draft: b.StopContent, Visibility: "inherit", ShareToken: newToken(), SharingEnabled: true, HostModel: true, Revision: 1, RosterVersion: 1, RosterVisibility: "attendees", ShowAttendeeCount: true}
+		if e := s.validateTripContentReferences(tx, &stop, &stop.Draft); e != nil {
+			return e
+		}
+		if e := tx.Create(&stop).Error; e != nil {
+			return e
+		}
+		p := Participation{ID: uuid.New(), StopID: stop.ID, UserID: u.ID, Status: "joined", RosterConsentVersion: 1}
+		if stop.Draft.DatePrecision == "fixed" {
+			p.StartDate = stop.Draft.StartDate
+			p.EndDate = stop.Draft.EndDate
+		}
+		if e := tx.Create(&p).Error; e != nil {
+			return e
+		}
+		return s.recordTripAudit(tx, stop.ID, u.ID, "trip_created", gin.H{"creatorAttending": true})
 	})
 	if e != nil {
 		respondError(c, e)
@@ -376,12 +421,16 @@ func (s *Service) lockedStop(tx *gorm.DB, id string) (*Stop, error) {
 	if e = tx.First(&stop, "id = ?", uid).Error; e != nil {
 		return nil, e
 	}
+	initialCalendar := stop.CalendarID
 	var cal Calendar
 	if e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&cal, "id = ?", stop.CalendarID).Error; e != nil {
 		return nil, e
 	}
 	if e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&stop, "id = ?", uid).Error; e != nil {
 		return nil, e
+	}
+	if stop.CalendarID != initialCalendar {
+		return nil, tripConflict{"The trip owner changed. Reload the trip", stop.Revision}
 	}
 	return &stop, nil
 }
@@ -390,7 +439,10 @@ func (s *Service) updateStop(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var b StopContent
+	var b struct {
+		StopContent
+		Revision *int `json:"revision"`
+	}
 	if c.ShouldBindJSON(&b) != nil {
 		respondError(c, bad("Invalid stop details"))
 		return
@@ -409,8 +461,14 @@ func (s *Service) updateStop(c *gin.Context) {
 		if !s.canManageStop(tx, stop, Viewer{UserID: u.ID}) {
 			return errForbidden
 		}
-		stop.Draft = b
-		return tx.Save(stop).Error
+		if e = s.checkTripRevision(stop, b.Revision); e != nil {
+			return e
+		}
+		if e = s.validateTripContentReferences(tx, stop, &b.StopContent); e != nil {
+			return e
+		}
+		stop.Draft = b.StopContent
+		return s.saveTripChange(tx, stop, u.ID, "draft_updated", nil)
 	})
 	if e != nil {
 		respondError(c, e)
@@ -428,6 +486,13 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 	if !ok {
 		return
 	}
+	var body struct {
+		Revision *int `json:"revision"`
+	}
+	if e := optionalTripBody(c, &body); e != nil {
+		respondError(c, e)
+		return
+	}
 	var stop *Stop
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var e error
@@ -438,6 +503,9 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 		if !s.canManageStop(tx, stop, Viewer{UserID: u.ID}) {
 			return errForbidden
 		}
+		if e = s.checkTripRevision(stop, body.Revision); e != nil {
+			return e
+		}
 		prior := stop.Published
 		if !publish && prior == nil {
 			return nil
@@ -447,6 +515,9 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 		if publish {
 			if e = stop.Draft.validate(); e != nil {
 				return bad(e.Error())
+			}
+			if e = s.validateTripContentReferences(tx, stop, &stop.Draft); e != nil {
+				return e
 			}
 			next := stop.Draft
 			stop.Published = &next
@@ -460,19 +531,27 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 			stop.Published = nil
 			event = "unpublished"
 		}
-		if e = tx.Save(stop).Error; e != nil {
+		action := "trip_published"
+		if !publish {
+			action = "trip_unpublished"
+		}
+		if e = s.saveTripChange(tx, stop, u.ID, action, nil); e != nil {
 			return e
 		}
 		if event != "" {
 			var ps []Participation
-			if e = tx.Where("stop_id = ? AND status IN ('interested','requested','joined','needs_reconfirmation')", stop.ID).Find(&ps).Error; e != nil {
+			if e = tx.Where("stop_id = ? AND status IN ('interested','requested','joined','needs_reconfirmation','waitlisted')", stop.ID).Find(&ps).Error; e != nil {
 				return e
 			}
 			for i := range ps {
 				p := &ps[i]
 				if cancelled {
 					p.Status = "cancelled"
+					p.Reserved = false
 				} else if p.Status == "requested" || p.Status == "joined" {
+					if p.Status == "joined" {
+						p.Reserved = true
+					}
 					p.Status = "needs_reconfirmation"
 				}
 				if e = tx.Save(p).Error; e != nil {
@@ -481,6 +560,11 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 				if e = s.queueParticipationNotice(tx, stop, p, event); e != nil {
 					return e
 				}
+			}
+		}
+		if publish && prior != nil && logisticsChanged(prior, stop.Published) {
+			if e = s.queueTripLogisticsNotices(tx, stop, prior, stop.Published); e != nil {
+				return e
 			}
 		}
 		return nil

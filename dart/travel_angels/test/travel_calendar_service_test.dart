@@ -39,6 +39,89 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('trip images use guest credentials and reject foreign origins', () async {
+    SharedPreferences.setMockInitialValues({
+      'token': 'account-token',
+      TravelCalendarService.guestTokenKey: 'guest-token',
+      TravelCalendarService.guestExpiryKey: DateTime.now()
+          .add(const Duration(hours: 1))
+          .toIso8601String(),
+    });
+    final adapter = _Adapter(
+      (_) => ResponseBody.fromBytes(
+        [137, 80, 78, 71],
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['image/png'],
+        },
+      ),
+    );
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+      ..httpClientAdapter = adapter;
+    final service = TravelCalendarService(client: dio);
+    final bytes = await service.loadHero(
+      '/travel-angels/calendar/stops/trip-123/hero/media-123',
+      query: {'calendarToken': 'observed-link'},
+    );
+    expect(bytes, [137, 80, 78, 71]);
+    expect(
+      adapter.requests.single.headers['Authorization'],
+      'Bearer account-token',
+    );
+    expect(
+      adapter.requests.single.headers['X-Travel-Guest-Token'],
+      'guest-token',
+    );
+    expect(
+      adapter.requests.single.queryParameters['calendarToken'],
+      'observed-link',
+    );
+    expect(adapter.requests.single.followRedirects, isFalse);
+    for (final url in [
+      'https://other.test/travel-angels/calendar/stops/trip-123/hero/media-123',
+      '//other.test/travel-angels/calendar/stops/trip-123/hero/media-123',
+      'file:/travel-angels/calendar/stops/trip-123/hero/media-123',
+      'https://example.test/unrelated-image',
+    ]) {
+      await expectLater(
+        service.loadHero(url),
+        throwsA(isA<TravelCalendarException>()),
+      );
+    }
+    expect(adapter.requests, hasLength(1));
+  });
+
+  test(
+    'hero upload sends the revision and framing in one multipart request',
+    () async {
+      final adapter = _Adapter(
+        (_) => _json({
+          'stop': {'revision': 8},
+        }),
+      );
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+        ..httpClientAdapter = adapter;
+      final result = await TravelCalendarService(client: dio).uploadHero(
+        'trip-123',
+        Uint8List.fromList([1, 2, 3]),
+        'cover.png',
+        altText: 'Cliffs above the Atlantic',
+        focalX: .25,
+        focalY: .7,
+        revision: 7,
+      );
+      expect((result['stop'] as Map)['revision'], 8);
+      final request = adapter.requests.single;
+      expect(request.path, '/travel-angels/calendar/stops/trip-123/hero');
+      final form = request.data as FormData;
+      final fields = Map.fromEntries(form.fields);
+      expect(fields['revision'], '7');
+      expect(fields['altText'], 'Cliffs above the Atlantic');
+      expect(fields['focalX'], '0.25');
+      expect(form.files.single.value.filename, 'cover.png');
+    },
+  );
+
   test(
     'guest verification persists scoped access without creating app login',
     () async {

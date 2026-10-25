@@ -9,6 +9,7 @@ import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/auth_service.dart';
 import 'package:travel_angels/screens/travel_calendar_screen.dart';
+import 'package:travel_angels/screens/travel_trip_screen.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
 import 'package:travel_angels/widgets/travel_calendar_delivery.dart';
@@ -31,6 +32,7 @@ Map<String, dynamic> stop(
   'status': 'confirmed',
   'published': true,
   'joinOpen': true,
+  'acceptingParticipation': true,
   'canManage': false,
   'canManagePermissions': false,
 };
@@ -42,6 +44,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
   bool failSecondParticipation = false;
   bool previewVisible = false;
   Map<String, dynamic> notificationResponse = {};
+  List<Map<String, dynamic>> cohostInvitations = [];
 
   @override
   Future<Map<String, dynamic>> get(
@@ -49,6 +52,12 @@ class FakeTravelCalendarService extends TravelCalendarService {
     Map<String, dynamic>? query,
   }) async {
     if (path == '/calendar-notifications') return notificationResponse;
+    if (path.startsWith('/shared/stops/')) return {'stop': stops.first};
+    if (RegExp(r'^/calendar/stops/[^/]+$').hasMatch(path)) {
+      return {
+        'stop': stops.firstWhere((stop) => stop['id'] == path.split('/').last),
+      };
+    }
     if (path.endsWith('/permissions')) {
       return {
         'visibility': 'specific',
@@ -66,6 +75,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
         'canManagePermissions': false,
       },
       'stops': stops,
+      'cohostInvitations': cohostInvitations,
     };
   }
 
@@ -128,6 +138,159 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets(
+    'full host acceptance separates organizing from attendance and requires consent',
+    (tester) async {
+      final service = FakeTravelCalendarService()
+        ..cohostInvitations = [
+          {
+            'id': 'host-invite',
+            'stopId': 'a',
+            'isHost': true,
+            'tripTitle': 'A week in Lisbon',
+            'ownerDisplayName': 'Max',
+            'rosterVersion': 3,
+            'rosterVisibility': 'attendees',
+          },
+        ];
+      await tester.pumpWidget(
+        MaterialApp(home: TravelCalendarScreen(service: service)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('A week in Lisbon'), findsOneWidget);
+      await tester.tap(find.text('Accept'));
+      await tester.pumpAndSettle();
+      final attendance = find.widgetWithText(
+        CheckboxListTile,
+        'I am also attending',
+      );
+      expect(tester.widget<CheckboxListTile>(attendance).value, isFalse);
+      await tester.tap(attendance);
+      await tester.pumpAndSettle();
+      final accept = find.widgetWithText(FilledButton, 'Accept');
+      expect(tester.widget<FilledButton>(accept).onPressed, isNull);
+      await tester.tap(
+        find.text('Hosts and confirmed attendees can see my name and avatar.'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(accept);
+      await tester.pumpAndSettle();
+      expect(
+        service.requests.single['path'],
+        '/calendar/collaborators/host-invite/accept',
+      );
+      expect(service.requests.single['data'], {
+        'attending': true,
+        'rosterConsentVersion': 3,
+        'shareDates': false,
+      });
+    },
+  );
+
+  testWidgets(
+    'an existing stop share link opens the trip page without a login gate',
+    (tester) async {
+      final service = FakeTravelCalendarService();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TravelCalendarScreen(
+            stopToken: 'shared-trip-token',
+            service: service,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelTripScreen), findsOneWidget);
+      expect(find.text('Lisbon'), findsWidgets);
+      expect(find.text('Our travel calendar'), findsNothing);
+      expect(service.requests, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'calendar trip navigation preserves the destination filter on return',
+    (tester) async {
+      final service = FakeTravelCalendarService();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TravelCalendarScreen(calendarToken: 'share', service: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Kyoto');
+      await tester.pumpAndSettle();
+      final card = find.byWidgetPredicate(
+        (widget) => widget is TravelStopCard && widget.stop['id'] == 'b',
+      );
+      await tester.ensureVisible(card);
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelTripScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(TravelTripScreen))).pop();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'Kyoto',
+      );
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is TravelStopCard && widget.stop['id'] == 'a',
+        ),
+        findsNothing,
+      );
+      expect(card, findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'attendee preview renders the filtered lodging and flight response',
+    (tester) async {
+      final service = FakeTravelCalendarService()
+        ..previewVisible = true
+        ..stops = [
+          {
+            ...stop('a', 'Lisbon'),
+            'lodging': [
+              {
+                'id': 'stay',
+                'name': 'Harbor House',
+                'datesTbd': true,
+                'privateDetails': {'address': '10 Harbor Road'},
+              },
+            ],
+            'flights': [
+              {'id': 'flight', 'label': 'Outbound via Madrid', 'legs': []},
+            ],
+          },
+        ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TravelStopPreviewDialog(
+              service: service,
+              stop: service.stops.first,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirmed attendee').last);
+      await tester.pumpAndSettle();
+      expect(
+        service.requests.last['data'],
+        containsPair('audience', 'attendee'),
+      );
+      expect(find.text('Harbor House'), findsOneWidget);
+      expect(find.text('10 Harbor Road'), findsOneWidget);
+      expect(find.text('Outbound via Madrid'), findsOneWidget);
+      expect(find.textContaining('Named traveler assignments'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'draft editor saves destination time zone without converting local dates',
     (tester) async {
       final service = FakeTravelCalendarService();
@@ -140,7 +303,20 @@ void main() {
                   context: context,
                   builder: (_) => TravelStopEditor(
                     service: service,
-                    stop: stop('a', 'Auckland'),
+                    stop: {
+                      ...stop('a', 'Auckland'),
+                      'revision': 9,
+                      'draft': {
+                        ...stop('a', 'Auckland'),
+                        'hero': {'mediaId': 'protected-cover'},
+                        'lodging': [
+                          {'id': 'stay', 'name': 'Harbor House'},
+                        ],
+                        'flights': [
+                          {'id': 'flight', 'label': 'Outbound'},
+                        ],
+                      },
+                    },
                   ),
                 ),
                 child: const Text('Edit stop'),
@@ -173,6 +349,11 @@ void main() {
         service.requests.single['data'],
         containsPair('endDate', '2099-01-10'),
       );
+      final data = service.requests.single['data'] as Map;
+      expect(data['revision'], 9);
+      expect((data['hero'] as Map)['mediaId'], 'protected-cover');
+      expect((data['lodging'] as List).single['name'], 'Harbor House');
+      expect((data['flights'] as List).single['label'], 'Outbound');
     },
   );
 
@@ -567,11 +748,19 @@ void main() {
   testWidgets(
     'guests can choose a stop before any authentication or RSVP request',
     (tester) async {
+      var claims = 0;
       final service = FakeTravelCalendarService()
         ..stops = [stop('a', 'Lisbon')];
       await tester.pumpWidget(
         MaterialApp(
-          home: TravelCalendarScreen(calendarToken: 'share', service: service),
+          home: TravelCalendarScreen(
+            calendarToken: 'share',
+            service: service,
+            claimAccount: (_, _) async {
+              claims++;
+              return false;
+            },
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -579,18 +768,109 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(TravelStopCard));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Choose dates / interest'));
+      await tester.tap(find.text('Request to join').last);
       await tester.pumpAndSettle();
-      expect(find.text('Add to selections'), findsOneWidget);
-      await tester.tap(find.text('Add to selections'));
+      expect(claims, 0);
+      expect(find.text('Continue'), findsOneWidget);
+      expect(service.requests, isEmpty);
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
+      expect(claims, 1);
       expect(service.requests, isEmpty);
       final prefs = await SharedPreferences.getInstance();
       final saved =
           jsonDecode(prefs.getString('travel_calendar_selections:share:guest')!)
               as Map;
-      expect(saved['a'], containsPair('status', 'interested'));
+      expect(saved['a'], containsPair('status', 'requested'));
       expect(saved['a'], containsPair('startDate', '2099-01-01'));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'trip page requires roster consent then claims and reviews partial attendance',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'travel_calendar_selections:trip-link:guest': jsonEncode({
+          'a': {
+            'stopId': 'a',
+            'status': 'requested',
+            'startDate': '2099-01-03',
+            'endDate': '2099-01-07',
+          },
+        }),
+      });
+      var claims = 0;
+      final auth = CalendarTestAuth(null);
+      final service = FakeTravelCalendarService()
+        ..stops = [
+          {
+            ...stop('a', 'Lisbon'),
+            'hostModel': true,
+            'rosterVersion': 2,
+            'tripSettings': {'rosterVisibility': 'attendees'},
+          },
+        ];
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AuthProvider>.value(
+          value: auth,
+          child: MaterialApp(
+            home: TravelCalendarScreen(
+              stopToken: 'trip-link',
+              service: service,
+              claimAccount: (_, _) async {
+                claims++;
+                auth.setAccount(User(id: 'claimed-friend'));
+                return true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Request to join').last);
+      await tester.pumpAndSettle();
+      final continueButton = find.widgetWithText(FilledButton, 'Continue');
+      expect(tester.widget<FilledButton>(continueButton).onPressed, isNull);
+      final consent = find.text(
+        'Trip hosts and confirmed attendees can see my name and avatar when I attend.',
+      );
+      await tester.ensureVisible(consent);
+      await tester.tap(consent);
+      await tester.pumpAndSettle();
+      expect(claims, 0);
+      await tester.tap(continueButton);
+      await tester.pumpAndSettle();
+      expect(claims, 1);
+      expect(find.text('Review your selections'), findsOneWidget);
+      expect(service.requests, isEmpty);
+      await tester.tap(find.text('Submit selections'));
+      await tester.pumpAndSettle();
+      expect(
+        service.requests.single['path'],
+        '/calendar/stops/a/participation',
+      );
+      expect(
+        service.requests.single['data'],
+        containsPair('startDate', '2099-01-03'),
+      );
+      expect(
+        service.requests.single['data'],
+        containsPair('endDate', '2099-01-07'),
+      );
+      expect(
+        service.requests.single['data'],
+        containsPair('rosterConsentVersion', 2),
+      );
+      expect(
+        service.requests.single['data'],
+        containsPair('stopToken', 'trip-link'),
+      );
+      expect(
+        service.requests.single['data'],
+        containsPair('status', 'requested'),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 

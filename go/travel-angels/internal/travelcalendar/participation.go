@@ -10,11 +10,13 @@ import (
 )
 
 type participationInput struct {
-	Status        string `json:"status"`
-	StartDate     string `json:"startDate"`
-	EndDate       string `json:"endDate"`
-	CalendarToken string `json:"calendarToken"`
-	StopToken     string `json:"stopToken"`
+	RosterConsentVersion int    `json:"rosterConsentVersion"`
+	ShareDates           bool   `json:"shareDates"`
+	Status               string `json:"status"`
+	StartDate            string `json:"startDate"`
+	EndDate              string `json:"endDate"`
+	CalendarToken        string `json:"calendarToken"`
+	StopToken            string `json:"stopToken"`
 }
 
 func validateParticipation(content *StopContent, input *participationInput, today string) error {
@@ -24,10 +26,10 @@ func validateParticipation(content *StopContent, input *participationInput, toda
 	if content.EndDate != "" && content.EndDate < today {
 		return bad("This stop has already ended")
 	}
-	if input.Status != "interested" && input.Status != "requested" {
-		return bad("Choose interested or requested")
+	if input.Status != "interested" && input.Status != "requested" && input.Status != "waitlisted" {
+		return bad("Choose interested, requested, or waitlisted")
 	}
-	if input.Status == "requested" && content.DatePrecision != "fixed" {
+	if (input.Status == "requested" || input.Status == "waitlisted") && content.DatePrecision != "fixed" {
 		return bad("Requesting to join requires fixed dates")
 	}
 	if content.DatePrecision != "fixed" {
@@ -72,21 +74,21 @@ func (s *Service) participationViewer(tx *gorm.DB, stop *Stop, userID uuid.UUID,
 	return v
 }
 func (s *Service) setParticipation(c *gin.Context) {
-	u, ok := s.requireUser(c)
+	user, ok := s.requireUser(c)
 	if !ok {
 		return
 	}
-	var b participationInput
-	if c.ShouldBindJSON(&b) != nil {
-		respondError(c, bad("Invalid participation"))
+	var body participationInput
+	if c.ShouldBindJSON(&body) != nil {
+		respondError(c, bad("Invalid attendance selection"))
 		return
 	}
-	b.Status = normalizedStatus(b.Status)
-	if b.CalendarToken == "" {
-		b.CalendarToken = c.Query("calendarToken")
+	body.Status = normalizedStatus(body.Status)
+	if body.CalendarToken == "" {
+		body.CalendarToken = c.Query("calendarToken")
 	}
-	if b.StopToken == "" {
-		b.StopToken = c.Query("stopToken")
+	if body.StopToken == "" {
+		body.StopToken = c.Query("stopToken")
 	}
 	var result Participation
 	e := s.db.Transaction(func(tx *gorm.DB) error {
@@ -94,12 +96,12 @@ func (s *Service) setParticipation(c *gin.Context) {
 		if e != nil {
 			return e
 		}
-		e = tx.Where("stop_id = ? AND user_id = ?", stop.ID, u.ID).First(&result).Error
+		e = tx.Where("stop_id = ? AND user_id = ?", stop.ID, user.ID).First(&result).Error
 		exists := e == nil
 		if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
 		}
-		if b.Status == "withdrawn" {
+		if body.Status == "withdrawn" {
 			if !exists {
 				return errUnavailable
 			}
@@ -110,7 +112,11 @@ func (s *Service) setParticipation(c *gin.Context) {
 				return nil
 			}
 			result.Status = "withdrawn"
+			result.Reserved = false
 			if e = tx.Save(&result).Error; e != nil {
+				return e
+			}
+			if e = s.recordTripAudit(tx, stop.ID, user.ID, "participation_withdrawn", nil); e != nil {
 				return e
 			}
 			return s.queueParticipationNotice(tx, stop, &result, "withdrawn")
@@ -118,39 +124,65 @@ func (s *Service) setParticipation(c *gin.Context) {
 		if exists && result.Status == "removed" {
 			return bad("Ask a host to restore your eligibility")
 		}
-		if !s.canViewStop(tx, stop, s.participationViewer(tx, stop, u.ID, b)) {
+		if !s.canViewStop(tx, stop, s.participationViewer(tx, stop, user.ID, body)) {
 			return errUnavailable
 		}
-		if e = validateParticipation(stop.Published, &b, todayForStop(stop.Published, time.Now())); e != nil {
+		if e = validateParticipation(stop.Published, &body, todayForStop(stop.Published, time.Now())); e != nil {
 			return e
 		}
-		unchanged := exists && result.Status == b.Status && result.StartDate == b.StartDate && result.EndDate == b.EndDate
-		priorCalendarHash, priorStopHash := result.CalendarLinkTokenHash, result.StopLinkTokenHash
+		if body.Status == "waitlisted" && !stop.WaitlistEnabled && !(exists && result.Status == "waitlisted") {
+			return bad("The waitlist is not open")
+		}
+		if stop.HostModel && (body.Status == "requested" || body.Status == "waitlisted") && body.RosterConsentVersion != stop.RosterVersion {
+			return tripConflict{"Review the current roster audience before submitting attendance", stop.Revision}
+		}
+		if body.Status == "requested" && !participationOccupies(&result) && !(exists && result.Status == "requested") {
+			if e = s.ensureTripCapacity(tx, stop, nil); e != nil {
+				return e
+			}
+		}
+		unchanged := exists && result.Status == body.Status && result.StartDate == body.StartDate && result.EndDate == body.EndDate && result.ShareDates == body.ShareDates && (body.RosterConsentVersion == 0 || result.RosterConsentVersion == body.RosterConsentVersion)
+		oldCalendarHash, oldStopHash := result.CalendarLinkTokenHash, result.StopLinkTokenHash
 		if !exists {
-			result = Participation{ID: uuid.New(), StopID: stop.ID, UserID: u.ID}
+			result = Participation{ID: uuid.New(), StopID: stop.ID, UserID: user.ID}
 		}
-		if b.StopToken != "" && b.StopToken == stop.ShareToken && stop.SharingEnabled {
-			result.StopLinkTokenHash = guestDigest(b.StopToken)
+		if body.StopToken != "" && body.StopToken == stop.ShareToken && stop.SharingEnabled {
+			result.StopLinkTokenHash = guestDigest(body.StopToken)
 		}
-		if b.CalendarToken != "" {
+		if body.CalendarToken != "" {
 			var cal Calendar
-			if tx.Where("id = ? AND share_token = ? AND sharing_enabled = ?", stop.CalendarID, b.CalendarToken, true).First(&cal).Error == nil {
-				result.CalendarLinkTokenHash = guestDigest(b.CalendarToken)
+			if tx.Where("id = ? AND share_token = ? AND sharing_enabled = ?", stop.CalendarID, body.CalendarToken, true).First(&cal).Error == nil {
+				result.CalendarLinkTokenHash = guestDigest(body.CalendarToken)
 			}
 		}
 		if unchanged {
-			if result.CalendarLinkTokenHash != priorCalendarHash || result.StopLinkTokenHash != priorStopHash {
+			if result.CalendarLinkTokenHash != oldCalendarHash || result.StopLinkTokenHash != oldStopHash {
 				return tx.Save(&result).Error
 			}
 			return nil
 		}
-		result.Status = b.Status
-		result.StartDate = b.StartDate
-		result.EndDate = b.EndDate
+		// A request to revise approved dates keeps the original person's place. A
+		// lower-commitment interest/waitlist action intentionally releases it.
+		wasConfirmed := result.Status == "joined"
+		if body.Status == "requested" {
+			result.Reserved = result.Reserved || wasConfirmed
+		} else {
+			result.Reserved = false
+		}
+		result.Status = body.Status
+		result.StartDate = body.StartDate
+		result.EndDate = body.EndDate
+		result.ShareDates = body.ShareDates
+		if body.RosterConsentVersion == stop.RosterVersion {
+			result.RosterConsentVersion = stop.RosterVersion
+		}
 		if e = tx.Save(&result).Error; e != nil {
 			return e
 		}
-		return s.queueParticipationNotice(tx, stop, &result, b.Status)
+		if e = s.recordTripAudit(tx, stop.ID, user.ID, "participation_"+body.Status, gin.H{"participationId": result.ID, "reserved": result.Reserved}); e != nil {
+			return e
+		}
+		return s.queueParticipationNotice(tx, stop, &result, body.Status)
 	})
 	if e != nil {
 		respondError(c, e)
@@ -180,18 +212,18 @@ func (s *Service) listParticipations(c *gin.Context) {
 	}
 	result := make([]gin.H, 0, len(rows))
 	for _, p := range rows {
-		result = append(result, gin.H{"id": p.ID, "stopId": p.StopID, "userId": p.UserID, "status": p.Status, "startDate": p.StartDate, "endDate": p.EndDate, "createdAt": p.CreatedAt, "updatedAt": p.UpdatedAt, "displayName": s.userDisplayName(p.UserID)})
+		result = append(result, gin.H{"id": p.ID, "stopId": p.StopID, "userId": p.UserID, "status": p.Status, "startDate": p.StartDate, "endDate": p.EndDate, "createdAt": p.CreatedAt, "updatedAt": p.UpdatedAt, "displayName": s.userDisplayName(p.UserID), "reserved": p.Reserved, "rosterConsentVersion": p.RosterConsentVersion, "shareDates": p.ShareDates})
 	}
 	c.JSON(200, gin.H{"participations": result})
 }
 func validateReview(current, target string) error {
 	switch target {
 	case "joined":
-		if current != "requested" {
+		if current != "requested" && current != "waitlisted" {
 			return bad("Only a current join request can be approved")
 		}
 	case "declined":
-		if current != "requested" && current != "interested" && current != "needs_reconfirmation" {
+		if current != "requested" && current != "interested" && current != "needs_reconfirmation" && current != "waitlisted" {
 			return bad("There is no pending participation to decline")
 		}
 	case "removed":
@@ -208,18 +240,19 @@ func validateReview(current, target string) error {
 	return nil
 }
 func (s *Service) reviewParticipation(c *gin.Context) {
-	u, ok := s.requireUser(c)
+	user, ok := s.requireUser(c)
 	if !ok {
 		return
 	}
-	var b struct {
-		Status string `json:"status"`
+	var body struct {
+		Status   string `json:"status"`
+		Revision *int   `json:"revision"`
 	}
-	if c.ShouldBindJSON(&b) != nil {
-		respondError(c, bad("Invalid review"))
+	if c.ShouldBindJSON(&body) != nil {
+		respondError(c, bad("Invalid attendance decision"))
 		return
 	}
-	b.Status = normalizedStatus(b.Status)
+	body.Status = normalizedStatus(body.Status)
 	id, e := uuid.Parse(c.Param("participationId"))
 	if e != nil {
 		respondError(c, errUnavailable)
@@ -231,33 +264,57 @@ func (s *Service) reviewParticipation(c *gin.Context) {
 		if e != nil {
 			return e
 		}
-		if !s.canManageStop(tx, stop, Viewer{UserID: u.ID}) {
+		if !s.canManageStop(tx, stop, Viewer{UserID: user.ID}) {
 			return errForbidden
+		}
+		if body.Revision != nil {
+			if e = s.checkTripRevision(stop, body.Revision); e != nil {
+				return e
+			}
 		}
 		if e = tx.Where("id = ? AND stop_id = ?", id, stop.ID).First(&result).Error; e != nil {
 			return e
 		}
-		if result.Status == b.Status {
+		if body.Status == "release_reservation" {
+			if !result.Reserved {
+				return bad("This person has no reserved place")
+			}
+			result.Reserved = false
+			if e = tx.Save(&result).Error; e != nil {
+				return e
+			}
+			if e = s.recordTripAudit(tx, stop.ID, user.ID, "reservation_released", gin.H{"participationId": id}); e != nil {
+				return e
+			}
+			return s.queueParticipationNotice(tx, stop, &result, "reservation_released")
+		}
+		if result.Status == body.Status {
 			return nil
 		}
-		if e = validateReview(result.Status, b.Status); e != nil {
+		if e = validateReview(result.Status, body.Status); e != nil {
 			return e
 		}
-		if b.Status == "joined" {
-			v := s.storedParticipationViewer(tx, stop, &result)
-			if !s.canViewStop(tx, stop, v) {
-				return bad("This person no longer has viewing access")
+		if body.Status == "joined" {
+			if !s.canViewStop(tx, stop, s.storedParticipationViewer(tx, stop, &result)) {
+				return bad("This person no longer has trip access")
 			}
 			input := participationInput{Status: "requested", StartDate: result.StartDate, EndDate: result.EndDate}
 			if e = validateParticipation(stop.Published, &input, todayForStop(stop.Published, time.Now())); e != nil {
 				return e
 			}
+			if e = s.ensureTripCapacity(tx, stop, &result); e != nil {
+				return e
+			}
 		}
-		result.Status = b.Status
+		result.Status = body.Status
+		result.Reserved = false
 		if e = tx.Save(&result).Error; e != nil {
 			return e
 		}
-		return s.queueParticipationNotice(tx, stop, &result, b.Status)
+		if e = s.recordTripAudit(tx, stop.ID, user.ID, "participation_"+body.Status, gin.H{"participationId": id}); e != nil {
+			return e
+		}
+		return s.queueParticipationNotice(tx, stop, &result, body.Status)
 	})
 	if e != nil {
 		respondError(c, e)

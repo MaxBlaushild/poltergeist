@@ -104,18 +104,93 @@ class TravelCalendarService {
     Map<String, dynamic>? data,
   }) => _request('DELETE', path, data: data);
 
+  /// Upload directly to the protected trip endpoint. Media never inherits the
+  /// public document library's sharing rules or exposes a permanent asset URL.
+  Future<Map<String, dynamic>> uploadHero(
+    String stopId,
+    Uint8List bytes,
+    String filename, {
+    required String altText,
+    required double focalX,
+    required double focalY,
+    required int revision,
+    double cropX = 0,
+    double cropY = 0,
+    double cropWidth = 1,
+    double cropHeight = 1,
+  }) {
+    if (bytes.length > 8 * 1024 * 1024) {
+      throw const TravelCalendarException('Choose an image smaller than 8 MB.');
+    }
+    return _request(
+      'POST',
+      '/calendar/stops/${Uri.encodeComponent(stopId)}/hero',
+      data: FormData.fromMap({
+        'image': MultipartFile.fromBytes(bytes, filename: filename),
+        'revision': revision,
+        'altText': altText,
+        'focalX': focalX,
+        'focalY': focalY,
+        'cropX': cropX,
+        'cropY': cropY,
+        'cropWidth': cropWidth,
+        'cropHeight': cropHeight,
+      }),
+    );
+  }
+
+  Future<Uint8List> loadHero(String url, {Map<String, dynamic>? query}) async {
+    final base = Uri.parse(_client.options.baseUrl);
+    final candidate = Uri.tryParse(url);
+    if (candidate == null ||
+        candidate.hasFragment ||
+        candidate.userInfo.isNotEmpty ||
+        (candidate.hasScheme && !candidate.hasAuthority) ||
+        (candidate.hasAuthority &&
+            (candidate.scheme != base.scheme ||
+                candidate.host != base.host ||
+                candidate.port != base.port)) ||
+        !RegExp(
+          r'^/travel-angels/calendar/stops/[A-Za-z0-9-]+/hero/[A-Za-z0-9-]+$',
+        ).hasMatch(candidate.path)) {
+      throw const TravelCalendarException('This trip image is unavailable.');
+    }
+    try {
+      final response = await _client.get<List<int>>(
+        url,
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          headers: await _identityHeaders(),
+        ),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException {
+      throw const TravelCalendarException('This trip image is unavailable.');
+    }
+  }
+
+  Future<Map<String, String>> _identityHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accountToken = prefs.getString('token');
+    final guestToken = await _guestToken();
+    return {
+      if (accountToken != null) 'Authorization': 'Bearer $accountToken',
+      if (guestToken != null) 'X-Travel-Guest-Token': guestToken,
+    };
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
-    Map<String, dynamic>? data,
+    Object? data,
     Map<String, dynamic>? query,
   }) async {
     final endpoint = path.startsWith('/travel-angels/')
         ? path
         : '/travel-angels${path.startsWith('/') ? path : '/$path'}';
     final prefs = await SharedPreferences.getInstance();
-    final accountToken = prefs.getString('token');
-    final guestToken = await _guestToken();
     try {
       final response = await _client.request<dynamic>(
         endpoint,
@@ -124,10 +199,7 @@ class TravelCalendarService {
         options: Options(
           method: method,
           responseType: ResponseType.json,
-          headers: {
-            if (accountToken != null) 'Authorization': 'Bearer $accountToken',
-            if (guestToken != null) 'X-Travel-Guest-Token': guestToken,
-          },
+          headers: await _identityHeaders(),
         ),
       );
       final body = response.data;
@@ -135,8 +207,9 @@ class TravelCalendarService {
           ? Map<String, dynamic>.from(body)
           : <String, dynamic>{if (body is List) 'items': body};
       if (endpoint == '/travel-angels/calendar-guests/verification' &&
-          data?['email'] is String) {
-        await prefs.setString(guestEmailKey, (data!['email'] as String).trim());
+          data is Map &&
+          data['email'] is String) {
+        await prefs.setString(guestEmailKey, (data['email'] as String).trim());
       }
       if (endpoint == '/travel-angels/calendar-guests/verify' &&
           result['guestToken'] is String &&

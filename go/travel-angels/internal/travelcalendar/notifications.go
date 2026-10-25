@@ -2,6 +2,7 @@ package travelcalendar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -31,7 +32,7 @@ func (calendarNotice) TableName() string { return "tc_calendar_notices" }
 
 func (s *Service) queueParticipationNotice(tx *gorm.DB, stop *Stop, participation *Participation, event string) error {
 	targets := map[uuid.UUID]string{participation.UserID: event}
-	if event == "requested" || event == "withdrawn" || event == "interested" {
+	if event == "requested" || event == "withdrawn" || event == "interested" || event == "waitlisted" {
 		var cal Calendar
 		if err := tx.First(&cal, "id = ?", stop.CalendarID).Error; err != nil {
 			return err
@@ -42,11 +43,24 @@ func (s *Service) queueParticipationNotice(tx *gorm.DB, stop *Stop, participatio
 			return err
 		}
 		for _, manager := range managers {
-			targets[manager.UserID] = "host_" + event
+			if s.canManageStop(tx, stop, Viewer{UserID: manager.UserID}) {
+				targets[manager.UserID] = "host_" + event
+			}
 		}
 	}
 	for userID, targetEvent := range targets {
 		dedupe := fmt.Sprintf("participation:%s:%s:%s:%d", participation.ID, userID, targetEvent, participation.UpdatedAt.UnixNano())
+		if targetEvent == "logistics_updated" {
+			// The private deduplication key also binds this generic notification to
+			// exactly the logistics this recipient was allowed to see at publication.
+			// A later change or audience restriction makes it stale, without storing
+			// private content in the outbox or exposing which hidden entry changed.
+			snapshot, err := tripLogisticsNoticeSnapshot(stop.Published, userID)
+			if err != nil {
+				return err
+			}
+			dedupe += ":logistics:" + snapshot
+		}
 		notice := calendarNotice{ID: uuid.New(), UserID: userID, StopID: stop.ID, ParticipationID: participation.ID, Event: targetEvent, DedupeKey: dedupe}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "dedupe_key"}}, DoNothing: true}).Create(&notice).Error; err != nil {
 			return err
@@ -214,6 +228,19 @@ func (s *Service) dispatchCalendarDelivery(ctx context.Context, id uuid.UUID) er
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&stops[i], "id = ?", stops[i].ID).Error; err != nil {
 				return err
 			}
+			if !calendars[stops[i].CalendarID] {
+				// An ownership transfer completed after the initial lookup. No email
+				// has been attempted, so retry with the new owning calendar's lock.
+				return tx.Model(&delivery).Updates(map[string]interface{}{"status": "pending", "last_error": ""}).Error
+			}
+		}
+		// Permission changes may suppress a queued notification while this worker
+		// waits for the trip locks. Never send a stale pre-lock copy of that row.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&delivery, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if delivery.Status != "sending" {
+			return nil
 		}
 		var recipient GuestRecipient
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recipient, "id = ?", delivery.RecipientID).Error; err != nil {
@@ -294,6 +321,14 @@ func noticeMessage(event, title string) string {
 		return "A travel plan's participation has changed. Open Travel Angels to review the plans currently available to you."
 	}
 	switch event {
+	case "host_waitlisted":
+		return "A traveler joined the waitlist for " + title + ". Review the waitlist in Travel Angels."
+	case "waitlisted":
+		return "You are on the waitlist for " + title + ". A host must approve your place before you are confirmed."
+	case "reservation_released":
+		return "Your reserved place for " + title + " was released. Your dates remain saved; any renewed approval depends on availability."
+	case "logistics_updated":
+		return "Lodging or flights for " + title + " were updated. Open the trip to review the details currently shared with you."
 	case "host_requested":
 		return "A traveler requested to join " + title + ". Review their request in Travel Angels."
 	case "host_interested":
@@ -349,6 +384,9 @@ func (s *Service) participationEmail(tx *gorm.DB, delivery *calendarDelivery, re
 			viewer.RecipientID = recipient.ID
 		}
 	}
+	if delivery.Event == "logistics_updated" && (!s.tripAttendee(tx, stop, viewer) || !tripLogisticsNoticeCurrent(stop, viewer.UserID, delivery.DedupeKey)) {
+		return "", "", false
+	}
 	canView := stop.Published != nil && s.canViewStop(tx, stop, viewer)
 	title := ""
 	if canView {
@@ -384,10 +422,15 @@ func (s *Service) listCalendarNotifications(c *gin.Context) {
 			if s.db.First(&participation, "id = ? AND user_id = ?", notice.ParticipationID, user.ID).Error == nil {
 				viewer = s.storedParticipationViewer(s.db, &stop, &participation)
 			}
+			if !s.tripNoticeAuthority(s.db, &stop, viewer, notice.Event, notice.DedupeKey) {
+				continue
+			}
 			available = stop.Published != nil && s.canViewStop(s.db, &stop, viewer)
 			if available {
 				title = stop.Published.Title
 			}
+		} else if notice.Event == "logistics_updated" || strings.HasPrefix(notice.Event, "host_") {
+			continue
 		}
 		item := gin.H{"id": notice.ID, "event": notice.Event, "message": noticeMessage(notice.Event, title), "createdAt": notice.CreatedAt, "readAt": notice.ReadAt}
 		if available {
@@ -412,10 +455,66 @@ func (s *Service) listCalendarNotifications(c *gin.Context) {
 			return
 		}
 		for _, row := range rows {
+			if row.Event == "logistics_updated" || strings.HasPrefix(row.Event, "host_") {
+				if row.StopID == nil {
+					continue
+				}
+				var stop Stop
+				if s.db.First(&stop, "id = ?", *row.StopID).Error != nil {
+					continue
+				}
+				viewer := s.participationViewer(s.db, &stop, user.ID, participationInput{})
+				if !s.tripNoticeAuthority(s.db, &stop, viewer, row.Event, row.DedupeKey) {
+					continue
+				}
+			}
 			deliveries = append(deliveries, gin.H{"id": row.ID, "status": row.Status, "event": row.Event, "lastError": row.LastError, "createdAt": row.CreatedAt})
 		}
 	}
 	c.JSON(200, gin.H{"notifications": result, "deliveries": deliveries})
+}
+
+func tripLogisticsNoticeSnapshot(content *StopContent, userID uuid.UUID) (string, error) {
+	if content == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(filteredTripLogistics(content, userID, false, true))
+	if err != nil {
+		return "", err
+	}
+	return guestDigest(string(encoded)), nil
+}
+
+func tripLogisticsNoticeCurrent(stop *Stop, userID uuid.UUID, dedupe string) bool {
+	if stop.Published == nil || userID == uuid.Nil {
+		return false
+	}
+	_, suffix, found := strings.Cut(dedupe, ":logistics:")
+	if !found {
+		return false
+	}
+	expected, _, _ := strings.Cut(suffix, ":")
+	current, err := tripLogisticsNoticeSnapshot(stop.Published, userID)
+	return err == nil && current != "" && expected == current
+}
+
+func (s *Service) tripNoticeAuthority(tx *gorm.DB, stop *Stop, viewer Viewer, event, dedupe string) bool {
+	if strings.HasPrefix(event, "host_") {
+		return s.canManageStop(tx, stop, viewer)
+	}
+	if event == "logistics_updated" {
+		return s.tripAttendee(tx, stop, viewer) && tripLogisticsNoticeCurrent(stop, viewer.UserID, dedupe)
+	}
+	return true
+}
+
+// Call under the trip/calendar permission locks when narrowing logistics access.
+// Uncertain sends remain uncertain; they are never automatically retried.
+func (s *Service) suppressTripLogisticsNotices(tx *gorm.DB, stopID uuid.UUID) error {
+	if err := tx.Model(&calendarDelivery{}).Where("stop_id = ? AND event = ? AND status IN ?", stopID, "logistics_updated", []string{"pending", "failed"}).Updates(map[string]interface{}{"status": "skipped", "last_error": "Logistics access changed"}).Error; err != nil {
+		return err
+	}
+	return tx.Where("stop_id = ? AND event = ?", stopID, "logistics_updated").Delete(&calendarNotice{}).Error
 }
 
 func (s *Service) retryCalendarNotifications(c *gin.Context) {
@@ -432,4 +531,41 @@ func (s *Service) retryCalendarNotifications(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"pending": result.RowsAffected})
+}
+
+// Logistics notices compare only the recipient-visible material. A change to
+// host notes or another traveler's assignments must not reveal its existence.
+func (s *Service) queueTripLogisticsNotices(tx *gorm.DB, stop *Stop, before, after *StopContent) error {
+	var ps []Participation
+	if e := tx.Where("stop_id = ? AND (status = 'joined' OR (reserved = true AND status IN ('requested','needs_reconfirmation')))", stop.ID).Find(&ps).Error; e != nil {
+		return e
+	}
+	for i := range ps {
+		p := &ps[i]
+		v := s.storedParticipationViewer(tx, stop, p)
+		if !s.tripAttendee(tx, stop, v) {
+			continue
+		}
+		oldView := filteredTripLogistics(before, p.UserID, false, true)
+		newView := filteredTripLogistics(after, p.UserID, false, true)
+		oldJSON, e := json.Marshal(oldView)
+		if e != nil {
+			return e
+		}
+		newJSON, e := json.Marshal(newView)
+		if e != nil {
+			return e
+		}
+		if string(oldJSON) == string(newJSON) {
+			continue
+		}
+		// Include the publication revision in the event key without changing the
+		// actual attendance timestamp or allocating a second attendance record.
+		noticeP := *p
+		noticeP.UpdatedAt = stop.UpdatedAt
+		if e = s.queueParticipationNotice(tx, stop, &noticeP, "logistics_updated"); e != nil {
+			return e
+		}
+	}
+	return nil
 }
