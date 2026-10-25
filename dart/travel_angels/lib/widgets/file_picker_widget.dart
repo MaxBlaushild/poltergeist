@@ -1,8 +1,10 @@
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document_location.dart';
+import 'package:travel_angels/models/document.dart';
+import 'package:travel_angels/widgets/guide_details_fields.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
 import 'package:travel_angels/widgets/location_selector.dart';
@@ -11,10 +13,7 @@ import 'package:travel_angels/widgets/location_selector.dart';
 class FilePickerWidget extends StatefulWidget {
   final VoidCallback? onImportComplete;
 
-  const FilePickerWidget({
-    super.key,
-    this.onImportComplete,
-  });
+  const FilePickerWidget({super.key, this.onImportComplete});
 
   @override
   State<FilePickerWidget> createState() => _FilePickerWidgetState();
@@ -27,13 +26,14 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
 
   bool _isLoading = false;
   String? _errorMessage;
-  File? _selectedFile;
+  PlatformFile? _selectedFile;
+  final _form = GlobalKey<FormState>();
+  final _details = GuideDetailsController();
   String? _parsedContent;
-  String? _documentTitle;
   List<DocumentLocation> _selectedLocations = [];
 
   Future<void> _createDocument() async {
-    if (_selectedFile == null || _documentTitle == null) {
+    if (_selectedFile == null || !_form.currentState!.validate()) {
       return;
     }
 
@@ -47,16 +47,17 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
     }
 
     try {
       // Create document with parsed content and locations
-      await _documentService.createDocument(
-        title: _documentTitle!,
+      final created = await _documentService.createDocument(
+        title: _details.title.text.trim(),
+        format: _details.format,
+        personalNote: _details.personalNote.text.trim(),
+        destination: _details.destination.text.trim(),
         provider: 'internal',
         content: _parsedContent,
         locations: _selectedLocations.isNotEmpty ? _selectedLocations : null,
@@ -65,12 +66,14 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       // Close loading dialog and file picker
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
-        Navigator.of(context).pop(); // Close file picker
+        Navigator.of(
+          context,
+        ).pop(Document.fromJson(created)); // Close file picker
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Document imported successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
 
@@ -78,6 +81,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         widget.onImportComplete?.call();
       }
     } catch (e) {
+      if (!mounted) return;
       // Close loading dialog if it's open
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -91,8 +95,10 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to import document: ${_errorMessage ?? 'Unknown error'}'),
-            backgroundColor: Colors.red,
+            content: Text(
+              'Failed to import document: ${_errorMessage ?? 'Unknown error'}',
+            ),
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -111,6 +117,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx'],
         allowMultiple: false,
+        withData: true,
       );
 
       if (result == null || result.files.isEmpty) {
@@ -121,17 +128,8 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         return;
       }
 
+      if (!mounted) return;
       final pickedFile = result.files.single;
-      if (pickedFile.path == null) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Failed to get file path';
-        });
-        return;
-      }
-
-      final file = File(pickedFile.path!);
-
       // Validate file extension
       final extension = pickedFile.extension?.toLowerCase();
       if (extension != 'pdf' && extension != 'docx') {
@@ -147,24 +145,32 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(),
-          ),
+          builder: (context) =>
+              const Center(child: CircularProgressIndicator()),
         );
       }
 
       // Parse the document
-      final parsedDoc = await _documentService.parseDocument(file);
+      final bytes = pickedFile.bytes;
+      if (bytes == null) throw Exception('Unable to read the selected file');
+      final parsedDoc = await _documentService.parseDocumentBytes(
+        bytes,
+        pickedFile.name,
+      );
+      if (!mounted) return;
 
       // Extract filename without extension for title
       final fileName = pickedFile.name;
-      final title = fileName.replaceAll(RegExp(r'\.(pdf|docx)$', caseSensitive: false), '');
+      final title = fileName.replaceAll(
+        RegExp(r'\.(pdf|docx)$', caseSensitive: false),
+        '',
+      );
 
       // Store file info for later use
       setState(() {
-        _selectedFile = file;
+        _selectedFile = pickedFile;
         _parsedContent = parsedDoc['content'] as String?;
-        _documentTitle = title;
+        _details.title.text = title;
         _isLoading = false;
       });
 
@@ -173,6 +179,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         Navigator.of(context).pop();
       }
     } catch (e) {
+      if (!mounted) return;
       // Close loading dialog if it's open
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -186,12 +193,20 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to import document: ${_errorMessage ?? 'Unknown error'}'),
-            backgroundColor: Colors.red,
+            content: Text(
+              'Failed to import document: ${_errorMessage ?? 'Unknown error'}',
+            ),
+            backgroundColor: AppTheme.error,
           ),
         );
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _details.dispose();
+    super.dispose();
   }
 
   @override
@@ -207,120 +222,127 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16.0),
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16.0),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(2),
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Form(
+        key: _form,
+        child: Container(
+          padding: const EdgeInsets.all(24.0),
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            // Title
-            Text(
-              'Import from File',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_selectedFile == null)
-              if (_isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12.0),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        color: theme.colorScheme.onErrorContainer,
+                // Title
+                Text('Import from File', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 24),
+                if (_selectedFile == null)
+                  if (_isLoading)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: CircularProgressIndicator(),
                       ),
-                      const SizedBox(width: 12.0),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
+                    )
+                  else if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12.0),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
                             color: theme.colorScheme.onErrorContainer,
                           ),
-                        ),
+                          const SizedBox(width: 12.0),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    )
+                  else
+                    Text(
+                      'Select a PDF or Word (.docx) file to import',
+                      style: theme.textTheme.bodyMedium,
+                    )
+                else ...[
+                  // File selected, show location selector and create button
+                  Text(
+                    'File selected: ${_selectedFile!.name}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
-                )
-              else
-                Text(
-                  'Select a PDF or Word (.docx) file to import',
-                  style: theme.textTheme.bodyMedium,
-                )
-            else ...[
-              // File selected, show location selector and create button
-              Text(
-                'File selected: ${_selectedFile!.path.split('/').last}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Optionally add locations to tag this document:',
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              LocationSelector(
-                initialLocations: _selectedLocations,
-                onLocationsChanged: (locations) {
-                  setState(() {
-                    _selectedLocations = locations;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _createDocument,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.upload_file),
-                label: Text(_isLoading ? 'Importing...' : 'Import Document'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-          ],
+                  const SizedBox(height: 16),
+                  GuideDetailsFields(
+                    controller: _details,
+                    enabled: !_isLoading,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Only you can see this guide until you share it.'),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Optionally add locations to tag this document:',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  LocationSelector(
+                    initialLocations: _selectedLocations,
+                    onLocationsChanged: (locations) {
+                      setState(() {
+                        _selectedLocations = locations;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _createDocument,
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.upload_file),
+                    label: Text(
+                      _isLoading ? 'Importing...' : 'Import Document',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
-

@@ -30,23 +30,22 @@ class PaginationControls extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
         border: Border(
-          top: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.2),
-          ),
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 16,
+        runSpacing: 8,
         children: [
           // Items per page selector
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Items per page:',
-                style: theme.textTheme.bodySmall,
-              ),
+              Text('Items per page:', style: theme.textTheme.bodySmall),
               const SizedBox(width: 8),
               DropdownButton<int>(
                 value: pageSize,
@@ -112,4 +111,3 @@ class PaginationControls extends StatelessWidget {
     );
   }
 }
-

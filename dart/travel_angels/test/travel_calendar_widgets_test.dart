@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel_angels/theme/app_theme.dart';
+import 'support/app_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/models/user.dart';
@@ -39,6 +41,13 @@ Map<String, dynamic> stop(
 
 class FakeTravelCalendarService extends TravelCalendarService {
   List<TravelStop> stops = [stop('a', 'Lisbon'), stop('b', 'Kyoto')];
+  Map<String, dynamic> calendar = {
+    'id': 'calendar',
+    'title': 'Our travel calendar',
+    'canManage': false,
+    'canManagePermissions': false,
+  };
+  final List<String> reads = [];
   final List<Map<String, dynamic>> requests = [];
   int removals = 1;
   bool failSecondParticipation = false;
@@ -51,6 +60,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
     String path, {
     Map<String, dynamic>? query,
   }) async {
+    reads.add(path);
     if (path == '/calendar-notifications') return notificationResponse;
     if (path.startsWith('/shared/stops/')) return {'stop': stops.first};
     if (RegExp(r'^/calendar/stops/[^/]+$').hasMatch(path)) {
@@ -68,12 +78,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
       };
     }
     return {
-      'calendar': {
-        'id': 'calendar',
-        'title': 'Our travel calendar',
-        'canManage': false,
-        'canManagePermissions': false,
-      },
+      'calendar': calendar,
       'stops': stops,
       'cohostInvitations': cohostInvitations,
     };
@@ -111,6 +116,34 @@ class FakeTravelCalendarService extends TravelCalendarService {
   }
 }
 
+Future<void> switchToAgenda(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byTooltip('Calendar view'),
+    -200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.tap(find.byTooltip('Calendar view'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(CheckedPopupMenuItem<bool>, 'Agenda'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> openCalendarFilters(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byTooltip('Filter trips'),
+    -200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.tap(find.byTooltip('Filter trips'));
+  await tester.pumpAndSettle();
+}
+
+Finder calendarSearch() => find.byWidgetPredicate(
+  (widget) =>
+      widget is TextField &&
+      widget.decoration?.labelText == 'Filter by destination or title',
+);
+
 class CalendarTestAuth extends AuthProvider {
   CalendarTestAuth(this._account)
     : super(AuthService(APIClient('https://example.test')));
@@ -135,7 +168,235 @@ class CalendarTestAuth extends AuthProvider {
 }
 
 void main() {
+  setUpAll(loadAppFonts);
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+    'empty calendars default to a navigable month with discoverable filters',
+    (tester) async {
+      final service = FakeTravelCalendarService()..stops = [];
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: TravelCalendarScreen(calendarToken: 'share', service: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelCalendarMonth), findsOneWidget);
+      expect(find.byType(TravelStopCard), findsNothing);
+      expect(calendarSearch(), findsNothing);
+      expect(find.byTooltip('Filter trips'), findsOneWidget);
+      final before = tester
+          .widget<TravelCalendarMonth>(find.byType(TravelCalendarMonth))
+          .month;
+      await tester.ensureVisible(find.byTooltip('Next month'));
+      await tester.tap(find.byTooltip('Next month'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TravelCalendarMonth>(find.byType(TravelCalendarMonth))
+            .month,
+        DateTime(before.year, before.month + 1),
+      );
+      await openCalendarFilters(tester);
+      expect(calendarSearch(), findsOneWidget);
+      expect(find.text('All dates'), findsOneWidget);
+      expect(find.text('Date range'), findsOneWidget);
+      await tester.enterText(calendarSearch(), 'No matching destination');
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelCalendarMonth), findsOneWidget);
+      await tester.tap(find.byTooltip('Filter trips'));
+      await tester.pumpAndSettle();
+      expect(calendarSearch(), findsNothing);
+      expect(find.byTooltip('Clear destination filter'), findsOneWidget);
+      await openCalendarFilters(tester);
+      expect(
+        tester.widget<TextField>(calendarSearch()).controller!.text,
+        'No matching destination',
+      );
+      await tester.tap(find.byTooltip('Clear destination filter'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(calendarSearch()).controller!.text,
+        isEmpty,
+      );
+      expect(service.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'compact manager controls and expanded filters fit at 320px with enlarged text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final service = FakeTravelCalendarService()
+        ..stops = []
+        ..calendar = {
+          'id': 'calendar',
+          'title': 'Our year of travel together',
+          'canManage': true,
+          'canManagePermissions': true,
+          'canCreateTrips': true,
+        };
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          builder: (_, child) => MediaQuery(
+            data: const MediaQueryData(
+              size: Size(320, 800),
+              textScaler: TextScaler.linear(2),
+            ),
+            child: child!,
+          ),
+          home: TravelCalendarScreen(service: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create trip'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await openCalendarFilters(tester);
+      await tester.enterText(
+        calendarSearch(),
+        'A destination with a deliberately long name',
+      );
+      await tester.pumpAndSettle();
+      final periods = find.byType(DropdownButton<String>);
+      await tester.ensureVisible(periods);
+      await tester.tap(periods);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Approximate / TBD').last);
+      await tester.tap(find.text('Approximate / TBD').last);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<DropdownButton<String>>(periods).value,
+        'unscheduled',
+      );
+      expect(find.byTooltip('Clear destination filter'), findsOneWidget);
+      expect(find.byTooltip('Clear period filter'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('Calendar actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Default audience'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(service.requests, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'compact calendar actions retain owner controls and restrict editor and guest roles',
+    (tester) async {
+      final owner = FakeTravelCalendarService()
+        ..stops = []
+        ..calendar = {
+          'id': 'calendar',
+          'title': 'Owned calendar',
+          'canManage': true,
+          'canManagePermissions': true,
+          'canCreateTrips': true,
+        };
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: TravelCalendarScreen(
+            key: const ValueKey('owner'),
+            service: owner,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create trip'), findsOneWidget);
+      expect(find.text('Invite friends'), findsNothing);
+      await tester.tap(find.byTooltip('Calendar actions'));
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Share calendar',
+        'Invite friends',
+        'Broadcast update',
+        'Rename calendar',
+        'Default audience',
+        'Calendar editors',
+        'Manage share link',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Verify invited email'), findsNothing);
+      await tester.tap(find.text('Default audience'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelPermissionsDialog), findsOneWidget);
+      expect(owner.reads, contains('/calendar/permissions'));
+      expect(owner.requests, isEmpty);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      final editor = FakeTravelCalendarService()
+        ..stops = []
+        ..calendar = {
+          'id': 'calendar',
+          'title': 'Edited calendar',
+          'canManage': true,
+          'canManagePermissions': false,
+          'canCreateTrips': false,
+        };
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: TravelCalendarScreen(
+            key: const ValueKey('editor'),
+            service: editor,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create trip'), findsNothing);
+      await tester.tap(find.byTooltip('Calendar actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Invite friends'), findsOneWidget);
+      expect(find.text('Broadcast update'), findsOneWidget);
+      for (final label in [
+        'Share calendar',
+        'Rename calendar',
+        'Default audience',
+        'Calendar editors',
+        'Manage share link',
+      ]) {
+        expect(find.text(label), findsNothing);
+      }
+      expect(editor.requests, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      final guest = FakeTravelCalendarService()..stops = [];
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: TravelCalendarScreen(calendarToken: 'share', service: guest),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Follow updates'), findsOneWidget);
+      expect(find.text('Create trip'), findsNothing);
+      await tester.tap(find.byTooltip('Calendar actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Follow / manage updates'), findsOneWidget);
+      expect(find.text('Verify invited email'), findsOneWidget);
+      for (final label in [
+        'Share calendar',
+        'Invite friends',
+        'Broadcast update',
+        'Rename calendar',
+        'Default audience',
+        'Calendar editors',
+        'Manage share link',
+      ]) {
+        expect(find.text(label), findsNothing);
+      }
+      await tester.tap(find.text('Verify invited email'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TravelGuestVerificationDialog), findsOneWidget);
+      expect(guest.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'full host acceptance separates organizing from attendance and requires consent',
@@ -153,7 +414,10 @@ void main() {
           },
         ];
       await tester.pumpWidget(
-        MaterialApp(home: TravelCalendarScreen(service: service)),
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: TravelCalendarScreen(service: service),
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.text('A week in Lisbon'), findsOneWidget);
@@ -192,6 +456,7 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(
             stopToken: 'shared-trip-token',
             service: service,
@@ -213,10 +478,13 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(calendarToken: 'share', service: service),
         ),
       );
       await tester.pumpAndSettle();
+      await switchToAgenda(tester);
+      await openCalendarFilters(tester);
       await tester.enterText(find.byType(TextField).first, 'Kyoto');
       await tester.pumpAndSettle();
       final card = find.byWidgetPredicate(
@@ -265,6 +533,7 @@ void main() {
         ];
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Scaffold(
             body: TravelStopPreviewDialog(
               service: service,
@@ -296,6 +565,7 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -376,6 +646,7 @@ void main() {
       final service = FakeTravelCalendarService()..stops = [];
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(calendarToken: 'share', service: service),
         ),
       );
@@ -444,6 +715,7 @@ void main() {
         ChangeNotifierProvider<AuthProvider>.value(
           value: auth,
           child: MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelCalendarScreen(
               calendarToken: 'share',
               service: service,
@@ -487,6 +759,7 @@ void main() {
         ChangeNotifierProvider<AuthProvider>.value(
           value: auth,
           child: MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelCalendarScreen(
               calendarToken: 'share',
               service: service,
@@ -495,7 +768,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await switchToAgenda(tester);
       expect(find.text('1 stop selected · nothing submitted'), findsOneWidget);
+      expect(find.text('Private host plan'), findsOneWidget);
       service.stops = [stop('public', 'Public plans')];
       auth.setAccount(null);
       await tester.pumpAndSettle();
@@ -530,6 +805,7 @@ void main() {
         ChangeNotifierProvider<AuthProvider>.value(
           value: auth,
           child: MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelCalendarScreen(
               calendarToken: 'share',
               service: service,
@@ -542,7 +818,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+      await tester.ensureVisible(
+        find.text('Claim account & review selections'),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claim account & review selections'));
       await tester.pumpAndSettle();
@@ -595,6 +873,7 @@ void main() {
         };
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Scaffold(
             body: TravelCalendarNotificationsDialog(service: service),
           ),
@@ -654,12 +933,15 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(calendarToken: 'share', service: service),
         ),
       );
       await tester.pumpAndSettle();
       expect(find.text('Our travel calendar'), findsOneWidget);
-      expect(find.text('Add stop'), findsNothing);
+      expect(find.text('Create trip'), findsNothing);
+      await switchToAgenda(tester);
+      await openCalendarFilters(tester);
       await tester.enterText(find.byType(TextField).first, 'Kyoto');
       await tester.pump();
       expect(
@@ -691,6 +973,7 @@ void main() {
       DateTime? next;
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Scaffold(
             body: SingleChildScrollView(
               child: TravelCalendarMonth(
@@ -727,6 +1010,7 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Scaffold(
             body: TravelStopPreviewDialog(
               service: service,
@@ -753,6 +1037,7 @@ void main() {
         ..stops = [stop('a', 'Lisbon')];
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(
             calendarToken: 'share',
             service: service,
@@ -764,7 +1049,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+      await switchToAgenda(tester);
+      await tester.ensureVisible(find.byType(TravelStopCard));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(TravelStopCard));
       await tester.pumpAndSettle();
@@ -815,6 +1101,7 @@ void main() {
         ChangeNotifierProvider<AuthProvider>.value(
           value: auth,
           child: MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelCalendarScreen(
               stopToken: 'trip-link',
               service: service,
@@ -891,6 +1178,7 @@ void main() {
       var claims = 0;
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelCalendarScreen(
             calendarToken: 'share',
             service: service,
@@ -950,6 +1238,7 @@ void main() {
     final service = FakeTravelCalendarService();
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.lightTheme,
         home: TravelCalendarScreen(
           calendarToken: 'share',
           service: service,
@@ -958,7 +1247,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+    await tester.ensureVisible(find.text('Claim account & review selections'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim account & review selections'));
     await tester.pumpAndSettle();
@@ -977,6 +1266,7 @@ void main() {
       final service = FakeTravelCalendarService();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -1029,6 +1319,7 @@ void main() {
     final service = FakeTravelCalendarService()..failSecondParticipation = true;
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.lightTheme,
         home: TravelCalendarScreen(
           calendarToken: 'share',
           service: service,
@@ -1037,7 +1328,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+    await tester.ensureVisible(find.text('Claim account & review selections'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claim account & review selections'));
     await tester.pumpAndSettle();
@@ -1049,6 +1340,11 @@ void main() {
             as Map;
     expect(saved.keys, ['b']);
     expect(service.requests, hasLength(2));
+    await tester.scrollUntilVisible(
+      find.textContaining('Dates have changed.'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Dates have changed.'), findsOneWidget);
   });
 }

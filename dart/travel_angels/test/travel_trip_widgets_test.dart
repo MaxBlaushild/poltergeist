@@ -5,8 +5,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travel_angels/theme/app_theme.dart';
+import 'support/app_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
@@ -173,6 +174,7 @@ class TripTestAuth extends AuthProvider {
 Future<void> showTestDialog(WidgetTester tester, Widget dialog) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: AppTheme.lightTheme,
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(
@@ -189,6 +191,7 @@ Future<void> showTestDialog(WidgetTester tester, Widget dialog) async {
 }
 
 void main() {
+  setUpAll(loadAppFonts);
   testWidgets(
     'guest page hides identities and exact counts while showing permitted planning content',
     (tester) async {
@@ -207,6 +210,7 @@ void main() {
         };
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelTripScreen(
             initialStop: stop,
             service: TripTestService(),
@@ -245,6 +249,7 @@ void main() {
         final calls = <String>[];
         await tester.pumpWidget(
           MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelTripScreen(
               key: ValueKey(status),
               initialStop: stop,
@@ -434,6 +439,7 @@ void main() {
       var denied = false;
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: TravelTripScreen(
             initialStop: stop,
             service: TripTestService(),
@@ -480,6 +486,7 @@ void main() {
         ChangeNotifierProvider<AuthProvider>.value(
           value: auth,
           child: MaterialApp(
+            theme: AppTheme.lightTheme,
             home: TravelTripScreen(
               initialStop: stop,
               service: TripTestService(),
@@ -504,23 +511,6 @@ void main() {
     tester,
   ) async {
     const screenshots = bool.fromEnvironment('TRIP_SCREENSHOTS');
-    if (screenshots) {
-      await (FontLoader(
-        'MaterialIcons',
-      )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
-      for (final font in {
-        'Roboto': '/System/Library/Fonts/Supplemental/Arial.ttf',
-        'Georgia': '/System/Library/Fonts/Supplemental/Georgia.ttf',
-      }.entries) {
-        final file = File(font.value);
-        if (file.existsSync()) {
-          await (FontLoader(font.key)..addFont(
-                Future.value(ByteData.sublistView(file.readAsBytesSync())),
-              ))
-              .load();
-        }
-      }
-    }
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final size in [const Size(1440, 1000), const Size(390, 844)]) {
       await tester.binding.setSurfaceSize(size);
@@ -528,6 +518,7 @@ void main() {
       final stop = sampleTrip();
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.lightTheme,
           home: RepaintBoundary(
             key: boundary,
             child: TravelTripScreen(
@@ -561,6 +552,7 @@ void main() {
       if (size.width < 500) {
         await tester.pumpWidget(
           MaterialApp(
+            theme: AppTheme.lightTheme,
             builder: (_, child) => MediaQuery(
               data: const MediaQueryData(textScaler: TextScaler.linear(2)),
               child: child!,

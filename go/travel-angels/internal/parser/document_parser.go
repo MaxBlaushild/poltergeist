@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/JohannesKaufmann/html-to-markdown/plugin"
 	"github.com/nguyenthenguyen/docx"
 	"rsc.io/pdf"
 )
@@ -122,6 +123,7 @@ func (p *DocumentParser) ParseHTML(htmlBytes []byte) (*ParsedDocument, error) {
 
 	// Convert HTML to markdown
 	converter := md.NewConverter("", true, nil)
+	converter.Use(plugin.Table())
 	markdown, err := converter.ConvertString(html)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert HTML to markdown: %w", err)

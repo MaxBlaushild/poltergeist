@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
 import 'package:travel_angels/widgets/travel_calendar_views.dart';
 
@@ -83,7 +84,12 @@ class _TravelCalendarNotificationsDialogState
   Widget build(BuildContext context) => AlertDialog(
     title: Row(
       children: [
-        const Expanded(child: Text('Travel notifications')),
+        const Expanded(
+          child: TravelCalendarDialogTitle(
+            'Travel notifications',
+            label: 'Keep in touch',
+          ),
+        ),
         IconButton(
           tooltip: 'Refresh notifications',
           onPressed: _busy ? null : _load,
@@ -98,8 +104,9 @@ class _TravelCalendarNotificationsDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            const TravelCalendarCallout(
               'Participation requests, approvals, and changes to your plans. Opening this panel does not change participation.',
+              icon: Icons.notifications_none,
             ),
             if (_busy) const LinearProgressIndicator(),
             if (_error != null)
@@ -116,7 +123,10 @@ class _TravelCalendarNotificationsDialogState
             for (final notice in _notifications)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.event_note_outlined),
+                leading: const Icon(
+                  Icons.event_note_outlined,
+                  color: AppTheme.rust,
+                ),
                 title: Text(
                   notice['message'] as String? ?? 'Travel plans updated.',
                 ),
@@ -132,7 +142,7 @@ class _TravelCalendarNotificationsDialogState
               const Divider(height: 24),
               Text(
                 'Your email notices',
-                style: Theme.of(context).textTheme.titleMedium,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               const Text(
                 'Only your delivery statuses appear here. Access is checked again before a retry is delivered.',
@@ -255,10 +265,11 @@ class _TravelInvitationsDialogState extends State<TravelInvitationsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(
+    title: TravelCalendarDialogTitle(
       widget.stop == null
           ? 'Invite friends to your calendar'
           : 'Invite friends to this stop',
+      label: 'Good company',
     ),
     content: SizedBox(
       width: 560,
@@ -267,8 +278,9 @@ class _TravelInvitationsDialogState extends State<TravelInvitationsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            const TravelCalendarCallout(
               'Send a browser link by email. Add restricted viewers in Audience first. Invitations do not subscribe friends or join plans for them.',
+              icon: Icons.mail_outline,
             ),
             if (_busy) const LinearProgressIndicator(),
             const SizedBox(height: 16),
@@ -293,7 +305,7 @@ class _TravelInvitationsDialogState extends State<TravelInvitationsDialog> {
               const SizedBox(height: 24),
               Text(
                 'Invitation history',
-                style: Theme.of(context).textTheme.titleMedium,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               for (final invitation in _invitations)
                 ListTile(
@@ -465,7 +477,10 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Broadcast a travel update'),
+    title: const TravelCalendarDialogTitle(
+      'Broadcast a travel update',
+      label: 'Keep friends in the loop',
+    ),
     content: SizedBox(
       width: 600,
       child: SingleChildScrollView(
@@ -473,8 +488,9 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            const TravelCalendarCallout(
               'Only people who follow these plans and can currently view them receive this update. A common message about several stops reaches only people authorized for all of them.',
+              icon: Icons.campaign_outlined,
             ),
             const SizedBox(height: 16),
             if (_preview == null) ...[
@@ -520,7 +536,7 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
             ] else ...[
               Text(
                 'Preview · ${_preview!['recipientCount'] ?? 0} eligible recipients',
-                style: Theme.of(context).textTheme.titleMedium,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
               SelectableText(_message.text.trim()),
@@ -548,7 +564,7 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
                   Expanded(
                     child: Text(
                       'Delivery history',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
                   IconButton(
@@ -560,8 +576,13 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
               ),
               for (final broadcast in _broadcasts)
                 Card(
+                  color: AppTheme.paper,
+                  shape: const RoundedRectangleBorder(
+                    side: BorderSide(color: AppTheme.outline),
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
+                  ),
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

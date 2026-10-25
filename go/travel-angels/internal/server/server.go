@@ -19,6 +19,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/travelcalendar"
+	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/travellibrary"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +33,7 @@ type server struct {
 	googleMapsClient  googlemaps.Client
 	baseURL           string
 	calendar          *travelcalendar.Service
+	library           *travellibrary.Service
 }
 
 type Server interface {
@@ -65,6 +67,7 @@ func NewServer(
 	if err == nil {
 		webURL := strings.TrimRight(os.Getenv("TRAVEL_ANGELS_WEB_URL"), "/")
 		s.calendar = travelcalendar.New(connection, s.GetAuthenticatedUser, webURL)
+		s.library = travellibrary.New(connection, s.GetAuthenticatedUser, s.calendar.LibraryTrip, s.calendar.LibraryTrips)
 		var sender email.EmailClient
 		from := os.Getenv("TRAVEL_ANGELS_EMAIL_FROM")
 		if from == "" {
@@ -88,6 +91,9 @@ func NewServer(
 }
 
 func (s *server) SetupRoutes(r *gin.Engine) {
+	if s.library != nil {
+		s.library.RegisterRoutes(r)
+	}
 	if s.calendar != nil {
 		s.calendar.RegisterRoutes(r)
 	}

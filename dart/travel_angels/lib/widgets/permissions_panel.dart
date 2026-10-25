@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/google_drive_service.dart';
@@ -57,7 +58,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         // Refresh status to check if connection was established
         final wasConnected = _isGoogleDriveConnected;
         _loadStatus();
-        
+
         // Only show success message if we were expecting the callback
         // (i.e., we initiated the OAuth flow) or if status changed from disconnected to connected
         if (_expectingOAuthCallback) {
@@ -66,7 +67,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Google Drive connected successfully!'),
-                backgroundColor: Colors.green,
+                backgroundColor: AppTheme.success,
               ),
             );
           }
@@ -102,7 +103,8 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         String errorMessage = 'Failed to load permissions status';
         if (e is DioException) {
           if (e.response != null) {
-            errorMessage = '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMessage =
+                '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMessage = errorData['error']?.toString() ?? errorMessage;
@@ -116,7 +118,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -174,16 +176,18 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Google Drive access revoked successfully'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppTheme.success,
             ),
           );
         }
       }
     } catch (e) {
-      String errorMessage = 'Failed to ${value ? 'connect' : 'disconnect'} Google Drive';
+      String errorMessage =
+          'Failed to ${value ? 'connect' : 'disconnect'} Google Drive';
       if (e is DioException) {
         if (e.response != null) {
-          errorMessage = '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+          errorMessage =
+              '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
           if (e.response?.data != null && e.response?.data is Map) {
             final errorData = e.response?.data as Map<String, dynamic>;
             errorMessage = errorData['error']?.toString() ?? errorMessage;
@@ -198,7 +202,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -224,12 +228,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Permissions',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text('Permissions', style: theme.textTheme.titleLarge),
             const SizedBox(height: 16),
             if (_isLoading)
               const Center(
@@ -242,36 +241,38 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.cloud,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Google Drive',
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud, color: theme.colorScheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Google Drive',
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                _isGoogleDriveConnected
+                                    ? 'Connected'
+                                    : 'Not connected',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: _isGoogleDriveConnected
+                                      ? AppTheme.success
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            _isGoogleDriveConnected
-                                ? 'Connected'
-                                : 'Not connected',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: _isGoogleDriveConnected
-                                  ? Colors.green
-                                  : theme.colorScheme.onSurface.withOpacity(0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Switch(
                     value: _isGoogleDriveConnected,
                     onChanged: _isToggling ? null : _handleGoogleDriveToggle,
@@ -284,4 +285,3 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
     );
   }
 }
-

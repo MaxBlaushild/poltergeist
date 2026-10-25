@@ -136,7 +136,10 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.stop == null ? 'Create a trip' : 'Edit trip draft'),
+    title: TravelCalendarDialogTitle(
+      widget.stop == null ? 'Create a trip' : 'Edit trip draft',
+      label: 'Make a plan',
+    ),
     content: SizedBox(
       width: 520,
       child: SingleChildScrollView(
@@ -146,8 +149,9 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              const TravelCalendarCallout(
                 'Save a draft, then review its audience and publish when ready.',
+                icon: Icons.edit_note,
               ),
               if (widget.stop == null) ...[
                 const SizedBox(height: 8),
@@ -436,7 +440,10 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.stop == null ? 'Calendar audience' : 'Trip audience'),
+    title: TravelCalendarDialogTitle(
+      widget.stop == null ? 'Calendar audience' : 'Trip audience',
+      label: 'Who can see your plans',
+    ),
     content: SizedBox(
       width: 480,
       child: SingleChildScrollView(
@@ -445,7 +452,7 @@ class _TravelPermissionsDialogState extends State<TravelPermissionsDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_busy) const LinearProgressIndicator(),
-            const Text(
+            const TravelCalendarCallout(
               'Viewing, managing, following updates, and joining are separate permissions.',
             ),
             const SizedBox(height: 16),
@@ -604,7 +611,10 @@ class _TravelGuestVerificationDialogState
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Verify your email'),
+    title: const TravelCalendarDialogTitle(
+      'Verify your email',
+      label: 'Your invitation',
+    ),
     content: SizedBox(
       width: 420,
       child: SingleChildScrollView(
@@ -612,7 +622,7 @@ class _TravelGuestVerificationDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            const TravelCalendarCallout(
               'Verify your invited email to browse restricted plans or follow updates. This does not create or claim an account.',
             ),
             const SizedBox(height: 16),
@@ -832,7 +842,10 @@ class _TravelCollaboratorsDialogState extends State<TravelCollaboratorsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.stop == null ? 'Calendar editors' : 'Stop co-hosts'),
+    title: TravelCalendarDialogTitle(
+      widget.stop == null ? 'Calendar editors' : 'Stop co-hosts',
+      label: 'Plan together',
+    ),
     content: SizedBox(
       width: 500,
       child: SingleChildScrollView(
@@ -984,7 +997,10 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
         ? Map<String, dynamic>.from(_preview!['stop'] as Map)
         : null;
     return AlertDialog(
-      title: const Text('Preview before publishing'),
+      title: const TravelCalendarDialogTitle(
+        'Preview before publishing',
+        label: 'A visitor’s view',
+      ),
       content: SizedBox(
         width: 500,
         child: SingleChildScrollView(
@@ -1061,7 +1077,7 @@ class _TravelStopPreviewDialogState extends State<TravelStopPreviewDialog> {
                       ),
                     ),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(2),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
                       child: TripProtectedHero(

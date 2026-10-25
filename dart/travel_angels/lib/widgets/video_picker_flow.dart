@@ -78,10 +78,8 @@ class _VideoPickerSheet extends StatelessWidget {
   void _openEditor(BuildContext context, File file) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (context) => VideoEditorScreen(
-          videoFile: file,
-          onComplete: onComplete,
-        ),
+        builder: (context) =>
+            VideoEditorScreen(videoFile: file, onComplete: onComplete),
       ),
     );
   }
@@ -112,17 +110,12 @@ class _VideoPickerSheet extends StatelessWidget {
                 ),
               ),
             ),
-            Text(
-              'Import Video',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text('Import Video', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
               'Choose a video to edit',
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 24),
@@ -198,7 +191,7 @@ class _Option extends StatelessWidget {
                   Text(
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -206,7 +199,7 @@ class _Option extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
         ),

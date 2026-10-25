@@ -3,13 +3,18 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const tripInk = Color(0xFF163D39);
-const tripMuted = Color(0xFF62746F);
-const tripPaper = Color(0xFFF7F5EE);
-const tripSand = Color(0xFFEDE9DE);
-const tripOrange = Color(0xFFD16D4E);
+const tripInk = AppTheme.ink;
+const tripMuted = AppTheme.muted;
+const tripPaper = AppTheme.paper;
+const tripPeach = AppTheme.peach;
+const tripCream = AppTheme.cream;
+const tripOutline = AppTheme.outline;
+const tripOrange = AppTheme.orange;
+const tripRust = AppTheme.rust;
+const tripDisplayFont = AppTheme.displayFont;
 
 Map<String, dynamic> tripMap(dynamic value) =>
     value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
@@ -82,7 +87,7 @@ class TripPill extends StatelessWidget {
     super.key,
     this.icon,
     this.color = tripInk,
-    this.background = tripSand,
+    this.background = Colors.transparent,
   });
   final String label;
   final IconData? icon;
@@ -91,10 +96,11 @@ class TripPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
     decoration: BoxDecoration(
       color: background,
-      borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: color),
+      borderRadius: BorderRadius.circular(2),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -106,11 +112,7 @@ class TripPill extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: color, fontSize: 12, height: 1.35),
           ),
         ),
       ],
@@ -142,10 +144,9 @@ class TripSection extends StatelessWidget {
         Text(
           eyebrow.toUpperCase(),
           style: const TextStyle(
-            color: tripMuted,
-            letterSpacing: 2.2,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
+            color: tripRust,
+            letterSpacing: 1.8,
+            fontSize: 12,
           ),
         ),
         const SizedBox(height: 8),
@@ -158,8 +159,8 @@ class TripSection extends StatelessWidget {
               title,
               style: const TextStyle(
                 color: tripInk,
-                fontFamily: 'Georgia',
-                fontSize: 30,
+                fontFamily: tripDisplayFont,
+                fontSize: 34,
                 height: 1.15,
               ),
             ),
@@ -198,25 +199,26 @@ class TripEmptyState extends StatelessWidget {
     width: double.infinity,
     padding: const EdgeInsets.all(24),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .65),
-      border: Border.all(color: tripSand),
-      borderRadius: BorderRadius.circular(18),
+      color: tripPeach,
+      border: Border.all(color: tripOutline),
+      borderRadius: BorderRadius.circular(3),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 28, color: tripMuted),
+        Icon(icon, size: 26, color: tripInk),
         const SizedBox(height: 14),
         Text(
           title,
           style: const TextStyle(
             color: tripInk,
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
+            fontFamily: tripDisplayFont,
+            fontSize: 24,
+            height: 1.2,
           ),
         ),
         const SizedBox(height: 6),
-        Text(message, style: const TextStyle(color: tripMuted, height: 1.5)),
+        Text(message, style: const TextStyle(color: tripInk, height: 1.5)),
         if (action != null) ...[const SizedBox(height: 12), action!],
       ],
     ),
@@ -232,17 +234,13 @@ class TripAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CircleAvatar(
     radius: radius,
-    backgroundColor: const Color(0xFFDFE7DE),
+    backgroundColor: tripCream,
     foregroundImage: url != null && Uri.tryParse(url!)?.scheme == 'https'
         ? NetworkImage(url!)
         : null,
     child: Text(
       name.trim().isEmpty ? '?' : name.trim().substring(0, 1).toUpperCase(),
-      style: TextStyle(
-        color: tripInk,
-        fontWeight: FontWeight.w600,
-        fontSize: radius * .75,
-      ),
+      style: TextStyle(color: tripInk, fontSize: radius * .75),
     ),
   );
 }
@@ -285,7 +283,7 @@ class TripDescription extends StatelessWidget {
           TextButton(
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
-              minimumSize: const Size(0, 28),
+              minimumSize: const Size(0, 44),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             onPressed: () => openTripLink(context, url),
@@ -313,7 +311,7 @@ class TripDescription extends StatelessWidget {
             if (bullet)
               const Padding(
                 padding: EdgeInsets.only(right: 10, top: 4),
-                child: Text('•', style: TextStyle(color: tripOrange)),
+                child: Text('•', style: TextStyle(color: tripRust)),
               ),
             Expanded(
               child: Wrap(
@@ -349,7 +347,20 @@ class TripFormDialog extends StatelessWidget {
   Widget build(BuildContext context) => PopScope(
     canPop: !busy,
     child: AlertDialog(
-      title: Text(title),
+      backgroundColor: tripPaper,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: const BorderSide(color: tripOutline),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontFamily: tripDisplayFont,
+          fontSize: 28,
+          height: 1.2,
+          color: tripInk,
+        ),
+      ),
       content: SizedBox(
         width: 580,
         child: SingleChildScrollView(

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
+import 'package:travel_angels/widgets/travel_calendar_views.dart';
 
 /// Authenticate and associate a verified guest invitation. This never RSVPs;
 /// callers must return to the selected stops for an explicit submission.
@@ -116,7 +117,10 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
-        title: Text(signedIn ? 'Confirm your account' : 'Claim your account'),
+        title: TravelCalendarDialogTitle(
+          signedIn ? 'Confirm your account' : 'Claim your account',
+          label: 'Your part of the plan',
+        ),
         content: SizedBox(
           width: 380,
           child: SingleChildScrollView(
@@ -124,7 +128,7 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                const TravelCalendarCallout(
                   'Your selected stops are saved. Verify your account, then review '
                   'your dates before submitting. Existing accounts are reused.',
                 ),

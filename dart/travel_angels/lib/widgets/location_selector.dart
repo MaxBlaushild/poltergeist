@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
@@ -86,7 +87,7 @@ class _LocationSelectorState extends State<LocationSelector> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error searching locations: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -132,8 +133,18 @@ class _LocationSelectorState extends State<LocationSelector> {
     final address = candidate.formattedAddress.toLowerCase();
 
     // Check for continent names (very basic)
-    final continents = ['africa', 'asia', 'europe', 'north america', 'south america', 'oceania', 'antarctica'];
-    if (continents.any((continent) => name.contains(continent) || address.contains(continent))) {
+    final continents = [
+      'africa',
+      'asia',
+      'europe',
+      'north america',
+      'south america',
+      'oceania',
+      'antarctica',
+    ];
+    if (continents.any(
+      (continent) => name.contains(continent) || address.contains(continent),
+    )) {
       return LocationType.continent;
     }
 
@@ -180,7 +191,6 @@ class _LocationSelectorState extends State<LocationSelector> {
           decoration: InputDecoration(
             labelText: 'Search locations',
             hintText: 'Enter a city, country, or continent',
-            border: const OutlineInputBorder(),
             prefixIcon: const Icon(Icons.search),
             suffixIcon: _isSearching
                 ? const Padding(
@@ -243,12 +253,7 @@ class _LocationSelectorState extends State<LocationSelector> {
         // Selected locations
         if (_selectedLocations.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Selected Locations',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text('Selected Locations', style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -278,7 +283,9 @@ class _LocationSelectorState extends State<LocationSelector> {
                     Text(
                       '(${_getLocationTypeLabel(location.locationType)})',
                       style: TextStyle(
-                        color: theme.colorScheme.onPrimary.withOpacity(0.8),
+                        color: theme.colorScheme.onPrimary.withValues(
+                          alpha: 0.8,
+                        ),
                         fontSize: 11,
                       ),
                     ),
@@ -299,4 +306,3 @@ class _LocationSelectorState extends State<LocationSelector> {
     );
   }
 }
-

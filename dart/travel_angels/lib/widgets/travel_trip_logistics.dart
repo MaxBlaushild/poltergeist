@@ -26,9 +26,9 @@ class TravelTripLodgingCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: tripSand),
+        color: tripPaper,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: tripOutline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,8 +55,9 @@ class TravelTripLodgingCard extends StatelessWidget {
             entry['name'] as String? ?? 'A place to stay',
             style: const TextStyle(
               color: tripInk,
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
+              fontSize: 28,
+              fontFamily: tripDisplayFont,
+              height: 1.2,
             ),
           ),
           if ((entry['generalLocation'] as String?)?.isNotEmpty == true)
@@ -157,9 +158,9 @@ class TravelTripFlightCard extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 14),
     padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: tripSand),
+      color: tripPaper,
+      borderRadius: BorderRadius.circular(3),
+      border: Border.all(color: tripOutline),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,8 +187,9 @@ class TravelTripFlightCard extends StatelessWidget {
           entry['label'] as String? ?? 'Getting there',
           style: const TextStyle(
             color: tripInk,
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
+            fontSize: 28,
+            fontFamily: tripDisplayFont,
+            height: 1.2,
           ),
         ),
         for (final leg in tripMaps(entry['legs']))
@@ -219,8 +221,9 @@ class TravelTripFlightCard extends StatelessWidget {
                                 : 'Departure TBD',
                             style: const TextStyle(
                               color: tripInk,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 28,
+                              fontFamily: tripDisplayFont,
+                              height: 1.15,
                             ),
                           ),
                           Text(_time(leg, 'departure')),
@@ -241,7 +244,7 @@ class TravelTripFlightCard extends StatelessWidget {
                       ),
                       child: Icon(
                         Icons.arrow_forward,
-                        color: tripOrange,
+                        color: tripRust,
                         size: 20,
                       ),
                     ),
@@ -256,8 +259,9 @@ class TravelTripFlightCard extends StatelessWidget {
                                 : 'Arrival TBD',
                             style: const TextStyle(
                               color: tripInk,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 28,
+                              fontFamily: tripDisplayFont,
+                              height: 1.15,
                             ),
                           ),
                           Text(_time(leg, 'arrival')),
@@ -771,8 +775,8 @@ class _TravelTripLogisticsEditorState extends State<TravelTripLogisticsEditor> {
                     margin: const EdgeInsets.only(top: 16, bottom: 8),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      border: Border.all(color: tripSand),
-                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: tripOutline),
+                      borderRadius: BorderRadius.circular(3),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,

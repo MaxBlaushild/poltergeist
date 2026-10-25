@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document_location.dart';
+import 'package:travel_angels/models/document.dart';
+import 'package:travel_angels/widgets/guide_details_fields.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/google_drive_service.dart';
 import 'package:travel_angels/widgets/import_type_dialog.dart';
@@ -11,10 +14,7 @@ import 'package:travel_angels/widgets/location_selector.dart';
 class GoogleDriveFilePicker extends StatefulWidget {
   final VoidCallback? onImportComplete;
 
-  const GoogleDriveFilePicker({
-    super.key,
-    this.onImportComplete,
-  });
+  const GoogleDriveFilePicker({super.key, this.onImportComplete});
 
   @override
   State<GoogleDriveFilePicker> createState() => _GoogleDriveFilePickerState();
@@ -52,16 +52,12 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
     });
 
     try {
-      print('[GoogleDriveFilePicker] Loading files (loadMore: $loadMore, pageToken: $_nextPageToken)');
-      
       final response = await _googleDriveService.listFiles(
         pageSize: 50,
         pageToken: loadMore ? _nextPageToken : null,
       );
 
-      print('[GoogleDriveFilePicker] Received response: ${response.keys}');
-      print('[GoogleDriveFilePicker] Files count: ${(response['files'] as List?)?.length ?? 0}');
-
+      if (!mounted) return;
       final List<dynamic> filesList = response['files'] ?? [];
       final List<Map<String, dynamic>> newFiles = filesList
           .map((file) => Map<String, dynamic>.from(file))
@@ -78,28 +74,16 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         _isLoadingMore = false;
         _errorMessage = null;
       });
-      
-      print('[GoogleDriveFilePicker] Successfully loaded ${newFiles.length} files');
     } catch (e) {
-      print('[GoogleDriveFilePicker] Error loading files: $e');
-      print('[GoogleDriveFilePicker] Error type: ${e.runtimeType}');
-      
-        String errorMsg = 'Failed to load files';
+      if (!mounted) return;
+      String errorMsg = 'Failed to load files';
       String? detailedError;
-      
-        if (e is DioException) {
-        print('[GoogleDriveFilePicker] DioException details:');
-        print('  - Status code: ${e.response?.statusCode}');
-        print('  - Status message: ${e.response?.statusMessage}');
-        print('  - Response data: ${e.response?.data}');
-        print('  - Request path: ${e.requestOptions.path}');
-        print('  - Request method: ${e.requestOptions.method}');
-        print('  - Error type: ${e.type}');
-        print('  - Error message: ${e.message}');
-        
-          if (e.response != null) {
-            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
-          
+
+      if (e is DioException) {
+        if (e.response != null) {
+          errorMsg =
+              '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+
           // Try to extract detailed error message from response
           if (e.response?.data != null) {
             if (e.response!.data is Map) {
@@ -113,15 +97,13 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
               errorMsg = '$errorMsg\n$detailedError';
             }
           }
-          } else {
-            errorMsg = '$errorMsg: ${e.message ?? e.toString()}';
-          }
         } else {
-          errorMsg = '$errorMsg: $e';
+          errorMsg = '$errorMsg: ${e.message ?? e.toString()}';
         }
-      
-      print('[GoogleDriveFilePicker] Final error message: $errorMsg');
-      
+      } else {
+        errorMsg = '$errorMsg: $e';
+      }
+
       setState(() {
         _isLoading = false;
         _isLoadingMore = false;
@@ -167,12 +149,17 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
       return;
     }
 
-    // Show location selection dialog
+    final details = GuideDetailsController(
+      title: file['name'] as String? ?? 'Untitled guide',
+      format: file['mimeType'] == 'application/vnd.google-apps.spreadsheet'
+          ? 'spreadsheet'
+          : 'guide',
+    );
     List<DocumentLocation> selectedLocations = [];
     final shouldImport = await showDialog<bool>(
       context: context,
       builder: (context) => _LocationSelectionDialog(
-        fileName: file['name'] as String? ?? 'Document',
+        details: details,
         onLocationsChanged: (locations) {
           selectedLocations = locations;
         },
@@ -180,6 +167,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
     );
 
     if (shouldImport != true || !mounted) {
+      details.dispose();
       return;
     }
 
@@ -188,24 +176,28 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
     }
 
     try {
       // Import document with locations
-      await _googleDriveService.importDocument(
+      final created = await _googleDriveService.importDocument(
         file['id'] as String,
         importType,
+        title: details.title.text.trim(),
+        format: details.format,
+        destination: details.destination.text.trim(),
+        personalNote: details.personalNote.text.trim(),
         locations: selectedLocations.isNotEmpty ? selectedLocations : null,
       );
 
       // Close loading and file picker
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
-        Navigator.of(context).pop(); // Close file picker
+        Navigator.of(
+          context,
+        ).pop(Document.fromJson(created)); // Close file picker
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -213,7 +205,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
                   ? 'Document imported successfully!'
                   : 'Document reference created successfully!',
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
 
@@ -227,7 +219,8 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         String errorMsg = 'Failed to import document';
         if (e is DioException) {
           if (e.response != null) {
-            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMsg =
+                '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMsg = errorData['error']?.toString() ?? errorMsg;
@@ -239,12 +232,11 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
           errorMsg = '$errorMsg: $e';
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(errorMsg), backgroundColor: AppTheme.error),
         );
       }
+    } finally {
+      details.dispose();
     }
   }
 
@@ -257,9 +249,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16.0),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
       child: SafeArea(
         child: Column(
@@ -272,7 +262,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withOpacity(0.3),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -281,12 +271,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Select a Document',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text('Select a Document', style: theme.textTheme.titleLarge),
                 IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: () => Navigator.of(context).pop(),
@@ -299,73 +284,74 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _errorMessage != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.error_outline,
-                                size: 48,
-                                color: theme.colorScheme.error,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _errorMessage!,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.error,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () => _loadFiles(),
-                                child: const Text('Retry'),
-                              ),
-                            ],
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: theme.colorScheme.error,
                           ),
-                        )
-                      : _files.isEmpty
-                          ? Center(
-                              child: Text(
-                                'No files found',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: _files.length + (_nextPageToken != null ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index == _files.length) {
-                                  // Load more button
-                                  if (_isLoadingMore) {
-                                    return const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(16.0),
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    );
-                                  }
-                                  return TextButton(
-                                    onPressed: () => _loadFiles(loadMore: true),
-                                    child: const Text('Load More'),
-                                  );
-                                }
-
-                                final file = _files[index];
-                                final isSelectable = _isSelectable(file);
-
-                                return _FileItem(
-                                  file: file,
-                                  icon: _getFileIcon(file),
-                                  typeLabel: _getFileTypeLabel(file),
-                                  isSelectable: isSelectable,
-                                  onTap: isSelectable
-                                      ? () => _handleFileSelected(file)
-                                      : null,
-                                );
-                              },
+                          const SizedBox(height: 16),
+                          Text(
+                            _errorMessage!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.error,
                             ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => _loadFiles(),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _files.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No files found',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount:
+                          _files.length + (_nextPageToken != null ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _files.length) {
+                          // Load more button
+                          if (_isLoadingMore) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+                          return TextButton(
+                            onPressed: () => _loadFiles(loadMore: true),
+                            child: const Text('Load More'),
+                          );
+                        }
+
+                        final file = _files[index];
+                        final isSelectable = _isSelectable(file);
+
+                        return _FileItem(
+                          file: file,
+                          icon: _getFileIcon(file),
+                          typeLabel: _getFileTypeLabel(file),
+                          isSelectable: isSelectable,
+                          onTap: isSelectable
+                              ? () => _handleFileSelected(file)
+                              : null,
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -375,64 +361,58 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
 }
 
 class _LocationSelectionDialog extends StatefulWidget {
-  final String fileName;
-  final Function(List<DocumentLocation>) onLocationsChanged;
-
+  final GuideDetailsController details;
+  final ValueChanged<List<DocumentLocation>> onLocationsChanged;
   const _LocationSelectionDialog({
-    required this.fileName,
+    required this.details,
     required this.onLocationsChanged,
   });
 
   @override
-  State<_LocationSelectionDialog> createState() => _LocationSelectionDialogState();
+  State<_LocationSelectionDialog> createState() =>
+      _LocationSelectionDialogState();
 }
 
 class _LocationSelectionDialogState extends State<_LocationSelectionDialog> {
-  List<DocumentLocation> _selectedLocations = [];
+  final _form = GlobalKey<FormState>();
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return AlertDialog(
-      title: Text('Tag "${widget.fileName}"'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Make it yours'),
+    content: SizedBox(
+      width: 520,
+      child: SingleChildScrollView(
+        child: Form(
+          key: _form,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Optionally add locations to tag this document:',
-                style: theme.textTheme.bodyMedium,
-              ),
+              GuideDetailsFields(controller: widget.details),
+              const SizedBox(height: 20),
+              LocationSelector(onLocationsChanged: widget.onLocationsChanged),
               const SizedBox(height: 16),
-              LocationSelector(
-                initialLocations: _selectedLocations,
-                onLocationsChanged: (locations) {
-                  setState(() {
-                    _selectedLocations = locations;
-                  });
-                  widget.onLocationsChanged(locations);
-                },
+              const Text(
+                'Only you can see this guide until you share it. Google Drive permissions stay the same.',
               ),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Import'),
-        ),
-      ],
-    );
-  }
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context, false),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_form.currentState!.validate()) Navigator.pop(context, true);
+        },
+        child: const Text('Add to library'),
+      ),
+    ],
+  );
 }
 
 class _FileItem extends StatelessWidget {
@@ -461,9 +441,7 @@ class _FileItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(
-              color: theme.colorScheme.outline.withOpacity(0.2),
-            ),
+            bottom: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
         ),
         child: Row(
@@ -472,7 +450,7 @@ class _FileItem extends StatelessWidget {
               icon,
               color: isSelectable
                   ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurface.withOpacity(0.3),
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.3),
               size: 32,
             ),
             const SizedBox(width: 16),
@@ -486,7 +464,7 @@ class _FileItem extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                       color: isSelectable
                           ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurface.withOpacity(0.5),
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -494,8 +472,8 @@ class _FileItem extends StatelessWidget {
                     typeLabel,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: isSelectable
-                          ? theme.colorScheme.onSurface.withOpacity(0.7)
-                          : theme.colorScheme.onSurface.withOpacity(0.4),
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.4),
                     ),
                   ),
                 ],
@@ -504,7 +482,7 @@ class _FileItem extends StatelessWidget {
             if (!isSelectable)
               Icon(
                 Icons.block,
-                color: theme.colorScheme.onSurface.withOpacity(0.3),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                 size: 20,
               ),
           ],
@@ -513,4 +491,3 @@ class _FileItem extends StatelessWidget {
     );
   }
 }
-

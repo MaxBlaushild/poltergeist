@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:travel_angels/screens/discover_screen.dart';
+import 'package:travel_angels/screens/library_screen.dart';
 import 'package:travel_angels/screens/advice_screen.dart';
-import 'package:travel_angels/screens/documents_screen.dart';
 import 'package:travel_angels/screens/profile_screen.dart';
 import 'package:travel_angels/screens/my_network_screen.dart';
 import 'package:travel_angels/screens/travel_calendar_screen.dart';
@@ -21,11 +20,10 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   final List<Widget> _screens = const [
     TravelCalendarScreen(),
-    DiscoverScreen(),
+    LibraryScreen(),
     MyNetworkScreen(),
     ProfileScreen(),
     AdviceScreen(),
-    DocumentsScreen(),
   ];
 
   void _onDestinationChanged(int index) {
@@ -50,7 +48,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     } else {
       // Mobile/Native: Bottom navigation bar
       // Note: Screens with AppBar handle their own safe areas
-      // Screens without AppBar (like DiscoverScreen) need SafeArea, which they handle internally
+      // Screens without AppBar (like LibraryScreen) need SafeArea, which they handle internally
       return Scaffold(
         body: _screens[_currentIndex],
         bottomNavigationBar: MainNavbar(

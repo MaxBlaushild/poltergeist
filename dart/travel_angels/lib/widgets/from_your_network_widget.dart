@@ -25,15 +25,12 @@ class FromYourNetworkWidget extends StatelessWidget {
               // Title
               Row(
                 children: [
-                  Icon(
-                    Icons.people_outline,
-                    color: theme.colorScheme.primary,
-                  ),
+                  Icon(Icons.people_outline, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
-                  Text(
-                    'From Your Network',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      'From Your Network',
+                      style: theme.textTheme.titleLarge,
                     ),
                   ),
                 ],
@@ -43,20 +40,20 @@ class FromYourNetworkWidget extends StatelessWidget {
               Icon(
                 Icons.inbox_outlined,
                 size: 64,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
               Text(
                 'No documents from friends yet',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'When your friends upload documents, they\'ll appear here',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -74,22 +71,21 @@ class FromYourNetworkWidget extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              Icon(
-                Icons.people_outline,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(Icons.people_outline, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text(
-                'From Your Network',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Text(
+                  'From Your Network',
+                  style: theme.textTheme.titleLarge,
                 ),
               ),
             ],
           ),
         ),
         // Documents list
-        ...documents.map((document) => buildDocumentCard(context, document, theme)),
+        ...documents.map(
+          (document) => buildDocumentCard(context, document, theme),
+        ),
       ],
     );
   }

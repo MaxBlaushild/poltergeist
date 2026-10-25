@@ -130,9 +130,11 @@ class _TripHeroCanvasState extends State<TripHeroCanvas> {
         ? 'Travel illustration with warm hills and a winding route'
         : widget.hero['altText'] as String? ?? 'Trip cover image',
     child: ExcludeSemantics(
-      child: CustomPaint(
-        painter: _TripHeroPainter(_image, widget.hero),
-        child: const SizedBox.expand(),
+      child: ClipRect(
+        child: CustomPaint(
+          painter: _TripHeroPainter(_image, widget.hero),
+          child: const SizedBox.expand(),
+        ),
       ),
     ),
   );
@@ -182,7 +184,7 @@ class _TripHeroPainter extends CustomPainter {
       rect,
       Paint()
         ..shader = const LinearGradient(
-          colors: [Color(0xFFF0CFA2), Color(0xFFE5C79C)],
+          colors: [tripPeach, tripCream],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ).createShader(rect),
@@ -190,7 +192,7 @@ class _TripHeroPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(size.width * .76, size.height * .31),
       size.height * .19,
-      Paint()..color = const Color(0xFFD9744D),
+      Paint()..color = tripOrange,
     );
     for (var i = 0; i < 5; i++) {
       final path = Path()
@@ -210,11 +212,11 @@ class _TripHeroPainter extends CustomPainter {
         path,
         Paint()
           ..color = [
-            const Color(0xFFACB99E),
-            const Color(0xFF759788),
-            const Color(0xFF557F72),
-            const Color(0xFF38675E),
-            const Color(0xFF234F48),
+            Color.lerp(tripPeach, tripInk, .2)!,
+            Color.lerp(tripPeach, tripInk, .4)!,
+            Color.lerp(tripPeach, tripInk, .6)!,
+            Color.lerp(tripPeach, tripInk, .8)!,
+            Color.lerp(tripPeach, tripInk, 1)!,
           ][i],
       );
     }
@@ -237,14 +239,14 @@ class _TripHeroPainter extends CustomPainter {
     canvas.drawPath(
       route,
       Paint()
-        ..color = const Color(0xFFF9EAD2)
+        ..color = tripCream
         ..strokeWidth = 2.5
         ..style = PaintingStyle.stroke,
     );
     canvas.drawCircle(
       Offset(size.width * .62, size.height * .55),
       5,
-      Paint()..color = const Color(0xFFF9EAD2),
+      Paint()..color = tripCream,
     );
   }
 
@@ -413,7 +415,7 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
       ),
       const SizedBox(height: 16),
       ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(3),
         child: AspectRatio(
           aspectRatio: 16 / 9,
           child: TripHeroCanvas(

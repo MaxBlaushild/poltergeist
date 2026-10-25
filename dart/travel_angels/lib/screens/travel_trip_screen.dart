@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/widgets/travel_trip_design.dart';
 import 'package:travel_angels/widgets/travel_trip_hero.dart';
 import 'package:travel_angels/widgets/travel_trip_hosts.dart';
 import 'package:travel_angels/widgets/travel_trip_logistics.dart';
 import 'package:travel_angels/widgets/travel_trip_settings.dart';
+import 'package:travel_angels/widgets/travel_trip_library.dart';
 
 /// The same canonical stop page serves public links and authenticated calendars.
 /// Only the server-filtered DTO is rendered; drafts require management access.
@@ -475,14 +477,16 @@ class _TravelTripScreenState extends State<TravelTripScreen>
       if (_owner)
         const PopupMenuItem(value: 'delete', child: Text('Delete trip')),
     ],
-    child: const Padding(
+    child: Padding(
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.tune, size: 18),
-          SizedBox(width: 8),
-          Text('Manage trip'),
+          const Icon(Icons.tune, size: 18),
+          if (MediaQuery.sizeOf(context).width >= 600) ...[
+            const SizedBox(width: 8),
+            const Text('Manage trip'),
+          ],
         ],
       ),
     ),
@@ -533,9 +537,9 @@ class _TravelTripScreenState extends State<TravelTripScreen>
       label: Text(action == null ? _unavailableLabel() : _joinLabel(action)),
       style: FilledButton.styleFrom(
         backgroundColor: tripInk,
-        foregroundColor: Colors.white,
+        foregroundColor: tripCream,
         minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
       ),
     );
   }
@@ -561,29 +565,25 @@ class _TravelTripScreenState extends State<TravelTripScreen>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: tripSand),
+        color: tripPeach,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: tripInk),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
             'MAKE A LITTLE ROOM',
-            style: TextStyle(
-              color: tripMuted,
-              fontSize: 10,
-              letterSpacing: 2,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: tripRust, fontSize: 12, letterSpacing: 1.6),
           ),
           const SizedBox(height: 10),
           const Text(
             'Come along.',
             style: TextStyle(
               color: tripInk,
-              fontFamily: 'Georgia',
-              fontSize: 32,
+              fontFamily: tripDisplayFont,
+              fontSize: 34,
+              height: 1.15,
             ),
           ),
           const SizedBox(height: 12),
@@ -596,18 +596,18 @@ class _TravelTripScreenState extends State<TravelTripScreen>
               padding: const EdgeInsets.only(top: 12),
               child: Text(
                 '${capacity['confirmedCount']} confirmed${capacity['maximum'] != null ? ' · ${capacity['maximum']} places total' : ''}',
-                style: const TextStyle(color: tripMuted),
+                style: const TextStyle(color: tripInk),
               ),
             ),
           if (showCount && capacity['remainingPlaces'] != null)
             Text(
               '${capacity['remainingPlaces']} places available',
-              style: const TextStyle(color: tripMuted),
+              style: const TextStyle(color: tripInk),
             ),
           if (_manage && (capacity['reservedCount'] as num? ?? 0) > 0)
             Text(
               '${capacity['reservedCount']} reserved for reconfirmation',
-              style: const TextStyle(color: tripMuted),
+              style: const TextStyle(color: tripInk),
             ),
           if (own.isNotEmpty && own['status'] != 'withdrawn') ...[
             const SizedBox(height: 14),
@@ -620,7 +620,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
                   'Your place is reserved while you reconfirm.',
-                  style: TextStyle(color: tripMuted),
+                  style: TextStyle(color: tripInk),
                 ),
               ),
           ],
@@ -638,7 +638,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
             _host
                 ? 'Hosting and attending are separate. Choose whether you’re coming too.'
                 : 'Choose all or part of the trip. Hosts confirm requests before you’re in.',
-            style: const TextStyle(color: tripMuted, fontSize: 12, height: 1.5),
+            style: const TextStyle(color: tripInk, fontSize: 13, height: 1.55),
           ),
           if (!_host &&
               stop['acceptingParticipation'] == true &&
@@ -712,6 +712,58 @@ class _TravelTripScreenState extends State<TravelTripScreen>
     );
   }
 
+  Widget _invitation(Map<String, dynamic> shown) => LayoutBuilder(
+    builder: (context, constraints) {
+      final split = constraints.maxWidth >= 700;
+      final title = Text(
+        shown['title'] as String? ?? 'A trip together',
+        style: TextStyle(
+          fontFamily: tripDisplayFont,
+          fontSize: split ? 52 : 42,
+          height: 1.05,
+          letterSpacing: -.8,
+          color: tripCream,
+        ),
+      );
+      final media = Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: tripPeach,
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: AspectRatio(
+          aspectRatio: split ? 1.12 : 1.55,
+          child: TripProtectedHero(
+            key: ValueKey('${shown['id']}:$_identity'),
+            hero: tripMap(shown['hero']),
+            service: widget.service,
+            accessQuery: widget.accessQuery,
+          ),
+        ),
+      );
+      return Container(
+        padding: EdgeInsets.all(split ? 28 : 22),
+        decoration: BoxDecoration(
+          color: tripOrange,
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: split
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 24),
+                  Expanded(child: media),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [title, const SizedBox(height: 24), media],
+              ),
+      );
+    },
+  );
+
   Widget _content(bool wide) {
     final stop = _stop!;
     final shown = _manage && _showDraft ? {...stop, ...tripDraft(stop)} : stop;
@@ -722,19 +774,8 @@ class _TravelTripScreenState extends State<TravelTripScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(wide ? 26 : 18),
-          child: SizedBox(
-            height: wide ? 300 : 230,
-            child: TripProtectedHero(
-              key: ValueKey('${stop['id']}:$_identity'),
-              hero: tripMap(shown['hero']),
-              service: widget.service,
-              accessQuery: widget.accessQuery,
-            ),
-          ),
-        ),
-        const SizedBox(height: 28),
+        _invitation(shown),
+        const SizedBox(height: 22),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -751,7 +792,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                   : shown['status'] == 'confirmed'
                   ? 'Plans confirmed'
                   : 'Taking shape',
-              background: const Color(0xFFE6EDDF),
+              background: tripPeach,
             ),
             if (_manage)
               TripPill(
@@ -759,17 +800,6 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                 icon: _showDraft ? Icons.edit_note : Icons.public,
               ),
           ],
-        ),
-        const SizedBox(height: 18),
-        Text(
-          shown['title'] as String? ?? 'A trip together',
-          style: TextStyle(
-            fontFamily: 'Georgia',
-            fontSize: wide ? 48 : 36,
-            height: 1.07,
-            letterSpacing: -1.2,
-            color: tripInk,
-          ),
         ),
         const SizedBox(height: 16),
         Row(
@@ -795,7 +825,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
             padding: const EdgeInsets.only(left: 28, top: 5),
             child: Text(
               'Destination time · ${shown['timeZone']}',
-              style: const TextStyle(color: tripMuted, fontSize: 12),
+              style: const TextStyle(color: tripMuted, fontSize: 13),
             ),
           ),
         if (hosts.isNotEmpty) ...[
@@ -823,8 +853,9 @@ class _TravelTripScreenState extends State<TravelTripScreen>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: tripSand,
-              borderRadius: BorderRadius.circular(12),
+              color: tripPeach,
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(color: tripOutline),
             ),
             child: Wrap(
               spacing: 12,
@@ -864,7 +895,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
               ),
             ),
           ),
-        const Divider(color: tripSand),
+        const Divider(color: tripOutline),
         TripSection(
           key: _sections['Overview'],
           eyebrow: 'The plan',
@@ -877,7 +908,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                 ),
         ),
         if (!wide) _attendanceCard(),
-        const Divider(color: tripSand),
+        const Divider(color: tripOutline),
         TripSection(
           key: _sections['People'],
           eyebrow: 'Better together',
@@ -938,7 +969,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
             ],
           ),
         ),
-        const Divider(color: tripSand),
+        const Divider(color: tripOutline),
         TripSection(
           key: _sections['Lodging'],
           eyebrow: 'Settle in',
@@ -977,7 +1008,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                   ],
                 ),
         ),
-        const Divider(color: tripSand),
+        const Divider(color: tripOutline),
         TripSection(
           key: _sections['Flights'],
           eyebrow: 'Getting there',
@@ -1016,6 +1047,14 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                   ],
                 ),
         ),
+        if (_identity != null && _identity!.isNotEmpty) ...[
+          const Divider(color: tripOutline),
+          TravelTripLibrary(
+            key: ValueKey('library-${stop['id']}-$_identity'),
+            tripId: stop['id'] as String,
+            userId: _identity!,
+          ),
+        ],
         if (_owner && stop['hostModel'] != true)
           TripEmptyState(
             icon: Icons.groups_outlined,
@@ -1028,10 +1067,20 @@ class _TravelTripScreenState extends State<TravelTripScreen>
             ),
           ),
         const SizedBox(height: 36),
-        const Center(
-          child: Text(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+          decoration: BoxDecoration(
+            color: tripInk,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: const Text(
             'TRAVEL ANGELS · GO TOGETHER',
-            style: TextStyle(color: tripMuted, fontSize: 10, letterSpacing: 2),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: tripCream,
+              fontSize: 12,
+              letterSpacing: 1.6,
+            ),
           ),
         ),
         const SizedBox(height: 36),
@@ -1041,11 +1090,9 @@ class _TravelTripScreenState extends State<TravelTripScreen>
 
   @override
   Widget build(BuildContext context) {
-    final localTheme = Theme.of(context).copyWith(
-      colorScheme: ColorScheme.fromSeed(seedColor: tripInk, surface: tripPaper),
-      scaffoldBackgroundColor: tripPaper,
-      dividerColor: tripSand,
-    );
+    final localTheme = Theme.of(
+      context,
+    ).copyWith(scaffoldBackgroundColor: tripPaper, dividerColor: tripOutline);
     return Theme(
       data: localTheme,
       child: Builder(
@@ -1055,17 +1102,12 @@ class _TravelTripScreenState extends State<TravelTripScreen>
             return Scaffold(
               backgroundColor: tripPaper,
               appBar: AppBar(
-                backgroundColor: tripPaper,
+                backgroundColor: tripPeach,
                 foregroundColor: tripInk,
                 surfaceTintColor: Colors.transparent,
-                title: const Text(
-                  'travel angels',
-                  style: TextStyle(
-                    fontFamily: 'Georgia',
-                    fontSize: 23,
-                    letterSpacing: -.5,
-                  ),
-                ),
+                toolbarHeight: (MediaQuery.textScalerOf(context).scale(28) + 28)
+                    .clamp(56, 112),
+                title: const TravelAngelsWordmark(),
                 actions: [
                   IconButton(
                     tooltip: 'Refresh trip',
@@ -1211,8 +1253,8 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
                         decoration: BoxDecoration(
-                          color: tripPaper,
-                          border: Border(top: BorderSide(color: tripSand)),
+                          color: tripPeach,
+                          border: Border(top: BorderSide(color: tripInk)),
                         ),
                         child: _joinButton(),
                       ),

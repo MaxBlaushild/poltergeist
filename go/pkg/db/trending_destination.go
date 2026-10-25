@@ -69,7 +69,7 @@ func (h *trendingDestinationHandler) GetTopLocationsByType(ctx context.Context, 
 			COUNT(DISTINCT d.id) as document_count
 		FROM document_locations dl
 		INNER JOIN documents d ON dl.document_id = d.id
-		WHERE dl.location_type = ?
+		WHERE dl.location_type = ? AND d.visibility = 'network'
 			AND d.created_at >= ?
 		GROUP BY dl.place_id, dl.name, dl.formatted_address, dl.latitude, dl.longitude, dl.location_type
 		ORDER BY document_count DESC, MAX(d.created_at) DESC

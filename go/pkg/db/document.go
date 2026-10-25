@@ -19,6 +19,9 @@ func (h *documentHandler) Create(
 	existingTagIDs []uuid.UUID,
 	newTagTexts []string,
 ) (*models.Document, error) {
+	if err := document.NormalizeLibraryMetadata(); err != nil {
+		return nil, err
+	}
 	// Start transaction
 	tx := h.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
@@ -128,6 +131,7 @@ func (h *documentHandler) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID
 		Preload("DocumentLocations").
 		Preload("User").
 		Where("user_id IN ?", userIDs).
+		Where("visibility = ?", "network").
 		Order("created_at DESC").
 		Find(&documents).Error; err != nil {
 		return nil, err
@@ -149,7 +153,8 @@ func (h *documentHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.D
 
 func (h *documentHandler) Update(ctx context.Context, document *models.Document) error {
 	document.UpdatedAt = time.Now()
-	return h.db.WithContext(ctx).Save(document).Error
+	// A metadata edit must not overwrite a concurrently changed audience.
+	return h.db.WithContext(ctx).Model(document).Select("Title", "Content", "Format", "PersonalNote", "Destination", "UpdatedAt").Updates(document).Error
 }
 
 func (h *documentHandler) UpdateTags(ctx context.Context, documentID uuid.UUID, existingTagIDs []uuid.UUID, newTagTexts []string) error {

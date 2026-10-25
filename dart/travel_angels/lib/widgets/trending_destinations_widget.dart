@@ -9,10 +9,12 @@ class TrendingDestinationsWidget extends StatefulWidget {
   const TrendingDestinationsWidget({super.key});
 
   @override
-  State<TrendingDestinationsWidget> createState() => _TrendingDestinationsWidgetState();
+  State<TrendingDestinationsWidget> createState() =>
+      _TrendingDestinationsWidgetState();
 }
 
-class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget> {
+class _TrendingDestinationsWidgetState
+    extends State<TrendingDestinationsWidget> {
   final TrendingService _trendingService = TrendingService(
     APIClient(ApiConstants.baseUrl),
   );
@@ -47,12 +49,16 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
         if (e is DioException) {
           if (e.response != null && e.response?.data != null) {
             final errorData = e.response?.data as Map<String, dynamic>?;
-            _errorMessage = errorData?['error']?.toString() ?? 'Failed to load trending destinations';
+            _errorMessage =
+                errorData?['error']?.toString() ??
+                'Failed to load trending destinations';
           } else {
-            _errorMessage = 'Failed to load trending destinations: ${e.message ?? e.toString()}';
+            _errorMessage =
+                'Failed to load trending destinations: ${e.message ?? e.toString()}';
           }
         } else {
-          _errorMessage = 'Failed to load trending destinations: ${e.toString()}';
+          _errorMessage =
+              'Failed to load trending destinations: ${e.toString()}';
         }
       });
     }
@@ -68,9 +74,7 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Center(
-            child: CircularProgressIndicator(
-              color: theme.colorScheme.primary,
-            ),
+            child: CircularProgressIndicator(color: theme.colorScheme.primary),
           ),
         ),
       );
@@ -83,10 +87,7 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              Icon(
-                Icons.error_outline,
-                color: theme.colorScheme.error,
-              ),
+              Icon(Icons.error_outline, color: theme.colorScheme.error),
               const SizedBox(height: 8),
               Text(
                 _errorMessage!,
@@ -116,15 +117,12 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
             // Title
             Row(
               children: [
-                Icon(
-                  Icons.trending_up,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.trending_up, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
-                Text(
-                  'Top 5 Trending Destinations',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    'Top 5 Trending Destinations',
+                    style: theme.textTheme.titleLarge,
                   ),
                 ),
               ],
@@ -132,41 +130,30 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
             const SizedBox(height: 16),
             // Cities section
             if (_cities.isNotEmpty) ...[
-              Text(
-                'Cities',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text('Cities', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8.0,
                 runSpacing: 8.0,
-                children: _cities.map((city) => _buildDestinationChip(
-                  context,
-                  city,
-                  theme,
-                )).toList(),
+                children: _cities
+                    .map((city) => _buildDestinationChip(context, city, theme))
+                    .toList(),
               ),
               const SizedBox(height: 16),
             ],
             // Countries section
             if (_countries.isNotEmpty) ...[
-              Text(
-                'Countries',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text('Countries', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8.0,
                 runSpacing: 8.0,
-                children: _countries.map((country) => _buildDestinationChip(
-                  context,
-                  country,
-                  theme,
-                )).toList(),
+                children: _countries
+                    .map(
+                      (country) =>
+                          _buildDestinationChip(context, country, theme),
+                    )
+                    .toList(),
               ),
             ],
             // Empty state
@@ -174,14 +161,14 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
               Text(
                 'No trending destinations yet',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'Trending destinations will appear here once documents are created with locations',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -203,7 +190,7 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
           '${destination.rank}',
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w400,
             color: theme.colorScheme.onPrimaryContainer,
           ),
         ),
@@ -221,7 +208,7 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
           Text(
             '${destination.documentCount} ${destination.documentCount == 1 ? 'doc' : 'docs'}',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withOpacity(0.7),
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

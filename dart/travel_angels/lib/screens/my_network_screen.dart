@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/constants/api_constants.dart';
@@ -181,7 +182,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Friend invite accepted!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
       }
@@ -190,7 +191,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to accept invite: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -216,7 +217,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Friend invite rejected'),
-            backgroundColor: Colors.orange,
+            backgroundColor: AppTheme.rust,
           ),
         );
       }
@@ -225,7 +226,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to reject invite: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -251,7 +252,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Friend invite sent!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
       }
@@ -265,7 +266,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+          SnackBar(content: Text(errorMsg), backgroundColor: AppTheme.error),
         );
       }
     } finally {
@@ -370,7 +371,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         initials,
         style: TextStyle(
           fontSize: radius * 0.6,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w400,
           color: theme.colorScheme.onPrimaryContainer,
         ),
       ),
@@ -410,7 +411,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           Text(
             '(${_friends.length})',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 14,
             ),
           ),
@@ -440,7 +441,6 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Filter by username',
                     hintText: 'Enter username...',
-                    border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.filter_list),
                   ),
                 ),
@@ -449,9 +449,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                   Text(
                     'No friends yet',
                     style: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     textAlign: TextAlign.center,
                   )
@@ -459,9 +457,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                   Text(
                     'No friends match that username',
                     style: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     textAlign: TextAlign.center,
                   )
@@ -488,9 +484,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                   Text(
                     'Showing ${startIndex + 1}-$endIndex of ${filteredFriends.length}',
                     style: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   Row(
@@ -556,7 +550,6 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Search by username',
                   hintText: 'Enter username...',
-                  border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.search),
                 ),
               ),
@@ -568,9 +561,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                   Text(
                     'No eligible users found',
                     style: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   )
                 else
@@ -632,14 +623,14 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
                 '${receivedInvites.length}',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onPrimary,
                   fontSize: 12,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
@@ -666,7 +657,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             child: Text(
               'No pending invites',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
@@ -705,10 +696,6 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                           onPressed: isProcessing
                               ? null
                               : () => _handleAcceptInvite(invite.id),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
                           child: isAccepting
                               ? const SizedBox(
                                   width: 16,
@@ -716,7 +703,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
+                                      AppTheme.paper,
                                     ),
                                   ),
                                 )
@@ -759,7 +746,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           Text(
             '(${sentInvites.length})',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 14,
             ),
           ),
@@ -785,7 +772,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             child: Text(
               'No sent invites',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
@@ -851,12 +838,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // My Circle header
-                Text(
-                  'My Circle',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text('My Circle', style: theme.textTheme.headlineLarge),
                 const SizedBox(height: 24),
                 if (_errorMessage != null) ...[
                   Container(
@@ -864,7 +846,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     margin: const EdgeInsets.only(bottom: 16.0),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(
                       children: [

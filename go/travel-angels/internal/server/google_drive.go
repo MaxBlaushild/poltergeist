@@ -25,9 +25,13 @@ type GrantPermissionRequest struct {
 }
 
 type ImportDocumentRequest struct {
-	FileID     string                    `json:"fileId" binding:"required"`
-	ImportType string                    `json:"importType" binding:"required"` // "import" or "reference"
-	Locations  []DocumentLocationRequest `json:"locations"`
+	Title        *string                   `json:"title"`
+	Format       string                    `json:"format"`
+	PersonalNote string                    `json:"personalNote"`
+	Destination  string                    `json:"destination"`
+	FileID       string                    `json:"fileId" binding:"required"`
+	ImportType   string                    `json:"importType" binding:"required"` // "import" or "reference"
+	Locations    []DocumentLocationRequest `json:"locations"`
 }
 
 func (s *server) GetGoogleDriveStatus(ctx *gin.Context) {
@@ -383,13 +387,22 @@ func (s *server) ImportGoogleDriveDocument(ctx *gin.Context) {
 
 	// Create document
 	document := &models.Document{
-		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Title:     file.Name,
-		Provider:  provider,
-		UserID:    user.ID,
-		Link:      &file.WebViewLink,
+		ID:         uuid.New(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		Title:      file.Name,
+		Provider:   provider,
+		UserID:     user.ID,
+		Link:       &file.WebViewLink,
+		Visibility: "private", Format: req.Format, PersonalNote: req.PersonalNote, Destination: req.Destination,
+	}
+
+	if req.Title != nil {
+		document.Title = *req.Title
+	}
+	if err := document.NormalizeLibraryMetadata(); err != nil {
+		ctx.JSON(400, gin.H{"error": err.Error()})
+		return
 	}
 
 	// If importing, download HTML and convert to markdown
@@ -469,7 +482,7 @@ func (s *server) ImportGoogleDriveDocument(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, createdDocument)
+	s.respondLibraryDocument(ctx, createdDocument.ID, user.ID, http.StatusCreated)
 }
 
 func contains(s, substr string) bool {

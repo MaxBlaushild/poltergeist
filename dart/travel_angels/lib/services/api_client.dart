@@ -8,14 +8,15 @@ class APIClient {
   final Dio _client;
   static const String _tokenKey = 'token';
   VoidCallback? _onAuthError;
+  bool _invalidateOnForbidden = true;
 
   /// Creates a new APIClient instance
-  /// 
+  ///
   /// [baseURL] - The base URL for the API
   /// [onAuthError] - Optional callback to be called when a 401/403 error occurs
   APIClient(String baseURL, {VoidCallback? onAuthError})
-      : _client = Dio(BaseOptions(baseUrl: baseURL)),
-        _onAuthError = onAuthError {
+    : _client = Dio(BaseOptions(baseUrl: baseURL)),
+      _onAuthError = onAuthError {
     _setupInterceptors();
   }
 
@@ -24,41 +25,48 @@ class APIClient {
     _onAuthError = callback;
   }
 
+  /// A resource access denial does not mean the account session has expired.
+  void preserveSessionOnForbidden() {
+    _invalidateOnForbidden = false;
+  }
+
   void _setupInterceptors() {
     // Request interceptor - adds authentication token
-    _client.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        // Add authentication token from storage
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString(_tokenKey);
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-
-        return handler.next(options);
-      },
-      onResponse: (response, handler) {
-        return handler.next(response);
-      },
-      onError: (error, handler) async {
-        // Handle 401/403 errors by clearing invalid token
-        if (error.response?.statusCode == 401 ||
-            error.response?.statusCode == 403) {
+    _client.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          // Add authentication token from storage
           final prefs = await SharedPreferences.getInstance();
-          await prefs.remove(_tokenKey);
-          // Call the auth error callback if provided
-          _onAuthError?.call();
-        }
-        return handler.next(error);
-      },
-    ));
+          final token = prefs.getString(_tokenKey);
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+
+          return handler.next(options);
+        },
+        onResponse: (response, handler) {
+          return handler.next(response);
+        },
+        onError: (error, handler) async {
+          // Handle 401/403 errors by clearing invalid token
+          if (error.response?.statusCode == 401 ||
+              (_invalidateOnForbidden && error.response?.statusCode == 403)) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove(_tokenKey);
+            // Call the auth error callback if provided
+            _onAuthError?.call();
+          }
+          return handler.next(error);
+        },
+      ),
+    );
   }
 
   /// Makes a GET request
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [params] - Optional query parameters
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> get<T>(String url, {Map<String, dynamic>? params}) async {
     final response = await _client.get<T>(
@@ -70,10 +78,10 @@ class APIClient {
   }
 
   /// Makes a POST request
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [data] - Optional request body data
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> post<T>(String url, {dynamic data}) async {
     final response = await _client.post<T>(
@@ -85,10 +93,10 @@ class APIClient {
   }
 
   /// Makes a PUT request
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [data] - Optional request body data
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> put<T>(String url, {dynamic data}) async {
     final response = await _client.put<T>(
@@ -100,10 +108,10 @@ class APIClient {
   }
 
   /// Makes a PATCH request
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [data] - Optional request body data
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> patch<T>(String url, {dynamic data}) async {
     final response = await _client.patch<T>(
@@ -115,10 +123,10 @@ class APIClient {
   }
 
   /// Makes a DELETE request
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [data] - Optional request body data
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> delete<T>(String url, {dynamic data}) async {
     final response = await _client.delete<T>(
@@ -130,11 +138,11 @@ class APIClient {
   }
 
   /// Makes a POST request with multipart/form-data
-  /// 
+  ///
   /// [url] - The endpoint URL (relative to baseURL)
   /// [file] - The file to upload (as a File object)
   /// [fieldName] - The form field name for the file (default: 'file')
-  /// 
+  ///
   /// Returns the parsed response data
   Future<T> postMultipart<T>(
     String url, {
@@ -152,5 +160,21 @@ class APIClient {
     );
     return response.data as T;
   }
-}
 
+  /// Byte uploads also work in browsers, where picked files have no local path.
+  Future<T> postMultipartBytes<T>(
+    String url, {
+    required List<int> bytes,
+    required String filename,
+    String fieldName = 'file',
+  }) async {
+    final response = await _client.post<T>(
+      url,
+      data: FormData.fromMap({
+        fieldName: MultipartFile.fromBytes(bytes, filename: filename),
+      }),
+      options: Options(responseType: ResponseType.json),
+    );
+    return response.data as T;
+  }
+}

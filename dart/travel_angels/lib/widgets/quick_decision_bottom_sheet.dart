@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/quick_decision_service.dart';
@@ -8,7 +9,8 @@ class QuickDecisionBottomSheet extends StatefulWidget {
   const QuickDecisionBottomSheet({super.key});
 
   @override
-  State<QuickDecisionBottomSheet> createState() => _QuickDecisionBottomSheetState();
+  State<QuickDecisionBottomSheet> createState() =>
+      _QuickDecisionBottomSheetState();
 }
 
 class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
@@ -17,7 +19,9 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
   final _option1Controller = TextEditingController();
   final _option2Controller = TextEditingController();
   final _option3Controller = TextEditingController();
-  final _quickDecisionService = QuickDecisionService(APIClient(ApiConstants.baseUrl));
+  final _quickDecisionService = QuickDecisionService(
+    APIClient(ApiConstants.baseUrl),
+  );
 
   bool _isSubmitting = false;
 
@@ -54,7 +58,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Quick decision request submitted successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
       }
@@ -66,7 +70,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to submit request: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -81,9 +85,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16.0),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
       child: SafeArea(
         child: Form(
@@ -99,26 +101,21 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 16.0),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withOpacity(0.3),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               // Title
-              Text(
-                'Quick Decision',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text('Quick Decision', style: theme.textTheme.titleLarge),
               const SizedBox(height: 24),
               // Question field
               TextFormField(
                 controller: _questionController,
                 decoration: const InputDecoration(
                   labelText: 'Your Question',
-                  hintText: 'e.g., Which restaurant should I try in Tokyo: Sukiyabashi Jiro or Sushi Saito?',
-                  border: OutlineInputBorder(),
+                  hintText:
+                      'e.g., Which restaurant should I try in Tokyo: Sukiyabashi Jiro or Sushi Saito?',
                 ),
                 maxLines: 4,
                 minLines: 3,
@@ -136,7 +133,6 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 decoration: const InputDecoration(
                   labelText: 'Option 1',
                   hintText: 'e.g., Sukiyabashi Jiro',
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -152,7 +148,6 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 decoration: const InputDecoration(
                   labelText: 'Option 2',
                   hintText: 'e.g., Sushi Saito',
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -168,7 +163,6 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 decoration: const InputDecoration(
                   labelText: 'Option 3 (optional)',
                   hintText: 'Enter a third option if needed',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 24),
@@ -184,7 +178,9 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppTheme.paper,
+                          ),
                         ),
                       )
                     : const Text('Submit'),

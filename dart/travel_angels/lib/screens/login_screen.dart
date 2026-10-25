@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -30,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isValidatingUsername = false;
   String? _usernameValidationError;
   bool _isUsernameValid = false;
-  
+
   // New registration fields
   DateTime? _dateOfBirth;
   String? _selectedGender;
@@ -82,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await authProvider.logister(phoneNumber, code);
-      
+
       // If registering, show profile setup step
       if (authProvider.isRegister) {
         setState(() {
@@ -108,7 +109,8 @@ class _LoginScreenState extends State<LoginScreen> {
     // Basic format validation (alphanumeric only)
     if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(username)) {
       setState(() {
-        _usernameValidationError = 'Username must contain only letters and numbers';
+        _usernameValidationError =
+            'Username must contain only letters and numbers';
         _isUsernameValid = false;
       });
       return;
@@ -122,7 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
       final isValid = await authProvider.validateUsername(username);
-      
+
       setState(() {
         _isValidatingUsername = false;
         _isUsernameValid = isValid;
@@ -154,9 +156,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       // Handle error
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick image: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
       }
     }
   }
@@ -183,7 +185,9 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (_selectedLatitude == null || _selectedLongitude == null || _selectedLocationAddress == null) {
+    if (_selectedLatitude == null ||
+        _selectedLongitude == null ||
+        _selectedLocationAddress == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select your location')),
       );
@@ -199,17 +203,19 @@ class _LoginScreenState extends State<LoginScreen> {
         final apiClient = APIClient(ApiConstants.baseUrl);
         final mediaService = MediaService(apiClient);
         final user = authProvider.user;
-        
+
         if (user != null && user.id != null) {
           profilePictureUrl = await mediaService.uploadProfilePicture(
             _profilePicture!,
             user.id!,
           );
-          
+
           if (profilePictureUrl == null) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Failed to upload profile picture')),
+                const SnackBar(
+                  content: Text('Failed to upload profile picture'),
+                ),
               );
             }
             return;
@@ -235,15 +241,17 @@ class _LoginScreenState extends State<LoginScreen> {
         latitude: _selectedLatitude,
         longitude: _selectedLongitude,
         locationAddress: _selectedLocationAddress,
-        bio: _bioController.text.trim().isNotEmpty ? _bioController.text.trim() : null,
+        bio: _bioController.text.trim().isNotEmpty
+            ? _bioController.text.trim()
+            : null,
       );
-      
+
       // Navigation will be handled by main.dart based on auth state
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update profile: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update profile: $e')));
       }
     }
   }
@@ -267,358 +275,367 @@ class _LoginScreenState extends State<LoginScreen> {
     _phoneFocusNode.requestFocus();
   }
 
+  Widget _formSurface(List<Widget> children) => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Container(
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 400 ? 20 : 32,
+          ),
+          decoration: BoxDecoration(
+            color: AppTheme.peach,
+            border: Border.all(color: AppTheme.ink),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'PLANS WITH FRIENDS',
+                style: TextStyle(fontSize: 12, letterSpacing: 1.5),
+              ),
+              const SizedBox(height: 14),
+              ...children,
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Travel Angels'),
-      ),
+      appBar: AppBar(title: const TravelAngelsWordmark()),
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {
           // Profile setup step (only for registration)
           if (_shouldSetProfile) {
-            return Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Set up your profile',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    // Username input
-                    TextField(
-                      controller: _usernameController,
-                      focusNode: _usernameFocusNode,
-                      decoration: InputDecoration(
-                        labelText: 'Username',
-                        hintText: 'Choose a username',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: _isValidatingUsername
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: Padding(
-                                  padding: EdgeInsets.all(12.0),
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              )
-                            : _isUsernameValid
-                                ? const Icon(Icons.check, color: Colors.green)
-                                : null,
-                        errorText: _usernameValidationError,
-                      ),
-                      onChanged: (value) {
-                        _validateUsername(value);
-                      },
-                      textInputAction: TextInputAction.done,
-                    ),
-                    if (_usernameValidationError != null) ...[
-                      const SizedBox(height: 8),
+            return _formSurface([
+              const Text(
+                'Set up your profile',
+                style: TextStyle(
+                  fontFamily: AppTheme.displayFont,
+                  fontSize: 34,
+                  height: 1.15,
+                  fontWeight: FontWeight.w400,
+                ),
+                textAlign: TextAlign.start,
+              ),
+              const SizedBox(height: 32),
+              // Username input
+              TextField(
+                controller: _usernameController,
+                focusNode: _usernameFocusNode,
+                decoration: InputDecoration(
+                  labelText: 'Username',
+                  hintText: 'Choose a username',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _isValidatingUsername
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : _isUsernameValid
+                      ? const Icon(Icons.check, color: AppTheme.success)
+                      : null,
+                  errorText: _usernameValidationError,
+                ),
+                onChanged: (value) {
+                  _validateUsername(value);
+                },
+                textInputAction: TextInputAction.done,
+              ),
+              if (_usernameValidationError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _usernameValidationError!,
+                  style: TextStyle(color: AppTheme.error, fontSize: 12),
+                ),
+              ],
+              const SizedBox(height: 24),
+              // Date of birth picker
+              const Text(
+                'Date of Birth *',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () async {
+                  final DateTime? picked = await showDatePicker(
+                    context: context,
+                    initialDate:
+                        _dateOfBirth ??
+                        DateTime.now().subtract(const Duration(days: 365 * 18)),
+                    firstDate: DateTime(1900),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) {
+                    setState(() {
+                      _dateOfBirth = picked;
+                    });
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.muted),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
                       Text(
-                        _usernameValidationError!,
+                        _dateOfBirth != null
+                            ? '${_dateOfBirth!.year}-${_dateOfBirth!.month.toString().padLeft(2, '0')}-${_dateOfBirth!.day.toString().padLeft(2, '0')}'
+                            : 'Select date of birth',
                         style: TextStyle(
-                          color: Colors.red.shade700,
-                          fontSize: 12,
+                          color: _dateOfBirth != null
+                              ? AppTheme.ink
+                              : AppTheme.muted,
                         ),
                       ),
+                      const Icon(Icons.calendar_today),
                     ],
-                    const SizedBox(height: 24),
-                    // Date of birth picker
-                    const Text(
-                      'Date of Birth *',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: _dateOfBirth ?? DateTime.now().subtract(const Duration(days: 365 * 18)),
-                          firstDate: DateTime(1900),
-                          lastDate: DateTime.now(),
-                        );
-                        if (picked != null) {
-                          setState(() {
-                            _dateOfBirth = picked;
-                          });
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _dateOfBirth != null
-                                  ? '${_dateOfBirth!.year}-${_dateOfBirth!.month.toString().padLeft(2, '0')}-${_dateOfBirth!.day.toString().padLeft(2, '0')}'
-                                  : 'Select date of birth',
-                              style: TextStyle(
-                                color: _dateOfBirth != null ? Colors.black : Colors.grey,
-                              ),
-                            ),
-                            const Icon(Icons.calendar_today),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Gender dropdown
-                    const Text(
-                      'Gender *',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedGender,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'Select gender',
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'Male', child: Text('Male')),
-                        DropdownMenuItem(value: 'Female', child: Text('Female')),
-                        DropdownMenuItem(value: 'Non-binary', child: Text('Non-binary')),
-                        DropdownMenuItem(value: 'Prefer not to say', child: Text('Prefer not to say')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedGender = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    // Location picker
-                    const Text(
-                      'Location *',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    LocationPicker(
-                      onLocationSelected: (latitude, longitude, address) {
-                        setState(() {
-                          _selectedLatitude = latitude;
-                          _selectedLongitude = longitude;
-                          _selectedLocationAddress = address;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    // Bio field
-                    TextField(
-                      controller: _bioController,
-                      decoration: const InputDecoration(
-                        labelText: 'Bio (Optional)',
-                        hintText: 'Tell us about yourself',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 24),
-                    // Profile picture picker
-                    const Text(
-                      'Profile Picture (Optional)',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (_profilePicture != null) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              _profilePicture!,
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                        ],
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickProfilePicture,
-                            icon: const Icon(Icons.image),
-                            label: Text(_profilePicture == null ? 'Pick Image' : 'Change Image'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    // Complete profile button
-                    ElevatedButton(
-                      onPressed: (_isUsernameValid && _dateOfBirth != null && _selectedGender != null && _selectedLatitude != null && _selectedLongitude != null) ? _handleCompleteProfile : null,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text('Complete Profile'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            );
+              const SizedBox(height: 24),
+              // Gender dropdown
+              const Text(
+                'Gender *',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedGender,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Select gender',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Male', child: Text('Male')),
+                  DropdownMenuItem(value: 'Female', child: Text('Female')),
+                  DropdownMenuItem(
+                    value: 'Non-binary',
+                    child: Text('Non-binary'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Prefer not to say',
+                    child: Text('Prefer not to say'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedGender = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+              // Location picker
+              const Text(
+                'Location *',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              LocationPicker(
+                onLocationSelected: (latitude, longitude, address) {
+                  setState(() {
+                    _selectedLatitude = latitude;
+                    _selectedLongitude = longitude;
+                    _selectedLocationAddress = address;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+              // Bio field
+              TextField(
+                controller: _bioController,
+                decoration: const InputDecoration(
+                  labelText: 'Bio (Optional)',
+                  hintText: 'Tell us about yourself',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 24),
+              // Profile picture picker
+              const Text(
+                'Profile Picture (Optional)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (_profilePicture != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        _profilePicture!,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickProfilePicture,
+                      icon: const Icon(Icons.image),
+                      label: Text(
+                        _profilePicture == null ? 'Pick Image' : 'Change Image',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              // Complete profile button
+              ElevatedButton(
+                onPressed:
+                    (_isUsernameValid &&
+                        _dateOfBirth != null &&
+                        _selectedGender != null &&
+                        _selectedLatitude != null &&
+                        _selectedLongitude != null)
+                    ? _handleCompleteProfile
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Complete Profile'),
+              ),
+            ]);
           }
 
           // Phone number and verification code step
-          return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Sign in or sign up',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-                  // Phone number input
-                  TextField(
-                    controller: _phoneController,
-                    focusNode: _phoneFocusNode,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      hintText: 'Enter your phone number',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: _validatePhoneNumber,
-                  ),
-                  if (authProvider.isWaitingForVerificationCode) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      "We've just sent a 6-digit verification code. It may take a moment to arrive.",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Verification code input
-                    TextField(
-                      controller: _codeController,
-                      focusNode: _codeFocusNode,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(6),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Verification code',
-                        hintText: 'Enter 6-digit code',
-                        border: OutlineInputBorder(),
-                      ),
-                      textInputAction: TextInputAction.done,
-                      onChanged: (_) => setState(() {}),
-                      onSubmitted: (_) => _handleLogister(),
-                    ),
-                  ],
-                  if (authProvider.error != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Text(
-                        authProvider.error!,
-                        style: TextStyle(
-                          color: Colors.red.shade700,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  // Action buttons
-                  if (!authProvider.isWaitingForVerificationCode && _isPhoneValid)
-                    ElevatedButton(
-                      onPressed: _handleGetCode,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text('Get code'),
-                    )
-                  else if (authProvider.isWaitingForVerificationCode) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleCancel,
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text('Change phone number'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton(
-                            onPressed: _codeController.text.length == 6
-                                ? _handleLogister
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: Text(
-                              authProvider.isRegister ? 'Register' : 'Login',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  // Retry button when there's an error and not waiting for code
-                  if (authProvider.error != null && 
-                      !authProvider.isWaitingForVerificationCode)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: OutlinedButton(
-                        onPressed: _handleRetry,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text('Try again'),
-                      ),
-                    ),
-                ],
+          return _formSurface([
+            const Text(
+              'Sign in or sign up',
+              style: TextStyle(
+                fontFamily: AppTheme.displayFont,
+                fontSize: 34,
+                height: 1.15,
+                fontWeight: FontWeight.w400,
               ),
+              textAlign: TextAlign.start,
             ),
-          );
+            const SizedBox(height: 32),
+            // Phone number input
+            TextField(
+              controller: _phoneController,
+              focusNode: _phoneFocusNode,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone Number',
+                hintText: 'Enter your phone number',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: _validatePhoneNumber,
+            ),
+            if (authProvider.isWaitingForVerificationCode) ...[
+              const SizedBox(height: 16),
+              const Text(
+                "We've just sent a 6-digit verification code. It may take a moment to arrive.",
+                style: TextStyle(fontSize: 14, color: AppTheme.muted),
+              ),
+              const SizedBox(height: 16),
+              // Verification code input
+              TextField(
+                controller: _codeController,
+                focusNode: _codeFocusNode,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Verification code',
+                  hintText: 'Enter 6-digit code',
+                  border: OutlineInputBorder(),
+                ),
+                textInputAction: TextInputAction.done,
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _handleLogister(),
+              ),
+            ],
+            if (authProvider.error != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: AppTheme.error),
+                ),
+                child: Text(
+                  authProvider.error!,
+                  style: TextStyle(color: AppTheme.error, fontSize: 14),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            // Action buttons
+            if (!authProvider.isWaitingForVerificationCode && _isPhoneValid)
+              ElevatedButton(
+                onPressed: _handleGetCode,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Get code'),
+              )
+            else if (authProvider.isWaitingForVerificationCode)
+              _verificationActions(authProvider),
+            // Retry button when there's an error and not waiting for code
+            if (authProvider.error != null &&
+                !authProvider.isWaitingForVerificationCode)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: OutlinedButton(
+                  onPressed: _handleRetry,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Try again'),
+                ),
+              ),
+          ]);
         },
       ),
     );
   }
+
+  Widget _verificationActions(AuthProvider authProvider) => LayoutBuilder(
+    builder: (context, constraints) {
+      final changePhone = OutlinedButton(
+        onPressed: _handleCancel,
+        child: const Text('Change phone number', textAlign: TextAlign.center),
+      );
+      final submit = ElevatedButton(
+        onPressed: _codeController.text.length == 6 ? _handleLogister : null,
+        child: Text(authProvider.isRegister ? 'Register' : 'Login'),
+      );
+      if (constraints.maxWidth < 420 ||
+          MediaQuery.textScalerOf(context).scale(14) > 18) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [submit, const SizedBox(height: 12), changePhone],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: changePhone),
+          const SizedBox(width: 12),
+          Expanded(child: submit),
+        ],
+      );
+    },
+  );
 }
-
-

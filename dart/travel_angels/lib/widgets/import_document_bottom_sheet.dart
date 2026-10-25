@@ -7,10 +7,7 @@ import 'package:travel_angels/widgets/video_picker_flow.dart';
 class ImportDocumentBottomSheet extends StatelessWidget {
   final VoidCallback? onImportComplete;
 
-  const ImportDocumentBottomSheet({
-    super.key,
-    this.onImportComplete,
-  });
+  const ImportDocumentBottomSheet({super.key, this.onImportComplete});
 
   void _handleGoogleDriveSelected(BuildContext context) {
     Navigator.pop(context); // Close bottom sheet
@@ -18,9 +15,8 @@ class ImportDocumentBottomSheet extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => GoogleDriveFilePicker(
-        onImportComplete: onImportComplete,
-      ),
+      builder: (context) =>
+          GoogleDriveFilePicker(onImportComplete: onImportComplete),
     );
   }
 
@@ -30,9 +26,8 @@ class ImportDocumentBottomSheet extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => FilePickerWidget(
-        onImportComplete: onImportComplete,
-      ),
+      builder: (context) =>
+          FilePickerWidget(onImportComplete: onImportComplete),
     );
   }
 
@@ -48,9 +43,7 @@ class ImportDocumentBottomSheet extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16.0),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
       child: SafeArea(
         child: Column(
@@ -64,18 +57,13 @@ class ImportDocumentBottomSheet extends StatelessWidget {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withOpacity(0.3),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             // Title
-            Text(
-              'Import Document',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text('Import Document', style: theme.textTheme.titleLarge),
             const SizedBox(height: 24),
             // Google Drive option
             _ImportOption(
@@ -132,19 +120,19 @@ class _ImportOption extends StatelessWidget {
 
     return InkWell(
       onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.all(16.0),
         decoration: BoxDecoration(
           border: Border.all(
             color: enabled
                 ? theme.colorScheme.outline
-                : theme.colorScheme.outline.withOpacity(0.3),
+                : theme.colorScheme.outline.withValues(alpha: 0.3),
           ),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(6),
           color: enabled
               ? null
-              : theme.colorScheme.surface.withOpacity(0.5),
+              : theme.colorScheme.surface.withValues(alpha: 0.5),
         ),
         child: Row(
           children: [
@@ -152,7 +140,7 @@ class _ImportOption extends StatelessWidget {
               icon,
               color: enabled
                   ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurface.withOpacity(0.3),
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.3),
               size: 32,
             ),
             const SizedBox(width: 16),
@@ -163,10 +151,9 @@ class _ImportOption extends StatelessWidget {
                   Text(
                     title,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
                       color: enabled
                           ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurface.withOpacity(0.5),
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -174,8 +161,8 @@ class _ImportOption extends StatelessWidget {
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: enabled
-                          ? theme.colorScheme.onSurface.withOpacity(0.7)
-                          : theme.colorScheme.onSurface.withOpacity(0.4),
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.4),
                     ),
                   ),
                 ],
@@ -184,7 +171,7 @@ class _ImportOption extends StatelessWidget {
             if (!enabled)
               Icon(
                 Icons.lock_outline,
-                color: theme.colorScheme.onSurface.withOpacity(0.3),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                 size: 20,
               ),
           ],
@@ -193,4 +180,3 @@ class _ImportOption extends StatelessWidget {
     );
   }
 }
-

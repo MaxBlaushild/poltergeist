@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/screens/travel_trip_screen.dart';
 import 'package:travel_angels/widgets/travel_account_claim.dart';
 import 'package:travel_angels/widgets/travel_calendar_delivery.dart';
@@ -42,7 +43,8 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
   final Map<String, Map<String, dynamic>> _selections = {};
   bool _loading = true;
   bool _busy = false;
-  bool _monthView = false;
+  bool _monthView = true;
+  bool _showFilters = false;
   DateTime _month = DateTime.now();
   String _period = 'all';
   DateTimeRange? _dateFilter;
@@ -1194,6 +1196,226 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         TravelStopPreviewDialog(service: _service, stop: stop),
   );
 
+  void _calendarAction(String action) {
+    switch (action) {
+      case 'follow':
+        _follow();
+      case 'share':
+        _share();
+      case 'invite':
+        _invitations();
+      case 'broadcast':
+        _broadcast();
+      case 'verify':
+        _verify();
+      case 'rename':
+        _rename();
+      case 'permissions':
+        _permissions();
+      case 'editors':
+        _collaborators();
+      case 'links':
+        _manageLinks();
+    }
+  }
+
+  Widget _calendarHeading() {
+    final theme = Theme.of(context);
+    final buttonStyle = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      textStyle: WidgetStatePropertyAll(theme.textTheme.labelMedium),
+    );
+    final controls = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_canManageCalendar && _calendar['canCreateTrips'] != false)
+          FilledButton.icon(
+            style: buttonStyle,
+            onPressed: _busy ? null : _edit,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Create trip'),
+          ),
+        if (_shared)
+          OutlinedButton.icon(
+            style: buttonStyle,
+            onPressed: _busy ? null : _follow,
+            icon: const Icon(Icons.notifications_none, size: 18),
+            label: const Text('Follow updates'),
+          ),
+        PopupMenuButton<bool>(
+          tooltip: 'Calendar view',
+          initialValue: _monthView,
+          onSelected: (value) => setState(() => _monthView = value),
+          itemBuilder: (context) => [
+            CheckedPopupMenuItem(
+              value: true,
+              checked: _monthView,
+              child: const Text('Month'),
+            ),
+            CheckedPopupMenuItem(
+              value: false,
+              checked: !_monthView,
+              child: const Text('Agenda'),
+            ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _monthView ? 'Month' : 'Agenda',
+                  style: theme.textTheme.labelMedium,
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, size: 18),
+              ],
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Filter trips',
+          isSelected: _showFilters,
+          onPressed: () => setState(() => _showFilters = !_showFilters),
+          icon: const Icon(Icons.tune, size: 20),
+          selectedIcon: const Icon(Icons.tune, size: 20),
+          style: IconButton.styleFrom(
+            backgroundColor: _showFilters ? AppTheme.peach : null,
+          ),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final title = Text(
+          _calendar['title'] as String? ?? 'Travel plans',
+          style: theme.textTheme.titleLarge,
+        );
+        if (constraints.maxWidth < 700 ||
+            MediaQuery.textScalerOf(context).scale(14) > 20) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [title, const SizedBox(height: 4), controls],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: title),
+            const SizedBox(width: 16),
+            controls,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _calendarFilters() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (_showFilters) ...[
+        const SizedBox(height: 10),
+        TextField(
+          controller: _search,
+          decoration: const InputDecoration(
+            labelText: 'Filter by destination or title',
+            prefixIcon: Icon(Icons.search, size: 20),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: MediaQuery.sizeOf(context).width < 600
+                  ? MediaQuery.sizeOf(context).width -
+                        (MediaQuery.sizeOf(context).width < 360 ? 8 : 24)
+                  : 260,
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _period,
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All dates')),
+                  DropdownMenuItem(value: 'upcoming', child: Text('Upcoming')),
+                  DropdownMenuItem(
+                    value: 'current',
+                    child: Text('Happening now'),
+                  ),
+                  DropdownMenuItem(value: 'past', child: Text('Past')),
+                  DropdownMenuItem(
+                    value: 'unscheduled',
+                    child: Text('Approximate / TBD'),
+                  ),
+                ],
+                onChanged: (value) => setState(() => _period = value!),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final range = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  initialDateRange: _dateFilter,
+                  helpText: 'Filter travel dates',
+                );
+                if (range != null && mounted) {
+                  setState(() => _dateFilter = range);
+                }
+              },
+              icon: const Icon(Icons.date_range, size: 18),
+              label: const Text('Date range'),
+            ),
+          ],
+        ),
+      ],
+      if (_search.text.isNotEmpty || _period != 'all' || _dateFilter != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              if (_search.text.isNotEmpty)
+                InputChip(
+                  label: Text(_search.text, maxLines: 2),
+                  deleteButtonTooltipMessage: 'Clear destination filter',
+                  onDeleted: () => setState(_search.clear),
+                ),
+              if (_period != 'all')
+                InputChip(
+                  label: Text(switch (_period) {
+                    'upcoming' => 'Upcoming',
+                    'current' => 'Happening now',
+                    'past' => 'Past',
+                    _ => 'Approximate / TBD',
+                  }),
+                  deleteButtonTooltipMessage: 'Clear period filter',
+                  onDeleted: () => setState(() => _period = 'all'),
+                ),
+              if (_dateFilter != null)
+                InputChip(
+                  label: Text(
+                    '${travelDateValue(_dateFilter!.start)} – ${travelDateValue(_dateFilter!.end)}',
+                    maxLines: 2,
+                  ),
+                  deleteButtonTooltipMessage: 'Clear date filter',
+                  onDeleted: () => setState(() => _dateFilter = null),
+                ),
+            ],
+          ),
+        ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     if (widget.stopToken != null) {
@@ -1214,10 +1436,11 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       range: _dateFilter,
     );
     return Scaffold(
+      backgroundColor: AppTheme.paper,
       appBar: AppBar(
-        title: Text(
-          _shared ? 'Travel Angels · shared plans' : 'Travel calendar',
-        ),
+        title: _shared
+            ? const TravelAngelsWordmark()
+            : const Text('Travel calendar'),
         actions: [
           if (!_shared)
             IconButton(
@@ -1230,32 +1453,56 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
             onPressed: _loading || _busy ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
-          if (_canManageCalendarPermissions)
+          if (_shared || _canManageCalendar || _canManageCalendarPermissions)
             PopupMenuButton<String>(
-              tooltip: 'Calendar settings',
-              onSelected: (value) {
-                switch (value) {
-                  case 'rename':
-                    _rename();
-                  case 'permissions':
-                    _permissions();
-                  case 'editors':
-                    _collaborators();
-                  case 'links':
-                    _manageLinks();
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'rename', child: Text('Rename calendar')),
-                PopupMenuItem(
-                  value: 'permissions',
-                  child: Text('Default audience'),
-                ),
-                PopupMenuItem(
-                  value: 'editors',
-                  child: Text('Calendar editors'),
-                ),
-                PopupMenuItem(value: 'links', child: Text('Manage share link')),
+              tooltip: 'Calendar actions',
+              enabled: !_busy,
+              onSelected: _calendarAction,
+              itemBuilder: (context) => [
+                if (_shared) ...[
+                  const PopupMenuItem(
+                    value: 'follow',
+                    child: Text('Follow / manage updates'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'verify',
+                    child: Text('Verify invited email'),
+                  ),
+                ],
+                if (_canManageCalendarPermissions)
+                  const PopupMenuItem(
+                    value: 'share',
+                    child: Text('Share calendar'),
+                  ),
+                if (_canManageCalendar) ...[
+                  const PopupMenuItem(
+                    value: 'invite',
+                    child: Text('Invite friends'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'broadcast',
+                    child: Text('Broadcast update'),
+                  ),
+                ],
+                if (_canManageCalendarPermissions) ...[
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'rename',
+                    child: Text('Rename calendar'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'permissions',
+                    child: Text('Default audience'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'editors',
+                    child: Text('Calendar editors'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'links',
+                    child: Text('Manage share link'),
+                  ),
+                ],
               ],
             ),
         ],
@@ -1266,11 +1513,16 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
             : RefreshIndicator(
                 onRefresh: _load,
                 child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.sizeOf(context).width > 1100
-                        ? (MediaQuery.sizeOf(context).width - 1040) / 2
-                        : 16,
-                    vertical: 20,
+                    horizontal: MediaQuery.sizeOf(context).width > 1320
+                        ? (MediaQuery.sizeOf(context).width - 1280) / 2
+                        : MediaQuery.sizeOf(context).width < 360
+                        ? 4
+                        : MediaQuery.sizeOf(context).width < 600
+                        ? 12
+                        : 24,
+                    vertical: 16,
                   ),
                   children: [
                     if (_loading || _busy) const LinearProgressIndicator(),
@@ -1304,64 +1556,12 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                         ),
                       ),
                     ] else ...[
-                      Text(
-                        _calendar['title'] as String? ?? 'Travel plans',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _shared
-                            ? 'Browse the plans shared with you. Follow updates without an account, then claim an account when you want to join.'
-                            : 'All your travel plans, in one ongoing calendar. Choose who can see each stop and invite friends along.',
-                      ),
-                      const SizedBox(height: 20),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (_canManageCalendar &&
-                              _calendar['canCreateTrips'] != false)
-                            FilledButton.icon(
-                              onPressed: _busy ? null : _edit,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Create trip'),
-                            ),
-                          if (_canManageCalendarPermissions)
-                            OutlinedButton.icon(
-                              onPressed: _busy ? null : _share,
-                              icon: const Icon(Icons.link),
-                              label: const Text('Share calendar'),
-                            ),
-                          if (_canManageCalendar) ...[
-                            OutlinedButton.icon(
-                              onPressed: _busy ? null : _invitations,
-                              icon: const Icon(Icons.person_add_outlined),
-                              label: const Text('Invite friends'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: _busy ? null : _broadcast,
-                              icon: const Icon(Icons.campaign_outlined),
-                              label: const Text('Broadcast update'),
-                            ),
-                          ],
-                          if (_shared) ...[
-                            if (widget.stopToken == null)
-                              OutlinedButton.icon(
-                                onPressed: _busy ? null : _follow,
-                                icon: const Icon(Icons.notifications_none),
-                                label: const Text('Follow / manage updates'),
-                              ),
-                            TextButton(
-                              onPressed: _verify,
-                              child: const Text('Verify invited email'),
-                            ),
-                          ],
-                        ],
-                      ),
+                      _calendarHeading(),
+                      _calendarFilters(),
+                      const SizedBox(height: 12),
                       for (final invitation in _cohostInvitations)
                         Card(
+                          color: AppTheme.peach,
                           child: ListTile(
                             leading: const Icon(Icons.group_add_outlined),
                             title: Text(
@@ -1382,96 +1582,6 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                             ),
                           ),
                         ),
-                      const SizedBox(height: 24),
-                      TextField(
-                        controller: _search,
-                        decoration: const InputDecoration(
-                          labelText: 'Filter by destination or title',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          SegmentedButton<bool>(
-                            segments: const [
-                              ButtonSegment(
-                                value: false,
-                                icon: Icon(Icons.view_agenda_outlined),
-                                label: Text('Agenda'),
-                              ),
-                              ButtonSegment(
-                                value: true,
-                                icon: Icon(Icons.calendar_month_outlined),
-                                label: Text('Month'),
-                              ),
-                            ],
-                            selected: {_monthView},
-                            onSelectionChanged: (selection) =>
-                                setState(() => _monthView = selection.first),
-                          ),
-                          DropdownButton<String>(
-                            value: _period,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'all',
-                                child: Text('All dates'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'upcoming',
-                                child: Text('Upcoming'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'current',
-                                child: Text('Happening now'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'past',
-                                child: Text('Past'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'unscheduled',
-                                child: Text('Approximate / TBD'),
-                              ),
-                            ],
-                            onChanged: (value) =>
-                                setState(() => _period = value!),
-                          ),
-                          TextButton.icon(
-                            onPressed: () async {
-                              final range = await showDateRangePicker(
-                                context: context,
-                                firstDate: DateTime(2000),
-                                lastDate: DateTime(2100),
-                                initialDateRange: _dateFilter,
-                                helpText: 'Filter travel dates',
-                              );
-                              if (range != null && mounted) {
-                                setState(() => _dateFilter = range);
-                              }
-                            },
-                            icon: const Icon(Icons.date_range),
-                            label: Text(
-                              _dateFilter == null
-                                  ? 'Date range'
-                                  : '${travelDateValue(_dateFilter!.start)} – ${travelDateValue(_dateFilter!.end)}',
-                            ),
-                          ),
-                          if (_dateFilter != null)
-                            IconButton(
-                              tooltip: 'Clear date filter',
-                              onPressed: () =>
-                                  setState(() => _dateFilter = null),
-                              icon: const Icon(Icons.close),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
                       if (_selectionNotice != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16),
@@ -1501,7 +1611,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                         ),
                       if (visibleSelections.isNotEmpty)
                         Card(
-                          color: theme.colorScheme.primaryContainer,
+                          color: AppTheme.peach,
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(
@@ -1509,7 +1619,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                               children: [
                                 Text(
                                   '${visibleSelections.length} ${visibleSelections.length == 1 ? 'stop' : 'stops'} selected · nothing submitted',
-                                  style: theme.textTheme.titleMedium,
+                                  style: theme.textTheme.titleLarge,
                                 ),
                                 const SizedBox(height: 8),
                                 for (final entry in visibleSelections.entries)
@@ -1551,7 +1661,15 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                             ),
                           ),
                         ),
-                      if (filtered.isEmpty)
+                      if (_monthView)
+                        TravelCalendarMonth(
+                          month: _month,
+                          stops: filtered,
+                          onMonthChanged: (month) =>
+                              setState(() => _month = month),
+                          onStopTap: _showStop,
+                        )
+                      else if (filtered.isEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 36),
                           child: Column(
@@ -1559,14 +1677,14 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                               Icon(
                                 Icons.explore_outlined,
                                 size: 48,
-                                color: theme.colorScheme.primary,
+                                color: AppTheme.rust,
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 _stops.isEmpty
                                     ? 'No travel stops to show yet'
                                     : 'No plans match these filters',
-                                style: theme.textTheme.titleLarge,
+                                style: theme.textTheme.headlineSmall,
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -1577,14 +1695,6 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                               ),
                             ],
                           ),
-                        )
-                      else if (_monthView)
-                        TravelCalendarMonth(
-                          month: _month,
-                          stops: filtered,
-                          onMonthChanged: (month) =>
-                              setState(() => _month = month),
-                          onStopTap: _showStop,
                         )
                       else ...[
                         for (final stop in filtered.where(
@@ -1601,7 +1711,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
                           const SizedBox(height: 20),
                           Text(
                             'Approximate & unscheduled plans',
-                            style: theme.textTheme.titleMedium,
+                            style: theme.textTheme.headlineSmall,
                           ),
                           const SizedBox(height: 8),
                           for (final stop in filtered.where(

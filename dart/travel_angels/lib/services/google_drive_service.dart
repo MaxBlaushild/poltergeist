@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
@@ -60,30 +59,13 @@ class GoogleDriveService {
       if (pageToken != null) queryParams['pageToken'] = pageToken;
       if (query != null) queryParams['q'] = query;
 
-      print('[GoogleDriveService] Listing files with params: $queryParams');
-      print('[GoogleDriveService] Endpoint: ${ApiConstants.googleDriveFilesEndpoint}');
-
       final response = await _apiClient.get<Map<String, dynamic>>(
         ApiConstants.googleDriveFilesEndpoint,
         params: queryParams.isEmpty ? null : queryParams,
       );
-      
-      print('[GoogleDriveService] Successfully received response: ${response.keys}');
+
       return response;
     } catch (e) {
-      print('[GoogleDriveService] Error listing files: $e');
-      print('[GoogleDriveService] Error type: ${e.runtimeType}');
-      if (e is DioException) {
-        print('[GoogleDriveService] DioException details:');
-        print('  - Response status: ${e.response?.statusCode}');
-        print('  - Response status message: ${e.response?.statusMessage}');
-        print('  - Response data: ${e.response?.data}');
-        print('  - Request path: ${e.requestOptions.path}');
-        print('  - Request method: ${e.requestOptions.method}');
-        print('  - Request headers: ${e.requestOptions.headers}');
-        print('  - Error message: ${e.message}');
-        print('  - Error type: ${e.type}');
-      }
       rethrow;
     }
   }
@@ -97,22 +79,34 @@ class GoogleDriveService {
     String fileId,
     String importType, {
     List<DocumentLocation>? locations,
+    String? title,
+    String? format,
+    String? destination,
+    String? personalNote,
   }) async {
     try {
       final data = <String, dynamic>{
         'fileId': fileId,
         'importType': importType,
+        if (title != null) 'title': title,
+        if (format != null) 'format': format,
+        if (destination != null) 'destination': destination,
+        if (personalNote != null) 'personalNote': personalNote,
       };
 
       if (locations != null && locations.isNotEmpty) {
-        data['locations'] = locations.map((loc) => {
-          'placeId': loc.placeId,
-          'name': loc.name,
-          'formattedAddress': loc.formattedAddress,
-          'latitude': loc.latitude,
-          'longitude': loc.longitude,
-          'type': loc.locationType.name,
-        }).toList();
+        data['locations'] = locations
+            .map(
+              (loc) => {
+                'placeId': loc.placeId,
+                'name': loc.name,
+                'formattedAddress': loc.formattedAddress,
+                'latitude': loc.latitude,
+                'longitude': loc.longitude,
+                'type': loc.locationType.name,
+              },
+            )
+            .toList();
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(
@@ -125,4 +119,3 @@ class GoogleDriveService {
     }
   }
 }
-

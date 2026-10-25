@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/theme/app_theme.dart';
+import 'package:travel_angels/widgets/travel_calendar_views.dart';
 
 /// A scoped preference link is sufficient to unsubscribe; no account is needed.
 class TravelPreferencesScreen extends StatefulWidget {
@@ -94,6 +96,7 @@ class _TravelPreferencesScreenState extends State<TravelPreferencesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.paper,
       appBar: AppBar(title: const Text('Travel update preferences')),
       body: Center(
         child: ConstrainedBox(
@@ -101,15 +104,27 @@ class _TravelPreferencesScreenState extends State<TravelPreferencesScreen> {
           child: _loading
               ? const CircularProgressIndicator()
               : ListView(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 36,
+                  ),
                   children: [
+                    const TravelCalendarEyebrow('Preferences'),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Your travel updates',
+                      style: Theme.of(context).textTheme.displaySmall,
+                    ),
+                    const SizedBox(height: 16),
                     const Text('Manage your updates without signing in.'),
                     if (_email.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
                           _email,
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyLarge?.copyWith(color: AppTheme.rust),
                         ),
                       ),
                     if (_error != null) ...[
@@ -125,6 +140,9 @@ class _TravelPreferencesScreenState extends State<TravelPreferencesScreen> {
                       ),
                     ],
                     if (_email.isNotEmpty) ...[
+                      const Divider(height: 32),
+                      const TravelCalendarEyebrow('Plans you follow'),
+                      const SizedBox(height: 12),
                       if (_subscriptions.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 20),
@@ -159,7 +177,7 @@ class _TravelPreferencesScreenState extends State<TravelPreferencesScreen> {
                                   }
                                 }),
                         ),
-                      const Divider(),
+                      const Divider(height: 32),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Participation notices'),

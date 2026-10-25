@@ -5,7 +5,7 @@ import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/models/user_level.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/providers/user_level_provider.dart';
-import 'package:travel_angels/screens/documents_screen.dart';
+import 'package:travel_angels/screens/library_screen.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/credits_service.dart';
 import 'package:travel_angels/services/document_service.dart';
@@ -58,7 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadDocumentCount() async {
     if (!mounted) return;
-    
+
     final authProvider = context.read<AuthProvider>();
     final user = authProvider.user;
 
@@ -72,7 +72,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      final documentsJson = await _documentService.getDocumentsByUserId(user!.id!);
+      final documentsJson = await _documentService.getDocumentsByUserId(
+        user!.id!,
+      );
       if (mounted) {
         setState(() {
           _docsShared = documentsJson.length;
@@ -104,7 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// Build profile picture widget
   Widget _buildProfilePicture(User? user, ThemeData theme) {
     final profilePictureUrl = user?.profilePictureUrl;
-    
+
     if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
       return CircleAvatar(
         radius: 50,
@@ -112,10 +114,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onBackgroundImageError: (exception, stackTrace) {
           // Handle error silently - will show fallback
         },
-        child: profilePictureUrl.isEmpty ? _buildFallbackAvatar(user, theme) : null,
+        child: profilePictureUrl.isEmpty
+            ? _buildFallbackAvatar(user, theme)
+            : null,
       );
     }
-    
+
     return _buildFallbackAvatar(user, theme);
   }
 
@@ -127,13 +131,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _getInitials(user),
         style: TextStyle(
           fontSize: 32,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w400,
           color: theme.colorScheme.onPrimaryContainer,
         ),
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -141,8 +144,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.user;
     // Use select to only rebuild when userLevel or loading changes
-    final userLevel = context.select<UserLevelProvider, UserLevel?>((provider) => provider.userLevel);
-    final isLoading = context.select<UserLevelProvider, bool>((provider) => provider.loading);
+    final userLevel = context.select<UserLevelProvider, UserLevel?>(
+      (provider) => provider.userLevel,
+    );
+    final isLoading = context.select<UserLevelProvider, bool>(
+      (provider) => provider.loading,
+    );
 
     final userName = user?.name ?? user?.username ?? 'Traveler';
 
@@ -167,244 +174,242 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Profile header
               Align(
                 alignment: Alignment.centerLeft,
+                child: Text('Profile', style: theme.textTheme.headlineLarge),
+              ),
+              const SizedBox(height: 24),
+              // Profile Picture
+              _buildProfilePicture(user, theme),
+              const SizedBox(height: 16),
+              // User Name
+              Text(userName, style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              // Level Badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 child: Text(
-                  'Profile',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                  'Level $level',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-            // Profile Picture
-            _buildProfilePicture(user, theme),
-            const SizedBox(height: 16),
-            // User Name
-            Text(
-              userName,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Level Badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Level $level',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
-            // Experience Bar Section
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Experience',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '$experiencePointsOnLevel / $experienceToNextLevel XP',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    isLoading
-                        ? const LinearProgressIndicator()
-                        : TweenAnimationBuilder<double>(
-                            tween: Tween<double>(begin: 0.0, end: progress),
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.easeOut,
-                            builder: (context, animatedProgress, child) {
-                              return LinearProgressIndicator(
-                                value: animatedProgress,
-                                minHeight: 8,
-                                borderRadius: BorderRadius.circular(4),
-                                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  theme.colorScheme.primary,
-                                ),
-                              );
-                            },
-                          ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${experiencePointsOnLevel.toStringAsFixed(0)} / $experienceToNextLevel XP to Level ${level + 1}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Docs Shared Section
-            Card(
-              child: InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const DocumentsScreen(),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 32),
+              // Experience Bar Section
+              Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 16,
+                        runSpacing: 8,
                         children: [
+                          Text('Experience', style: theme.textTheme.titleLarge),
                           Text(
-                            'Docs Shared',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                            '$experiencePointsOnLevel / $experienceToNextLevel XP',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          _isLoadingDocs
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      theme.colorScheme.onSurface.withOpacity(0.7),
-                                    ),
-                                  ),
-                                )
-                              : Text(
-                                  '$_docsShared docs shared',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                                  ),
-                                ),
                         ],
                       ),
-                      Icon(
-                        Icons.description,
-                        size: 32,
-                        color: theme.colorScheme.primary,
+                      const SizedBox(height: 12),
+                      isLoading
+                          ? const LinearProgressIndicator()
+                          : TweenAnimationBuilder<double>(
+                              tween: Tween<double>(begin: 0.0, end: progress),
+                              duration: const Duration(milliseconds: 500),
+                              curve: Curves.easeOut,
+                              builder: (context, animatedProgress, child) {
+                                return LinearProgressIndicator(
+                                  value: animatedProgress,
+                                  minHeight: 8,
+                                  borderRadius: BorderRadius.circular(4),
+                                  backgroundColor:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    theme.colorScheme.primary,
+                                  ),
+                                );
+                              },
+                            ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${experiencePointsOnLevel.toStringAsFixed(0)} / $experienceToNextLevel XP to Level ${level + 1}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            // Credits Section
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              const SizedBox(height: 16),
+              // Docs Shared Section
+              Card(
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Scaffold(
+                          appBar: AppBar(title: const Text('Library')),
+                          body: const LibraryScreen(initialScope: 'yours'),
+                        ),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Credits',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => CreditsPurchaseDialog(
-                                creditsService: _creditsService,
-                                onPurchaseComplete: () {
-                                  // Refresh user data
-                                  context.read<AuthProvider>().verifyToken();
-                                },
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Your travel library',
+                                style: theme.textTheme.titleLarge,
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Buy Credits'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
+                              const SizedBox(height: 4),
+                              _isLoadingDocs
+                                  ? SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    )
+                                  : Text(
+                                      '$_docsShared guides in your library',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
+                        const SizedBox(width: 12),
                         Icon(
-                          Icons.account_balance_wallet,
+                          Icons.description,
                           size: 32,
                           color: theme.colorScheme.primary,
                         ),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${user?.credits ?? 0} credits',
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            // Permissions Panel
-            const PermissionsPanel(),
-            const SizedBox(height: 16),
-            // Logout Section
-            Card(
-              child: InkWell(
-                onTap: () => _showLogoutConfirmation(context),
-                borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 16),
+              // Credits Section
+              Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 16,
+                        runSpacing: 12,
+                        children: [
+                          Text('Credits', style: theme.textTheme.titleLarge),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => CreditsPurchaseDialog(
+                                  creditsService: _creditsService,
+                                  onPurchaseComplete: () {
+                                    // Refresh user data
+                                    context.read<AuthProvider>().verifyToken();
+                                  },
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Buy Credits'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Icon(
-                            Icons.logout,
+                            Icons.account_balance_wallet,
                             size: 32,
-                            color: theme.colorScheme.error,
+                            color: theme.colorScheme.primary,
                           ),
                           const SizedBox(width: 12),
-                          Column(
+                          Expanded(
+                            child: Text(
+                              '${user?.credits ?? 0} credits',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Permissions Panel
+              const PermissionsPanel(),
+              const SizedBox(height: 16),
+              // Logout Section
+              Card(
+                child: InkWell(
+                  onTap: () => _showLogoutConfirmation(context),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Icon(
+                          Icons.logout,
+                          size: 32,
+                          color: theme.colorScheme.error,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Log Out',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
+                                style: theme.textTheme.titleLarge?.copyWith(
                                   color: theme.colorScheme.error,
                                 ),
                               ),
@@ -412,26 +417,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Text(
                                 'Sign out of your account',
                                 style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                  color: theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: theme.colorScheme.onSurface.withOpacity(0.5),
-                      ),
-                    ],
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.chevron_right,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-        ),
     );
   }
 

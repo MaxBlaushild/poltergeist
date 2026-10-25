@@ -340,21 +340,7 @@ func (c *client) ExportFileAsHTML(ctx context.Context, userID string, fileID str
 	if err != nil {
 		return nil, err
 	}
-
-	// Export Google Docs/Sheets as HTML
-	resp, err := driveService.Files.Export(fileID, "text/html").Download()
-	if err != nil {
-		return nil, fmt.Errorf("failed to export file as HTML: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read exported file content: %w", err)
-	}
-
-	return data, nil
+	return exportFileAsHTML(ctx, driveService, fileID)
 }
 
 func (c *client) ShareFile(ctx context.Context, userID string, fileID string, email string, role string) error {

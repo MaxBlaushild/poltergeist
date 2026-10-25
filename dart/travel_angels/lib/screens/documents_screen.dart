@@ -28,7 +28,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   final DocumentService _documentService = DocumentService(
     APIClient(ApiConstants.baseUrl),
   );
-  final MediaService _mediaService = MediaService(APIClient(ApiConstants.baseUrl));
+  final MediaService _mediaService = MediaService(
+    APIClient(ApiConstants.baseUrl),
+  );
 
   List<Document> _allDocuments = [];
   List<Document> _sortedDocuments = [];
@@ -72,15 +74,21 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     });
 
     try {
-      final documentsJson = await _documentService.getDocumentsByUserId(user!.id!);
+      final documentsJson = await _documentService.getDocumentsByUserId(
+        user!.id!,
+      );
       final documents = documentsJson
           .map((json) => Document.fromJson(json))
           .toList();
 
-      print('[DocumentsScreen._loadDocuments] Loaded ${documents.length} documents');
+      print(
+        '[DocumentsScreen._loadDocuments] Loaded ${documents.length} documents',
+      );
       for (final doc in documents) {
         final isVideo = DocumentUtils.isVideo(doc);
-        print('[DocumentsScreen._loadDocuments] Document: id=${doc.id}, title="${doc.title}", provider=${doc.provider}, link=${doc.link}, isVideo=$isVideo');
+        print(
+          '[DocumentsScreen._loadDocuments] Document: id=${doc.id}, title="${doc.title}", provider=${doc.provider}, link=${doc.link}, isVideo=$isVideo',
+        );
       }
 
       _allDocuments = documents;
@@ -96,7 +104,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         String errorMsg = 'Failed to load documents';
         if (e is DioException) {
           if (e.response != null) {
-            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMsg =
+                '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMsg = errorData['error']?.toString() ?? errorMsg;
@@ -209,22 +218,26 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _handleDocumentTap(Document document) async {
-    print('[DocumentsScreen._handleDocumentTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}');
+    print(
+      '[DocumentsScreen._handleDocumentTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}',
+    );
     final isVideo = DocumentUtils.isVideo(document);
     print('[DocumentsScreen._handleDocumentTap] isVideo=$isVideo');
-    
+
     // If it's a video, show preview instead of edit screen
     if (isVideo) {
       print('[DocumentsScreen._handleDocumentTap] Handling as VIDEO');
       if (document.link == null) {
         print('[DocumentsScreen._handleDocumentTap] ❌ Video link is null!');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Video link is missing')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Video link is missing')));
         return;
       }
-      
-      print('[DocumentsScreen._handleDocumentTap] Opening video preview dialog with URL: ${document.link}');
+
+      print(
+        '[DocumentsScreen._handleDocumentTap] Opening video preview dialog with URL: ${document.link}',
+      );
       // Show video preview dialog
       if (!mounted) return;
       showDialog(
@@ -233,7 +246,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       );
       return;
     }
-    
+
     print('[DocumentsScreen._handleDocumentTap] Handling as regular document');
     // Navigate to edit screen for non-video documents
     final result = await Navigator.push<bool>(
@@ -250,10 +263,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _handleEditTap(Document document) async {
-    print('[DocumentsScreen._handleEditTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}');
+    print(
+      '[DocumentsScreen._handleEditTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}',
+    );
     final isVideo = DocumentUtils.isVideo(document);
     print('[DocumentsScreen._handleEditTap] isVideo=$isVideo');
-    
+
     if (isVideo) {
       print('[DocumentsScreen._handleEditTap] Handling as VIDEO');
       // Handle video editing
@@ -270,9 +285,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       }
 
       if (document.link == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Video link is missing')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Video link is missing')));
         return;
       }
 
@@ -350,7 +365,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Document'),
-        content: Text('Are you sure you want to delete "${document.title}"? This action cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete "${document.title}"? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -373,7 +390,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       await _documentService.deleteDocument(document.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Document "${document.title}" deleted successfully')),
+          SnackBar(
+            content: Text('Document "${document.title}" deleted successfully'),
+          ),
         );
         _loadDocuments();
       }
@@ -381,7 +400,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete document: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+              'Failed to delete document: ${e.toString().replaceFirst('Exception: ', '')}',
+            ),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -478,12 +499,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
     if (!authProvider.isAuthenticated) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Documents'),
-        ),
-        body: const Center(
-          child: Text('Please log in to view documents'),
-        ),
+        appBar: AppBar(title: const Text('Documents')),
+        body: const Center(child: Text('Please log in to view documents')),
       );
     }
 
@@ -516,8 +533,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               Text(
                 'Unable to load user information',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
               const SizedBox(height: 8),
               const Text('Please try refreshing or log out and log back in'),
@@ -536,7 +553,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     }
 
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -548,80 +565,84 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // Documents header
-                  Text(
-                    _selectedDocumentIds.isEmpty
-                        ? 'Documents'
-                        : '${_selectedDocumentIds.length} selected',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      _selectedDocumentIds.isEmpty
+                          ? 'Documents'
+                          : '${_selectedDocumentIds.length} selected',
+                      style: theme.textTheme.headlineLarge,
                     ),
                   ),
                   // Actions
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-          if (_selectedDocumentIds.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.select_all),
-              onPressed: _selectedDocumentIds.length == _paginatedDocuments.length
-                  ? _deselectAll
-                  : _selectAll,
-              tooltip: _selectedDocumentIds.length == _paginatedDocuments.length
-                  ? 'Deselect all'
-                  : 'Select all',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: _deleteSelectedDocuments,
-              tooltip: 'Delete selected',
-            ),
-          ],
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDocuments,
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showImportBottomSheet,
-            tooltip: 'Import Document',
-          ),
-        ],
-      ),
+                      if (_selectedDocumentIds.isNotEmpty) ...[
+                        IconButton(
+                          icon: const Icon(Icons.select_all),
+                          onPressed:
+                              _selectedDocumentIds.length ==
+                                  _paginatedDocuments.length
+                              ? _deselectAll
+                              : _selectAll,
+                          tooltip:
+                              _selectedDocumentIds.length ==
+                                  _paginatedDocuments.length
+                              ? 'Deselect all'
+                              : 'Select all',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: _deleteSelectedDocuments,
+                          tooltip: 'Delete selected',
+                        ),
+                      ],
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _loadDocuments,
+                        tooltip: 'Refresh',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: _showImportBottomSheet,
+                        tooltip: 'Import Document',
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
             // Content
             Expanded(
               child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 48,
-                                color: theme.colorScheme.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.error,
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: theme.colorScheme.error,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _errorMessage!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.error,
                             ),
-                        textAlign: TextAlign.center,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadDocuments,
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadDocuments,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _allDocuments.isEmpty
+                    )
+                  : _allDocuments.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -629,21 +650,23 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           Icon(
                             Icons.description_outlined,
                             size: 64,
-                                    color: theme.colorScheme.onSurface.withOpacity(0.4),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.4,
+                            ),
                           ),
                           const SizedBox(height: 16),
                           Text(
                             'No documents yet',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                          color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                ),
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             'Import your first document to get started',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: theme.colorScheme.onSurface.withOpacity(0.5),
-                                ),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           const SizedBox(height: 24),
                           ElevatedButton.icon(
@@ -659,12 +682,20 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         Expanded(
                           child: Builder(
                             builder: (context) {
-                              print('[DocumentsScreen.build] Creating DocumentsTable with ${_paginatedDocuments.length} documents');
-                              print('[DocumentsScreen.build] onEditTap callback: ${_handleEditTap != null ? "provided" : "null"}');
-                              print('[DocumentsScreen.build] onDocumentTap callback: ${_handleDocumentTap != null ? "provided" : "null"}');
+                              print(
+                                '[DocumentsScreen.build] Creating DocumentsTable with ${_paginatedDocuments.length} documents',
+                              );
+                              print(
+                                '[DocumentsScreen.build] onEditTap callback: ${_handleEditTap != null ? "provided" : "null"}',
+                              );
+                              print(
+                                '[DocumentsScreen.build] onDocumentTap callback: ${_handleDocumentTap != null ? "provided" : "null"}',
+                              );
                               return DocumentsTable(
                                 documents: _paginatedDocuments,
-                                sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
+                                sortColumnIndex: _sortColumnIndex != null
+                                    ? _sortColumnIndex! + 1
+                                    : null, // Adjust for checkbox column
                                 sortAscending: _sortAscending,
                                 onSort: (columnIndex, ascending) {
                                   // Adjust back for checkbox column
@@ -688,12 +719,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           onPageSizeChanged: _onPageSizeChanged,
                         ),
                       ],
-                            ),
+                    ),
             ),
           ],
         ),
-                    ),
+      ),
     );
   }
 }
-

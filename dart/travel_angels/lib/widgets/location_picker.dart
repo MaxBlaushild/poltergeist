@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/location_service.dart';
 
 class LocationPicker extends StatefulWidget {
-  final Function(double latitude, double longitude, String address)? onLocationSelected;
+  final Function(double latitude, double longitude, String address)?
+  onLocationSelected;
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
@@ -25,33 +27,37 @@ class LocationPicker extends StatefulWidget {
 
 class _LocationPickerState extends State<LocationPicker> {
   final TextEditingController _searchController = TextEditingController();
-  final LocationService _locationService = LocationService(APIClient(ApiConstants.baseUrl));
+  final LocationService _locationService = LocationService(
+    APIClient(ApiConstants.baseUrl),
+  );
   GoogleMapController? _mapController;
   Timer? _debounceTimer;
-  
+
   LatLng? _selectedLocation;
   String? _selectedAddress;
   List<LocationCandidate> _searchResults = [];
   bool _isSearching = false;
   bool _showResults = false;
-  
+
   @override
   void initState() {
     super.initState();
     // Initialize with provided values if available
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
-      _selectedLocation = LatLng(widget.initialLatitude!, widget.initialLongitude!);
-      _selectedAddress = widget.initialAddress ?? '${widget.initialLatitude}, ${widget.initialLongitude}';
+      _selectedLocation = LatLng(
+        widget.initialLatitude!,
+        widget.initialLongitude!,
+      );
+      _selectedAddress =
+          widget.initialAddress ??
+          '${widget.initialLatitude}, ${widget.initialLongitude}';
       _searchController.text = widget.initialAddress ?? '';
     }
   }
 
   CameraPosition get _initialCameraPosition {
     if (_selectedLocation != null) {
-      return CameraPosition(
-        target: _selectedLocation!,
-        zoom: 15,
-      );
+      return CameraPosition(target: _selectedLocation!, zoom: 15);
     }
     return const CameraPosition(
       target: LatLng(40.7128, -74.0060), // New York City
@@ -69,7 +75,7 @@ class _LocationPickerState extends State<LocationPicker> {
 
   void _onSearchChanged(String value) {
     _debounceTimer?.cancel();
-    
+
     if (value.isEmpty) {
       setState(() {
         _searchResults = [];
@@ -103,14 +109,14 @@ class _LocationPickerState extends State<LocationPicker> {
     try {
       final results = await _locationService.searchLocations(query.trim());
       print('LocationPicker: Search returned ${results.length} results');
-      
+
       setState(() {
         _searchResults = results;
         _isSearching = false;
         // Keep showResults true if we have results, false if empty
         _showResults = results.isNotEmpty;
       });
-      
+
       if (results.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -195,7 +201,8 @@ class _LocationPickerState extends State<LocationPicker> {
     // Update marker position when camera moves (user drags map)
     setState(() {
       _selectedLocation = position.target;
-      _selectedAddress = '${position.target.latitude}, ${position.target.longitude}';
+      _selectedAddress =
+          '${position.target.latitude}, ${position.target.longitude}';
     });
   }
 
@@ -205,7 +212,8 @@ class _LocationPickerState extends State<LocationPicker> {
       widget.onLocationSelected?.call(
         _selectedLocation!.latitude,
         _selectedLocation!.longitude,
-        _selectedAddress ?? '${_selectedLocation!.latitude}, ${_selectedLocation!.longitude}',
+        _selectedAddress ??
+            '${_selectedLocation!.latitude}, ${_selectedLocation!.longitude}',
       );
     }
   }
@@ -222,7 +230,6 @@ class _LocationPickerState extends State<LocationPicker> {
           decoration: InputDecoration(
             labelText: 'Search location',
             hintText: 'Enter a location',
-            border: const OutlineInputBorder(),
             prefixIcon: const Icon(Icons.search),
             suffixIcon: _isSearching
                 ? const Padding(
@@ -233,25 +240,29 @@ class _LocationPickerState extends State<LocationPicker> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : _searchController.text.isNotEmpty && _searchResults.isEmpty && !_isSearching
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchResults = [];
-                            _showResults = false;
-                          });
-                        },
-                      )
-                    : null,
+                : _searchController.text.isNotEmpty &&
+                      _searchResults.isEmpty &&
+                      !_isSearching
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchResults = [];
+                        _showResults = false;
+                      });
+                    },
+                  )
+                : null,
           ),
           onChanged: (value) {
             print('LocationPicker: TextField onChanged: "$value"');
             _onSearchChanged(value);
           },
           onTap: () {
-            print('LocationPicker: TextField tapped, showing results: ${_searchResults.length}');
+            print(
+              'LocationPicker: TextField tapped, showing results: ${_searchResults.length}',
+            );
             if (_searchResults.isNotEmpty) {
               setState(() {
                 _showResults = true;
@@ -265,7 +276,7 @@ class _LocationPickerState extends State<LocationPicker> {
             }
           },
         ),
-        
+
         // Search results dropdown - using Stack to ensure it appears above other content
         if (_showResults && _searchResults.isNotEmpty)
           Container(
@@ -273,11 +284,11 @@ class _LocationPickerState extends State<LocationPicker> {
             margin: const EdgeInsets.only(top: 4),
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: AppTheme.outline),
               borderRadius: BorderRadius.circular(4),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: AppTheme.ink.withValues(alpha: 0.1),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -301,9 +312,9 @@ class _LocationPickerState extends State<LocationPicker> {
               },
             ),
           ),
-        
+
         const SizedBox(height: 16),
-        
+
         // Map - wrapped in a fixed-size container to prevent scroll issues
         // GoogleMap needs explicit constraints and should not be in a scrollable context
         SizedBox(
@@ -336,7 +347,8 @@ class _LocationPickerState extends State<LocationPicker> {
                           if (mounted) {
                             setState(() {
                               _selectedLocation = newPosition;
-                              _selectedAddress = '${newPosition.latitude}, ${newPosition.longitude}';
+                              _selectedAddress =
+                                  '${newPosition.latitude}, ${newPosition.longitude}';
                             });
                             widget.onLocationSelected?.call(
                               newPosition.latitude,
@@ -353,19 +365,19 @@ class _LocationPickerState extends State<LocationPicker> {
             ),
           ),
         ),
-        
+
         // Selected address display
         if (_selectedAddress != null) ...[
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: AppTheme.peach,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
               children: [
-                const Icon(Icons.location_on, color: Colors.blue),
+                const Icon(Icons.location_on, color: AppTheme.ink),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -381,4 +393,3 @@ class _LocationPickerState extends State<LocationPicker> {
     );
   }
 }
-

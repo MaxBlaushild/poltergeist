@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document.dart';
@@ -61,9 +62,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         if (e is DioException) {
           if (e.response != null && e.response?.data != null) {
             final errorData = e.response?.data as Map<String, dynamic>?;
-            _errorMessage = errorData?['error']?.toString() ?? 'Failed to load documents';
+            _errorMessage =
+                errorData?['error']?.toString() ?? 'Failed to load documents';
           } else {
-            _errorMessage = 'Failed to load documents: ${e.message ?? e.toString()}';
+            _errorMessage =
+                'Failed to load documents: ${e.message ?? e.toString()}';
           }
         } else {
           _errorMessage = 'Failed to load documents: ${e.toString()}';
@@ -95,54 +98,52 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         child: RefreshIndicator(
           onRefresh: _loadFriendsDocuments,
           child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 48,
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _errorMessage!,
+                        style: theme.textTheme.bodyLarge?.copyWith(
                           color: theme.colorScheme.error,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _errorMessage!,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: theme.colorScheme.error,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _loadFriendsDocuments,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView(
-                        padding: const EdgeInsets.all(16.0),
-                          children: [
-                          // Discover header
-                            Text(
-                            'Discover',
-                            style: theme.textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          const SizedBox(height: 24),
-                          // Trending destinations widget at the top
-                          const TrendingDestinationsWidget(),
-                          const SizedBox(height: 16),
-                          // From Your Network widget
-                          FromYourNetworkWidget(
-                            documents: _documents,
-                            buildDocumentCard: _buildDocumentCard,
-                          ),
-                        ],
+                        textAlign: TextAlign.center,
                       ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadFriendsDocuments,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 28,
+                  ),
+                  children: [
+                    // Discover header
+                    Text('Discover', style: theme.textTheme.headlineLarge),
+                    const SizedBox(height: 24),
+                    // Trending destinations widget at the top
+                    const TrendingDestinationsWidget(),
+                    const SizedBox(height: 16),
+                    // From Your Network widget
+                    FromYourNetworkWidget(
+                      documents: _documents,
+                      buildDocumentCard: _buildDocumentCard,
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -154,10 +155,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     ThemeData theme,
   ) {
     // Extract username from user object if available, otherwise use userId as fallback
-    final username = document.user?.username ?? 
-                     document.user?.name ?? 
-                     document.userId ?? 
-                     'Unknown User';
+    final username =
+        document.user?.username ??
+        document.user?.name ??
+        document.userId ??
+        'Unknown User';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
@@ -167,32 +169,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Title
-            Text(
-              document.title,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(document.title, style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             // Username
             Row(
               children: [
-                Icon(
-                  Icons.person_outline,
-                  size: 16,
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
+                Icon(Icons.person_outline, size: 16, color: AppTheme.muted),
                 const SizedBox(width: 4),
                 Text(
                   username,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: AppTheme.muted,
                   ),
                 ),
               ],
             ),
             // Tags
-            if (document.documentTags != null && document.documentTags!.isNotEmpty) ...[
+            if (document.documentTags != null &&
+                document.documentTags!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8.0,
@@ -200,8 +194,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 children: document.documentTags!
                     .map(
                       (tag) => Chip(
-                        label: Text(
-                          tag.text),
+                        label: Text(tag.text),
                         padding: const EdgeInsets.symmetric(horizontal: 4.0),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         visualDensity: VisualDensity.compact,
@@ -211,7 +204,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               ),
             ],
             // Locations
-            if (document.documentLocations != null && document.documentLocations!.isNotEmpty) ...[
+            if (document.documentLocations != null &&
+                document.documentLocations!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8.0,

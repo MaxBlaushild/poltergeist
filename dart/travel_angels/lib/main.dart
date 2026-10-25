@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/travel_calendar_route.dart';
@@ -17,6 +19,14 @@ import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/widgets/home_widget.dart';
 
 void main() {
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'DM Serif Display',
+    ], await rootBundle.loadString('assets/fonts/DMSerifDisplay-OFL.txt'));
+    yield LicenseEntryWithLineBreaks([
+      'Marcellus',
+    ], await rootBundle.loadString('assets/fonts/Marcellus-OFL.txt'));
+  });
   runApp(const MyApp());
 }
 

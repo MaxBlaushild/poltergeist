@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/services/credits_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -74,18 +75,20 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
     });
 
     try {
-      final checkoutUrl = await widget.creditsService.purchaseCredits(amountInDollars);
-      
+      final checkoutUrl = await widget.creditsService.purchaseCredits(
+        amountInDollars,
+      );
+
       // Launch Stripe checkout URL
       final uri = Uri.parse(checkoutUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-        
+
         // Close dialog
         if (mounted) {
           Navigator.of(context).pop();
         }
-        
+
         // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -119,15 +122,12 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
           children: [
             const Text(
               '1 dollar = 1 credit',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+              style: TextStyle(fontSize: 14, color: AppTheme.muted),
             ),
             const SizedBox(height: 16),
             // Predefined packages
             if (!_isCustomAmount) ...[
-              Text(
-                'Select a package:',
-                style: theme.textTheme.titleSmall,
-              ),
+              Text('Select a package:', style: theme.textTheme.titleSmall),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -141,20 +141,15 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         border: Border.all(color: theme.colorScheme.outline),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: Column(
                         children: [
                           Text(
                             '${package.credits}',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: theme.textTheme.titleLarge,
                           ),
-                          Text(
-                            'credits',
-                            style: theme.textTheme.bodySmall,
-                          ),
+                          Text('credits', style: theme.textTheme.bodySmall),
                           const SizedBox(height: 4),
                           Text(
                             '\$${package.price}',
@@ -188,7 +183,6 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
                   labelText: 'Amount in dollars',
                   hintText: 'Enter amount (1-1000)',
                   prefixText: '\$',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -214,14 +208,14 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: theme.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: theme.colorScheme.error),
                 ),
                 child: Text(
                   _error!,
                   style: TextStyle(
-                    color: Colors.red.shade700,
+                    color: theme.colorScheme.onErrorContainer,
                     fontSize: 14,
                   ),
                 ),
@@ -289,4 +283,3 @@ class CreditPackage {
 
   CreditPackage({required this.credits, required this.price});
 }
-

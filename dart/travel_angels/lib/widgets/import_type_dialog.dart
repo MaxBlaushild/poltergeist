@@ -9,9 +9,7 @@ class ImportTypeDialog extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16.0),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -20,9 +18,7 @@ class ImportTypeDialog extends StatelessWidget {
           children: [
             Text(
               'How would you like to add this document?',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: theme.textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -30,7 +26,8 @@ class ImportTypeDialog extends StatelessWidget {
             _ImportTypeOption(
               icon: Icons.download,
               title: 'Import into Travel Angels',
-              description: 'Download the document content and store it in Travel Angels',
+              description:
+                  'Download the document content and store it in Travel Angels',
               onTap: () => Navigator.of(context).pop('import'),
             ),
             const SizedBox(height: 12),
@@ -38,7 +35,8 @@ class ImportTypeDialog extends StatelessWidget {
             _ImportTypeOption(
               icon: Icons.link,
               title: 'Create Reference',
-              description: 'Keep the document in Google Drive and create a link to it',
+              description:
+                  'Keep the document in Google Drive and create a link to it',
               onTap: () => Navigator.of(context).pop('reference'),
             ),
             const SizedBox(height: 16),
@@ -73,38 +71,27 @@ class _ImportTypeOption extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.all(16.0),
         decoration: BoxDecoration(
-          border: Border.all(
-            color: theme.colorScheme.outline,
-          ),
-          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.colorScheme.outline),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              color: theme.colorScheme.primary,
-              size: 32,
-            ),
+            Icon(icon, color: theme.colorScheme.primary, size: 32),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text(title, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text(
                     description,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -116,4 +103,3 @@ class _ImportTypeOption extends StatelessWidget {
     );
   }
 }
-

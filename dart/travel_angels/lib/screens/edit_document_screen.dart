@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document.dart';
@@ -7,15 +9,14 @@ import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
 import 'package:travel_angels/widgets/location_selector.dart';
+import 'package:travel_angels/widgets/guide_details_fields.dart';
+import 'package:travel_angels/utils/document_utils.dart';
 
 /// Screen for editing a document's title and content
 class EditDocumentScreen extends StatefulWidget {
   final Document document;
 
-  const EditDocumentScreen({
-    super.key,
-    required this.document,
-  });
+  const EditDocumentScreen({super.key, required this.document});
 
   @override
   State<EditDocumentScreen> createState() => _EditDocumentScreenState();
@@ -26,30 +27,82 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
     APIClient(ApiConstants.baseUrl),
   );
 
-  late TextEditingController _titleController;
+  late GuideDetailsController _details;
   late TextEditingController _contentController;
   late TextEditingController _tagInputController;
   List<DocumentTag> _tags = [];
   List<DocumentLocation> _locations = [];
   bool _isLoading = false;
   String? _errorMessage;
+  AuthProvider? _auth;
+  bool _accessLost = false;
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.document.title);
+    _details = GuideDetailsController(
+      title: widget.document.title,
+      destination: widget.document.destination,
+      personalNote: widget.document.personalNote,
+      format:
+          const [
+            'guide',
+            'itinerary',
+            'spreadsheet',
+            'video',
+          ].contains(widget.document.format)
+          ? widget.document.format
+          : DocumentUtils.isVideo(widget.document)
+          ? 'video'
+          : widget.document.provider == CloudDocumentProvider.googleSheets
+          ? 'spreadsheet'
+          : 'guide',
+    );
     _contentController = TextEditingController(
       text: widget.document.content ?? '',
     );
     _tagInputController = TextEditingController();
     // Load tags and locations from document
     _tags = List<DocumentTag>.from(widget.document.documentTags ?? []);
-    _locations = List<DocumentLocation>.from(widget.document.documentLocations ?? []);
+    _locations = List<DocumentLocation>.from(
+      widget.document.documentLocations ?? [],
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider?>();
+    if (auth != _auth) {
+      _auth?.removeListener(_authChanged);
+      _auth = auth;
+      _auth?.addListener(_authChanged);
+    }
+    if (auth != null && auth.user?.id != widget.document.userId) {
+      _accessLost = true;
+    }
+  }
+
+  void _authChanged() {
+    if (!mounted || _accessLost || _auth?.user?.id == widget.document.userId) {
+      return;
+    }
+    _details.title.clear();
+    _details.destination.clear();
+    _details.personalNote.clear();
+    _contentController.clear();
+    _tagInputController.clear();
+    setState(() {
+      _accessLost = true;
+      _tags = [];
+      _locations = [];
+    });
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
+    _auth?.removeListener(_authChanged);
+    _details.dispose();
     _contentController.dispose();
     _tagInputController.dispose();
     super.dispose();
@@ -87,6 +140,11 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
   }
 
   Future<void> _handleUpdate() async {
+    if (_accessLost) return;
+    if (_details.title.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Add a title for your guide.');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -98,7 +156,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
           .where((tag) => tag.id.isNotEmpty)
           .map((tag) => tag.id)
           .toList();
-      
+
       final newTagTexts = _tags
           .where((tag) => tag.id.isEmpty)
           .map((tag) => tag.text)
@@ -109,8 +167,13 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
       // Always send location array (empty if no locations) to replace all locations
       await _documentService.updateDocument(
         documentId: widget.document.id,
-        title: _titleController.text.trim(),
-        content: widget.document.content != null && widget.document.content!.isNotEmpty
+        title: _details.title.text.trim(),
+        format: _details.format,
+        personalNote: _details.personalNote.text.trim(),
+        destination: _details.destination.text.trim(),
+        content:
+            widget.document.content != null &&
+                widget.document.content!.isNotEmpty
             ? _contentController.text.trim()
             : null,
         existingTagIds: existingTagIds,
@@ -119,9 +182,13 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
       );
 
       if (mounted) {
-        Navigator.pop(context, true); // Return true to indicate successful update
+        Navigator.pop(
+          context,
+          true,
+        ); // Return true to indicate successful update
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -135,9 +202,20 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_accessLost) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Edit guide')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('This guide is not available to your current account.'),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Document'),
+        title: const Text('Edit guide'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -170,7 +248,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
                   children: [
@@ -191,26 +269,13 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                 ),
               ),
             ],
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Document Title',
-                hintText: 'Enter document title',
-                border: OutlineInputBorder(),
-              ),
-              enabled: !_isLoading,
-            ),
+            GuideDetailsFields(controller: _details, enabled: !_isLoading),
             const SizedBox(height: 16.0),
             // Tags section
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Tags',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
+                Text('Tags', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8.0),
                 // Display existing tags as chips
                 if (_tags.isNotEmpty)
@@ -220,9 +285,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                     children: _tags.map((tag) {
                       return Chip(
                         label: Text(tag.text),
-                        onDeleted: _isLoading
-                            ? null
-                            : () => _removeTag(tag),
+                        onDeleted: _isLoading ? null : () => _removeTag(tag),
                         deleteIcon: const Icon(Icons.close, size: 18),
                       );
                     }).toList(),
@@ -237,7 +300,6 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Add Tag',
                           hintText: 'Enter tag name',
-                          border: OutlineInputBorder(),
                         ),
                         enabled: !_isLoading,
                         onSubmitted: (value) {
@@ -270,9 +332,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
               children: [
                 Text(
                   'Locations',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8.0),
                 LocationSelector(
@@ -286,7 +346,8 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
               ],
             ),
             const SizedBox(height: 16.0),
-            if (widget.document.link != null && widget.document.link!.isNotEmpty) ...[
+            if (widget.document.link != null &&
+                widget.document.link!.isNotEmpty) ...[
               // Show link when document has a link
               Container(
                 padding: const EdgeInsets.all(16.0),
@@ -294,7 +355,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline,
                   ),
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,9 +369,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                         const SizedBox(width: 8.0),
                         Text(
                           'Document Link',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ],
                     ),
@@ -318,9 +377,9 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                     Text(
                       widget.document.link!,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            decoration: TextDecoration.underline,
-                          ),
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -333,13 +392,20 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                             : () async {
                                 final uri = Uri.parse(widget.document.link!);
                                 if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
                                 } else {
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Could not open link: ${widget.document.link}'),
-                                        backgroundColor: Theme.of(context).colorScheme.error,
+                                        content: Text(
+                                          'Could not open link: ${widget.document.link}',
+                                        ),
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
                                       ),
                                     );
                                   }
@@ -354,14 +420,14 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
               ),
               const SizedBox(height: 16.0),
             ],
-            if (widget.document.content != null && widget.document.content!.isNotEmpty) ...[
+            if (widget.document.content != null &&
+                widget.document.content!.isNotEmpty) ...[
               // Show content field when document has content
               TextField(
                 controller: _contentController,
                 decoration: const InputDecoration(
                   labelText: 'Document Content',
                   hintText: 'Enter document content',
-                  border: OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
                 maxLines: null,
@@ -397,4 +463,3 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
     );
   }
 }
-

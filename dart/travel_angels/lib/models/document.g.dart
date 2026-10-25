@@ -21,6 +21,21 @@ Document _$DocumentFromJson(Map<String, dynamic> json) => Document(
   documentLocations: (json['documentLocations'] as List<dynamic>?)
       ?.map((e) => DocumentLocation.fromJson(e as Map<String, dynamic>))
       .toList(),
+  visibility: json['visibility'] as String? ?? 'private',
+  format: json['format'] as String? ?? '',
+  personalNote: json['personalNote'] as String? ?? '',
+  destination: json['destination'] as String? ?? '',
+  isSaved: json['isSaved'] as bool? ?? false,
+  sharedWithUserIds:
+      (json['sharedWithUserIds'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  savedTripIds:
+      (json['savedTripIds'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
   user: json['user'] == null
       ? null
       : User.fromJson(json['user'] as Map<String, dynamic>),
@@ -38,6 +53,13 @@ Map<String, dynamic> _$DocumentToJson(Document instance) => <String, dynamic>{
   'documentTags': instance.documentTags,
   'documentLocations': instance.documentLocations,
   'user': instance.user,
+  'visibility': instance.visibility,
+  'format': instance.format,
+  'personalNote': instance.personalNote,
+  'destination': instance.destination,
+  'isSaved': instance.isSaved,
+  'sharedWithUserIds': instance.sharedWithUserIds,
+  'savedTripIds': instance.savedTripIds,
 };
 
 const _$CloudDocumentProviderEnumMap = {

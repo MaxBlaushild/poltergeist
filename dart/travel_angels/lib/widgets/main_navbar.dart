@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/utils/platform_utils.dart';
 
 /// Enum for navigation destinations
 enum NavDestination {
   calendar(Icons.calendar_month, 'Calendar'),
-  discover(Icons.explore, 'Discover'),
+  library(Icons.auto_stories_outlined, 'Library'),
   myCircle(Icons.people, 'My Circle'),
   profile(Icons.person, 'Profile'),
-  advice(Icons.chat_bubble_outline, 'Advice'),
-  documents(Icons.folder, 'Documents');
+  advice(Icons.chat_bubble_outline, 'Advice');
 
   const NavDestination(this.icon, this.label);
   final IconData icon;
@@ -74,60 +74,63 @@ class MainNavbarAppBar extends StatelessWidget implements PreferredSizeWidget {
     final theme = Theme.of(context);
 
     return AppBar(
-      title: const Text('Travel Angels'),
+      title: const TravelAngelsWordmark(),
+      titleSpacing: 24,
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(48.0),
         child: Container(
           height: 48.0,
           decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(
-                color: theme.colorScheme.outline.withValues(alpha: 0.2),
-                width: 1,
-              ),
+              bottom: BorderSide(color: AppTheme.outline, width: 1),
             ),
           ),
           child: Row(
             children: NavDestination.values.map((dest) {
               final isSelected = currentIndex == dest.index;
               return Expanded(
-                child: InkWell(
-                  onTap: () => onDestinationChanged(dest.index),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          dest.icon,
-                          size: 20,
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          dest.label,
-                          style: theme.textTheme.labelLarge?.copyWith(
+                child: Semantics(
+                  selected: isSelected,
+                  button: true,
+                  child: InkWell(
+                    onTap: () => onDestinationChanged(dest.index),
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
                             color: isSelected
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
+                                ? AppTheme.rust
+                                : Colors.transparent,
+                            width: 2,
                           ),
                         ),
-                      ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (MediaQuery.sizeOf(context).width >= 900) ...[
+                            Icon(
+                              dest.icon,
+                              size: 18,
+                              color: isSelected ? AppTheme.rust : AppTheme.ink,
+                            ),
+                            const SizedBox(width: 7),
+                          ],
+                          Flexible(
+                            child: Text(
+                              dest.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: isSelected
+                                    ? AppTheme.rust
+                                    : AppTheme.ink,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

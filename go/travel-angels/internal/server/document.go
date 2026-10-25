@@ -21,6 +21,9 @@ type DocumentLocationRequest struct {
 }
 
 type CreateDocumentRequest struct {
+	Format         string                    `json:"format"`
+	PersonalNote   string                    `json:"personalNote"`
+	Destination    string                    `json:"destination"`
 	Title          string                    `json:"title" binding:"required"`
 	Provider       string                    `json:"provider" binding:"required"`
 	Link           *string                   `json:"link"`
@@ -64,14 +67,24 @@ func (s *server) CreateDocument(ctx *gin.Context) {
 
 	// Create document model
 	document := &models.Document{
-		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Title:     req.Title,
-		Provider:  provider,
-		UserID:    user.ID,
-		Link:      req.Link,
-		Content:   req.Content,
+		ID:         uuid.New(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		Title:      req.Title,
+		Provider:   provider,
+		UserID:     user.ID,
+		Link:       req.Link,
+		Content:    req.Content,
+		Visibility: "private", Format: req.Format, PersonalNote: req.PersonalNote, Destination: req.Destination,
+	}
+
+	if err := document.NormalizeLibraryMetadata(); err != nil {
+		ctx.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	if err := models.ValidateDocumentSourceLink(document.Link); err != nil {
+		ctx.JSON(400, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Convert existing tag IDs from strings to UUIDs
@@ -138,7 +151,7 @@ func (s *server) CreateDocument(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, createdDocument)
+	s.respondLibraryDocument(ctx, createdDocument.ID, user.ID, http.StatusCreated)
 }
 
 func (s *server) GetDocumentsByUserID(ctx *gin.Context) {
@@ -175,57 +188,19 @@ func (s *server) GetDocumentsByUserID(ctx *gin.Context) {
 		return
 	}
 
-	// Get documents for user
-	documents, err := s.dbClient.Document().FindByUserID(ctx, userID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+	if s.library == nil {
+		ctx.JSON(500, gin.H{"error": "Library unavailable"})
 		return
 	}
-
-	ctx.JSON(http.StatusOK, documents)
+	s.library.ListScope(ctx, "yours")
 }
 
 func (s *server) GetFriendsDocuments(ctx *gin.Context) {
-	user, err := s.GetAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
+	if s.library == nil {
+		ctx.JSON(500, gin.H{"error": "Library unavailable"})
 		return
 	}
-
-	// Get user's friends (returns []User)
-	friends, err := s.dbClient.Friend().FindAllFriends(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to fetch friends: " + err.Error(),
-		})
-		return
-	}
-
-	// Extract friend user IDs
-	if len(friends) == 0 {
-		ctx.JSON(http.StatusOK, []models.Document{})
-		return
-	}
-
-	friendIDs := make([]uuid.UUID, 0, len(friends))
-	for _, friend := range friends {
-		friendIDs = append(friendIDs, friend.ID)
-	}
-
-	// Get documents for all friends
-	documents, err := s.dbClient.Document().FindByUserIDs(ctx, friendIDs)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to fetch friends' documents: " + err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, documents)
+	s.library.ListScope(ctx, "network")
 }
 
 func (s *server) ParseDocument(ctx *gin.Context) {
@@ -283,6 +258,9 @@ func (s *server) ParseDocument(ctx *gin.Context) {
 }
 
 type UpdateDocumentRequest struct {
+	Format         *string                   `json:"format"`
+	PersonalNote   *string                   `json:"personalNote"`
+	Destination    *string                   `json:"destination"`
 	Title          *string                   `json:"title"`
 	Content        *string                   `json:"content"`
 	ExistingTagIds []string                  `json:"existingTagIds"`
@@ -348,6 +326,20 @@ func (s *server) UpdateDocument(ctx *gin.Context) {
 	}
 	if req.Content != nil {
 		document.Content = req.Content
+	}
+
+	if req.Format != nil {
+		document.Format = *req.Format
+	}
+	if req.PersonalNote != nil {
+		document.PersonalNote = *req.PersonalNote
+	}
+	if req.Destination != nil {
+		document.Destination = *req.Destination
+	}
+	if err := document.NormalizeLibraryMetadata(); err != nil {
+		ctx.JSON(400, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Update the document
@@ -469,7 +461,7 @@ func (s *server) UpdateDocument(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, updatedDocument)
+	s.respondLibraryDocument(ctx, updatedDocument.ID, user.ID, http.StatusOK)
 }
 
 func (s *server) DeleteDocument(ctx *gin.Context) {
@@ -524,4 +516,12 @@ func (s *server) DeleteDocument(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+func (s *server) respondLibraryDocument(ctx *gin.Context, id, user uuid.UUID, status int) {
+	if s.library == nil {
+		ctx.JSON(500, gin.H{"error": "Library unavailable"})
+		return
+	}
+	s.library.RespondDocument(ctx, id, user, status)
 }

@@ -51,6 +51,15 @@ class Document {
   @JsonKey(name: 'user')
   final User? user;
 
+  /// Access is enforced by the server; absent legacy metadata is treated as private.
+  final String visibility;
+  final String format;
+  final String personalNote;
+  final String destination;
+  final bool isSaved;
+  final List<String> sharedWithUserIds;
+  final List<String> savedTripIds;
+
   Document({
     required this.id,
     this.createdAt,
@@ -63,6 +72,13 @@ class Document {
     this.documentTags,
     this.documentLocations,
     this.user,
+    this.visibility = 'private',
+    this.format = '',
+    this.personalNote = '',
+    this.destination = '',
+    this.isSaved = false,
+    this.sharedWithUserIds = const [],
+    this.savedTripIds = const [],
   });
 
   factory Document.fromJson(Map<String, dynamic> json) =>
@@ -104,4 +120,3 @@ class Document {
     }
   }
 }
-

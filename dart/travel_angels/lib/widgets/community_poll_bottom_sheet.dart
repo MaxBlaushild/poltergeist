@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/community_poll_service.dart';
@@ -8,14 +9,17 @@ class CommunityPollBottomSheet extends StatefulWidget {
   const CommunityPollBottomSheet({super.key});
 
   @override
-  State<CommunityPollBottomSheet> createState() => _CommunityPollBottomSheetState();
+  State<CommunityPollBottomSheet> createState() =>
+      _CommunityPollBottomSheetState();
 }
 
 class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   final _questionController = TextEditingController();
   final List<TextEditingController> _optionControllers = [];
-  final _communityPollService = CommunityPollService(APIClient(ApiConstants.baseUrl));
+  final _communityPollService = CommunityPollService(
+    APIClient(ApiConstants.baseUrl),
+  );
 
   bool _isSubmitting = false;
 
@@ -70,7 +74,7 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please provide between 3 and 10 options'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
         ),
       );
       return;
@@ -91,7 +95,7 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Community poll created successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.success,
           ),
         );
       }
@@ -103,7 +107,7 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to create poll: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.error,
           ),
         );
       }
@@ -118,9 +122,7 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16.0),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
       child: SafeArea(
         child: Form(
@@ -136,18 +138,13 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 16.0),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withOpacity(0.3),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               // Title
-              Text(
-                'Community Poll',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text('Community Poll', style: theme.textTheme.titleLarge),
               const SizedBox(height: 24),
               // Scrollable content
               Flexible(
@@ -160,8 +157,8 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
                         controller: _questionController,
                         decoration: const InputDecoration(
                           labelText: 'Your Question',
-                          hintText: 'e.g., Rank these Hawaiian islands: Maui, Big Island, Kauai, Oahu',
-                          border: OutlineInputBorder(),
+                          hintText:
+                              'e.g., Rank these Hawaiian islands: Maui, Big Island, Kauai, Oahu',
                         ),
                         maxLines: 3,
                         minLines: 2,
@@ -176,9 +173,7 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
                       // Options section
                       Text(
                         'Options (3-10 required)',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: theme.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 12),
                       // Options list
@@ -194,7 +189,6 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
                                   decoration: InputDecoration(
                                     labelText: 'Option ${index + 1}',
                                     hintText: 'Enter option text',
-                                    border: const OutlineInputBorder(),
                                   ),
                                   validator: (value) {
                                     if (value == null || value.trim().isEmpty) {
@@ -240,7 +234,9 @@ class _CommunityPollBottomSheetState extends State<CommunityPollBottomSheet> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppTheme.paper,
+                          ),
                         ),
                       )
                     : const Text('Create Poll'),
