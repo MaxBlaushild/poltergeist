@@ -8,6 +8,7 @@ Future<void> loadAppFonts() async {
       'assets/fonts/DMSerifDisplay-Italic.ttf',
     ],
     'Marcellus': ['assets/fonts/Marcellus-Regular.ttf'],
+    'Roboto': ['assets/fonts/Roboto-Regular.ttf'],
     'MaterialIcons': ['fonts/MaterialIcons-Regular.otf'],
   }.entries) {
     final loader = FontLoader(entry.key);

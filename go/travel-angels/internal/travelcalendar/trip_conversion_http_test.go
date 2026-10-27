@@ -150,6 +150,8 @@ func TestTripMigrationPreservesLegacyAuthorityAndDoesNotInventAttendance(t *test
 			t.Fatal(err)
 		}
 	}
+	migrate("000479_travel_lodging_media.down.sql")
+	migrate("000478_travel_trip_media_storage.down.sql")
 	migrate("000475_travel_trip_pages.down.sql")
 	cal, err := f.service.primaryCalendar(f.db, f.owner)
 	if err != nil {
@@ -164,6 +166,8 @@ func TestTripMigrationPreservesLegacyAuthorityAndDoesNotInventAttendance(t *test
 		t.Fatal(err)
 	}
 	migrate("000475_travel_trip_pages.up.sql")
+	migrate("000478_travel_trip_media_storage.up.sql")
+	migrate("000479_travel_lodging_media.up.sql")
 	var stop Stop
 	if err = f.db.First(&stop, "id = ?", stopID).Error; err != nil {
 		t.Fatal(err)

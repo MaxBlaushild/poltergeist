@@ -2,12 +2,14 @@ package travelcalendar
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -24,6 +26,71 @@ const maxTripImageBytes = 8 << 20
 const maxTripImagePixels = 20_000_000
 const maxTripImageSide = 2400
 
+// TripImageStorage is implemented by the shared AWS file-storage client. The
+// bucket must block public access; clients only receive the protected API URL.
+type TripImageStorage interface {
+	PutObject(context.Context, string, string, string, []byte) error
+	ReadObject(context.Context, string, string, int64) ([]byte, error)
+	DeleteObject(context.Context, string, string) error
+}
+
+func (s *Service) ConfigureTripImageStorage(storage TripImageStorage, bucket string) {
+	s.tripImageStorage = storage
+	s.tripImageBucket = strings.TrimSpace(bucket)
+}
+
+// The caller holds the trip row lock. Keep both versions until publication
+// changes, so editing a cover never replaces the image guests currently see.
+func pruneTripMedia(tx *gorm.DB, stop *Stop) ([]TripMedia, error) {
+	keep := []uuid.UUID{}
+	if stop.Draft.Hero != nil {
+		keep = append(keep, stop.Draft.Hero.MediaID)
+	}
+	if stop.Published != nil && stop.Published.Hero != nil {
+		keep = append(keep, stop.Published.Hero.MediaID)
+	}
+	for _, content := range []*StopContent{&stop.Draft, stop.Published} {
+		if content == nil {
+			continue
+		}
+		for _, lodging := range content.Lodging {
+			for _, photo := range lodging.Photos {
+				keep = append(keep, photo.MediaID)
+			}
+		}
+	}
+	query := tx.Where("stop_id = ?", stop.ID)
+	if len(keep) > 0 {
+		query = query.Where("id NOT IN ?", keep)
+	}
+	var obsolete []TripMedia
+	if err := query.Select("id, storage_bucket, storage_key").Find(&obsolete).Error; err != nil {
+		return nil, err
+	}
+	if err := query.Delete(&TripMedia{}).Error; err != nil {
+		return nil, err
+	}
+	return obsolete, nil
+}
+
+func (s *Service) deleteTripImageObjects(media []TripMedia) {
+	if s.tripImageStorage == nil {
+		return
+	}
+	for _, item := range media {
+		if item.StorageKey == "" {
+			continue
+		}
+		// Cleanup must still run after the original request was cancelled.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := s.tripImageStorage.DeleteObject(ctx, item.StorageBucket, item.StorageKey)
+		cancel()
+		if err != nil {
+			log.Printf("trip image object cleanup failed for media %s (s3://%s/%s): %v", item.ID, item.StorageBucket, item.StorageKey, err)
+		}
+	}
+}
+
 type TripHero struct {
 	MediaID    uuid.UUID `json:"mediaId"`
 	AltText    string    `json:"altText"`
@@ -38,14 +105,17 @@ type TripHero struct {
 	URL        string    `json:"url"`
 }
 type TripMedia struct {
-	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
-	StopID      uuid.UUID `gorm:"type:uuid;index"`
-	UploadedBy  uuid.UUID `gorm:"type:uuid"`
-	ContentType string
-	Width       int
-	Height      int
-	Data        []byte
-	CreatedAt   time.Time
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	StopID        uuid.UUID  `gorm:"type:uuid;index"`
+	LodgingID     *uuid.UUID `gorm:"type:uuid"`
+	UploadedBy    uuid.UUID  `gorm:"type:uuid"`
+	ContentType   string
+	Width         int
+	Height        int
+	Data          []byte
+	StorageBucket string
+	StorageKey    string
+	CreatedAt     time.Time
 }
 
 func (TripMedia) TableName() string { return "tc_trip_media" }
@@ -72,6 +142,7 @@ func tripHeroURL(stopID, mediaID uuid.UUID) string {
 	return "/travel-angels/calendar/stops/" + stopID.String() + "/hero/" + mediaID.String()
 }
 func (s *Service) registerTripMediaRoutes(g *gin.RouterGroup) {
+	s.registerLodgingMediaRoutes(g)
 	g.POST("/calendar/stops/:id/hero", s.uploadTripHero)
 	g.GET("/calendar/stops/:id/hero/:mediaId", s.getTripHero)
 	g.PUT("/calendar/stops/:id/logistics/permissions", s.updateTripLogisticsPermissions)
@@ -141,7 +212,9 @@ func (s *Service) uploadTripHero(c *gin.Context) {
 	hero.Width = width
 	hero.Height = height
 	var stop *Stop
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	var uploaded *TripMedia
+	var obsolete []TripMedia
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
 		stop, err = s.lockedStop(tx, c.Param("id"))
 		if err != nil {
@@ -155,6 +228,22 @@ func (s *Service) uploadTripHero(c *gin.Context) {
 		}
 		hero.URL = tripHeroURL(stop.ID, hero.MediaID)
 		media := TripMedia{ID: hero.MediaID, StopID: stop.ID, UploadedBy: user.ID, ContentType: contentType, Width: width, Height: height, Data: sanitized, CreatedAt: time.Now().UTC()}
+		if s.tripImageStorage != nil && s.tripImageBucket != "" {
+			extension := ".jpg"
+			if contentType == "image/png" {
+				extension = ".png"
+			}
+			media.StorageBucket = s.tripImageBucket
+			media.StorageKey = "trip-heroes/" + stop.ID.String() + "/" + hero.MediaID.String() + extension
+			media.Data = []byte{}
+			uploaded = &media
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+			err = s.tripImageStorage.PutObject(ctx, media.StorageBucket, media.StorageKey, contentType, sanitized)
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
 		if err = tx.Create(&media).Error; err != nil {
 			return err
 		}
@@ -162,83 +251,126 @@ func (s *Service) uploadTripHero(c *gin.Context) {
 		if err = s.saveTripChange(tx, stop, user.ID, "hero_uploaded", gin.H{"mediaId": hero.MediaID}); err != nil {
 			return err
 		}
-		// Retain only the two potentially referenced versions. The trip row lock
-		// serializes edits and publishing; removed files cannot be reused by URL.
-		keep := []uuid.UUID{hero.MediaID}
-		if stop.Published != nil && stop.Published.Hero != nil {
-			keep = append(keep, stop.Published.Hero.MediaID)
-		}
-		return tx.Where("stop_id = ? AND id NOT IN ?", stop.ID, keep).Delete(&TripMedia{}).Error
+		obsolete, err = pruneTripMedia(tx, stop)
+		return err
 	})
 	if err != nil {
+		if uploaded != nil {
+			s.deleteTripImageObjects([]TripMedia{*uploaded})
+		}
 		respondError(c, err)
 		return
 	}
+	s.deleteTripImageObjects(obsolete)
 	c.JSON(200, gin.H{"stop": s.stopDTO(stop, Viewer{UserID: user.ID})})
 }
+func (s *Service) currentTripMediaViewer(tx *gorm.DB, stop *Stop, c *gin.Context, viewer Viewer) Viewer {
+	// Link capabilities must still match now, after acquiring permission locks.
+	viewer.CalendarLinkID = uuid.Nil
+	viewer.StopLinkID = uuid.Nil
+	if viewer.UserID != uuid.Nil {
+		stored := s.participationViewer(tx, stop, viewer.UserID, participationInput{})
+		viewer.CalendarLinkID = stored.CalendarLinkID
+		viewer.StopLinkID = stored.StopLinkID
+	}
+	if stop.SharingEnabled && c.Query("stopToken") != "" && c.Query("stopToken") == stop.ShareToken {
+		viewer.StopLinkID = stop.ID
+	}
+	if token := c.Query("calendarToken"); token != "" {
+		var calendar Calendar
+		if tx.Where("id = ? AND share_token = ? AND sharing_enabled = true", stop.CalendarID, token).First(&calendar).Error == nil {
+			viewer.CalendarLinkID = calendar.ID
+		}
+	}
+	return viewer
+}
+
+func (s *Service) authorizeTripHero(tx *gorm.DB, c *gin.Context, viewer Viewer, mediaID uuid.UUID) error {
+	stop, err := s.lockedStop(tx, c.Param("id"))
+	if err != nil {
+		return err
+	}
+	viewer = s.currentTripMediaViewer(tx, stop, c, viewer)
+	if !s.canViewStop(tx, stop, viewer) {
+		return errUnavailable
+	}
+	manager := s.canManageStop(tx, stop, viewer)
+	attached := stop.Published != nil && stop.Published.Hero != nil && stop.Published.Hero.MediaID == mediaID
+	if manager && stop.Draft.Hero != nil && stop.Draft.Hero.MediaID == mediaID {
+		attached = true
+	}
+	if !attached {
+		return errUnavailable
+	}
+	return nil
+}
+
 func (s *Service) getTripHero(c *gin.Context) {
 	mediaID, err := uuid.Parse(c.Param("mediaId"))
 	if err != nil {
 		respondError(c, errUnavailable)
 		return
 	}
-	// Resolve authentication before opening a transaction; both guest verification
-	// and app authentication may use their own database connections.
+	requestedWidth := 0
+	if requested := c.Query("width"); requested != "" {
+		requestedWidth, err = strconv.Atoi(requested)
+		if err != nil || requestedWidth < 64 || requestedWidth > maxTripImageSide {
+			respondError(c, bad("Choose an image width between 64 and 2400 pixels"))
+			return
+		}
+	}
+	// Authentication can use another DB connection, so resolve it before locks.
 	viewer := s.viewer(c)
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		stop, err := s.lockedStop(tx, c.Param("id"))
-		if err != nil {
+	var media TripMedia
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.authorizeTripHero(tx, c, viewer, mediaID); err != nil {
 			return err
 		}
-		// Link capabilities must still match now, after acquiring permission locks.
-		viewer.CalendarLinkID = uuid.Nil
-		viewer.StopLinkID = uuid.Nil
-		if viewer.UserID != uuid.Nil {
-			stored := s.participationViewer(tx, stop, viewer.UserID, participationInput{})
-			viewer.CalendarLinkID = stored.CalendarLinkID
-			viewer.StopLinkID = stored.StopLinkID
+		return tx.Where("id = ? AND stop_id = ? AND lodging_id IS NULL", mediaID, c.Param("id")).First(&media).Error
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	// Network reads and image processing must not hold the owning calendar's
+	// permission lock, which would block unrelated trips and RSVP changes.
+	data := media.Data
+	if media.StorageKey != "" {
+		if s.tripImageStorage == nil {
+			respondError(c, errUnavailable)
+			return
 		}
-		if stop.SharingEnabled && c.Query("stopToken") != "" && c.Query("stopToken") == stop.ShareToken {
-			viewer.StopLinkID = stop.ID
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+		data, err = s.tripImageStorage.ReadObject(ctx, media.StorageBucket, media.StorageKey, maxTripImageBytes)
+		cancel()
+		if err != nil {
+			respondError(c, err)
+			return
 		}
-		if token := c.Query("calendarToken"); token != "" {
-			var calendar Calendar
-			if tx.Where("id = ? AND share_token = ? AND sharing_enabled = true", stop.CalendarID, token).First(&calendar).Error == nil {
-				viewer.CalendarLinkID = calendar.ID
-			}
+		if len(data) == 0 || len(data) > maxTripImageBytes {
+			respondError(c, errUnavailable)
+			return
 		}
-		if !s.canViewStop(tx, stop, viewer) {
-			return errUnavailable
+	}
+	if requestedWidth > 0 && requestedWidth < media.Width {
+		original, _, e := image.Decode(bytes.NewReader(data))
+		if e != nil {
+			respondError(c, e)
+			return
 		}
-		manager := s.canManageStop(tx, stop, viewer)
-		attached := stop.Published != nil && stop.Published.Hero != nil && stop.Published.Hero.MediaID == mediaID
-		if manager && stop.Draft.Hero != nil && stop.Draft.Hero.MediaID == mediaID {
-			attached = true
+		resized := resizeTripImage(original, requestedWidth, int(math.Max(1, math.Round(float64(media.Height)*float64(requestedWidth)/float64(media.Width)))))
+		data, e = encodeTripImage(resized, media.ContentType)
+		if e != nil {
+			respondError(c, e)
+			return
 		}
-		if !attached {
-			return errUnavailable
-		}
-		var media TripMedia
-		if err = tx.Where("id = ? AND stop_id = ?", mediaID, stop.ID).First(&media).Error; err != nil {
-			return errUnavailable
-		}
-		data := media.Data
-		if requested := c.Query("width"); requested != "" {
-			width, e := strconv.Atoi(requested)
-			if e != nil || width < 64 || width > maxTripImageSide {
-				return bad("Choose an image width between 64 and 2400 pixels")
-			}
-			if width < media.Width {
-				original, _, e := image.Decode(bytes.NewReader(data))
-				if e != nil {
-					return e
-				}
-				resized := resizeTripImage(original, width, int(math.Max(1, math.Round(float64(media.Height)*float64(width)/float64(media.Width)))))
-				data, e = encodeTripImage(resized, media.ContentType)
-				if e != nil {
-					return e
-				}
-			}
+	}
+	// Access or publication may have changed during the storage read. Recheck
+	// under the same locks immediately before writing any protected bytes.
+	viewer = s.viewer(c)
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.authorizeTripHero(tx, c, viewer, mediaID); err != nil {
+			return err
 		}
 		c.Header("Cache-Control", "private, no-store, max-age=0")
 		c.Header("X-Content-Type-Options", "nosniff")

@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_trip_design.dart';
@@ -35,7 +35,9 @@ class _TripProtectedHeroState extends State<TripProtectedHero> {
   void didUpdateWidget(covariant TripProtectedHero oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.hero['mediaId'] != widget.hero['mediaId'] ||
-        oldWidget.hero['url'] != widget.hero['url']) {
+        oldWidget.hero['url'] != widget.hero['url'] ||
+        oldWidget.service != widget.service ||
+        !mapEquals(oldWidget.accessQuery, widget.accessQuery)) {
       _load();
     }
   }
@@ -281,6 +283,9 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
   bool _cropChanged = false;
   bool _remove = false;
   bool _busy = false;
+  bool _picking = false;
+  bool _loading = false;
+  int _imageGeneration = 0;
   String? _error;
 
   @override
@@ -299,6 +304,7 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
 
   @override
   void dispose() {
+    _imageGeneration++;
     _alt.dispose();
     super.dispose();
   }
@@ -323,50 +329,114 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
 
   Future<void> _load() async {
     final url = _original['url'] as String?;
-    if (url == null) return;
+    if (url == null || url.isEmpty) return;
+    final generation = ++_imageGeneration;
+    setState(() => _loading = true);
     try {
       final bytes = await widget.service.loadHero(
         url,
         query: widget.accessQuery,
       );
-      if (mounted) setState(() => _bytes = bytes);
-    } catch (_) {}
+      if (mounted && generation == _imageGeneration) {
+        setState(() => _bytes = bytes);
+      }
+    } catch (_) {
+      if (mounted && generation == _imageGeneration) {
+        setState(
+          () => _error =
+              'Could not load the current cover. You can choose a replacement.',
+        );
+      }
+    } finally {
+      if (mounted && generation == _imageGeneration) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   Future<void> _pick() async {
-    final selection = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['jpg', 'jpeg', 'png'],
-      withData: true,
-    );
-    if (selection == null || !mounted) return;
-    final file = selection.files.single;
-    if (file.bytes == null || file.size > 8 * 1024 * 1024) {
-      setState(() => _error = 'Choose a JPEG or PNG image up to 8 MB.');
-      return;
-    }
+    if (_busy || _picking) return;
     setState(() {
-      _bytes = file.bytes;
-      _filename = file.name;
-      _remove = false;
+      _picking = true;
       _error = null;
-      _zoom = 1;
-      _focalX = .5;
-      _focalY = .5;
-      _cropChanged = true;
     });
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        allowMultiple: false,
+        withData: true,
+      );
+      if (selection == null || !mounted) return;
+      final file = selection.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
+        throw const FormatException('Choose a JPEG or PNG image up to 8 MB.');
+      }
+      final jpeg =
+          bytes.length >= 3 &&
+          bytes[0] == 0xff &&
+          bytes[1] == 0xd8 &&
+          bytes[2] == 0xff;
+      final png =
+          bytes.length >= 8 &&
+          listEquals(bytes.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
+      if (!jpeg && !png) {
+        throw const FormatException('Choose a JPEG or PNG image.');
+      }
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      try {
+        final descriptor = await ui.ImageDescriptor.encoded(buffer);
+        try {
+          if (descriptor.width * descriptor.height > 20000000) {
+            throw const FormatException(
+              'Choose an image smaller than 20 megapixels.',
+            );
+          }
+        } finally {
+          descriptor.dispose();
+        }
+      } finally {
+        buffer.dispose();
+      }
+      if (!mounted) return;
+      // A slow download of the old cover must not replace this selection.
+      _imageGeneration++;
+      setState(() {
+        _bytes = bytes;
+        _filename = file.name;
+        _remove = false;
+        _loading = false;
+        _error = null;
+        _zoom = 1;
+        _focalX = .5;
+        _focalY = .5;
+        _cropChanged = true;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error is FormatException
+              ? error.message
+              : 'Could not open that image. Choose another JPEG or PNG.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
   }
 
   Future<void> _save() async {
+    if (_busy || _picking) return;
+    if (!_remove && _bytes == null && _original.isEmpty) {
+      setState(() => _error = 'Choose an image first.');
+      return;
+    }
     if (!_remove && _alt.text.trim().isEmpty) {
       setState(
         () => _error =
             'Describe the cover image for people using a screen reader.',
       );
-      return;
-    }
-    if (!_remove && _bytes == null && _original.isEmpty) {
-      setState(() => _error = 'Choose an image first.');
       return;
     }
     setState(() {
@@ -404,38 +474,46 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
 
   @override
   Widget build(BuildContext context) => TripFormDialog(
-    title: 'Make it feel like your trip',
+    title: 'Edit cover image',
     busy: _busy,
     error: _error,
-    onSave: _save,
+    onSave: _picking ? null : _save,
     saveLabel: 'Save cover draft',
     children: [
-      const Text(
-        'Your published cover stays in place until you publish the draft. Location metadata is removed from uploads.',
-      ),
-      const SizedBox(height: 16),
       ClipRRect(
         borderRadius: BorderRadius.circular(3),
         child: AspectRatio(
           aspectRatio: 16 / 9,
-          child: TripHeroCanvas(
-            bytes: _remove ? null : _bytes,
-            hero: _metadata,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              TripHeroCanvas(bytes: _remove ? null : _bytes, hero: _metadata),
+              if (_loading && !_remove)
+                const Center(child: CircularProgressIndicator()),
+            ],
           ),
         ),
       ),
       const SizedBox(height: 12),
       Wrap(
         spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _pick,
-            icon: const Icon(Icons.add_photo_alternate_outlined),
-            label: Text(_bytes == null ? 'Choose image' : 'Replace image'),
+          TextButton.icon(
+            onPressed: _busy || _picking ? null : _pick,
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+            label: Text(
+              _picking
+                  ? 'Opening images…'
+                  : _original.isEmpty && _bytes == null
+                  ? 'Choose image'
+                  : 'Replace image',
+            ),
           ),
           if (_original.isNotEmpty || _bytes != null)
             TextButton(
-              onPressed: _busy
+              onPressed: _busy || _picking
                   ? null
                   : () => setState(() => _remove = !_remove),
               child: Text(_remove ? 'Keep image' : 'Remove image'),
@@ -443,42 +521,80 @@ class _TravelTripHeroEditorState extends State<TravelTripHeroEditor> {
         ],
       ),
       if (!_remove) ...[
+        const SizedBox(height: 12),
         TextField(
           controller: _alt,
-          maxLength: 300,
+          enabled: !_busy && !_picking,
+          maxLength: 500,
+          textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
             labelText: 'Image description',
             hintText: 'Sunset over the rooftops of Lisbon',
+            counterText: '',
           ),
         ),
-        const Text('Crop zoom'),
-        Slider(
-          value: _zoom,
-          min: 1,
-          max: 4,
-          label: '${_zoom.toStringAsFixed(1)}×',
-          onChanged: (value) => setState(() {
-            _zoom = value;
-            _cropChanged = true;
-          }),
-        ),
-        const Text('Focal point · left to right'),
-        Slider(
-          value: _focalX,
-          onChanged: (value) => setState(() {
-            _focalX = value;
-            _cropChanged = true;
-          }),
-        ),
-        const Text('Focal point · top to bottom'),
-        Slider(
-          value: _focalY,
-          onChanged: (value) => setState(() {
-            _focalY = value;
-            _cropChanged = true;
-          }),
-        ),
+        if (_bytes != null) ...[
+          const SizedBox(height: 8),
+          ExpansionTile(
+            title: const Text('Adjust framing', style: TextStyle(fontSize: 14)),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            shape: const Border(),
+            collapsedShape: const Border(),
+            children: [
+              _framingSlider(
+                'Zoom',
+                _zoom,
+                (value) => _zoom = value,
+                max: 4,
+                min: 1,
+              ),
+              _framingSlider(
+                'Horizontal position',
+                _focalX,
+                (value) => _focalX = value,
+              ),
+              _framingSlider(
+                'Vertical position',
+                _focalY,
+                (value) => _focalY = value,
+              ),
+            ],
+          ),
+        ],
       ],
+      const SizedBox(height: 12),
+      const Text(
+        'Changes appear for guests when you publish the draft.',
+        style: TextStyle(color: tripMuted, fontSize: 12),
+      ),
+    ],
+  );
+
+  Widget _framingSlider(
+    String label,
+    double value,
+    ValueChanged<double> onChanged, {
+    double min = 0,
+    double max = 1,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(color: tripMuted, fontSize: 12)),
+      Semantics(
+        label: label,
+        child: Slider(
+          value: value,
+          min: min,
+          max: max,
+          onChanged: _busy || _picking
+              ? null
+              : (value) => setState(() {
+                  onChanged(value);
+                  _cropChanged = true;
+                }),
+        ),
+      ),
     ],
   );
 }

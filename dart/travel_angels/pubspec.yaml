@@ -89,6 +89,9 @@ flutter:
   uses-material-design: true
 
   fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
     - family: DMSerifDisplay
       fonts:
         - asset: assets/fonts/DMSerifDisplay-Regular.ttf
@@ -101,6 +104,7 @@ flutter:
   assets:
     - assets/fonts/DMSerifDisplay-OFL.txt
     - assets/fonts/Marcellus-OFL.txt
+    - assets/fonts/Roboto-LICENSE.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

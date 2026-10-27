@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -94,6 +95,7 @@ Future<GlobalKey> openEditor(
   Size size = const Size(1200, 900),
   double scale = 1,
   double keyboard = 0,
+  TargetPlatform? platform,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -102,7 +104,7 @@ Future<GlobalKey> openEditor(
     key: boundary,
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.lightTheme.copyWith(platform: platform),
       builder: (_, child) => MediaQuery(
         data: MediaQueryData(
           size: size,
@@ -247,12 +249,20 @@ void main() {
     'selects multiple locations, reorders, removes, and saves ordered ids',
     (tester) async {
       final service = DestinationService();
-      await openEditor(tester, service);
+      await openEditor(tester, service, platform: TargetPlatform.android);
       await tester.enterText(key('trip-title'), 'Across the world');
       await addLocation(tester, 'lisbon');
       await addLocation(tester, 'tokyo');
-      await tap(tester, find.byTooltip('Reorder Tokyo'));
-      await tap(tester, find.text('Move earlier'));
+      final tokyoRect = tester.getRect(key('trip-location-tokyo'));
+      final lisbonTarget = tester.getCenter(key('trip-location-lisbon'));
+      final drag = await tester.startGesture(
+        tokyoRect.centerLeft + const Offset(24, 0),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+      await drag.moveTo(lisbonTarget);
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
       await search(tester, 'Our mountain cabin');
       await tap(tester, key('trip-location-custom'));
       await tap(tester, find.byTooltip('Remove Our mountain cabin'));

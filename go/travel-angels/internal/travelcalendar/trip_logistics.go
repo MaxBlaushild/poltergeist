@@ -46,6 +46,8 @@ type TripLodging struct {
 	PrivateDetails            *TripLodgingPrivateDetails `json:"privateDetails,omitempty"`
 	HostNotes                 string                     `json:"hostNotes,omitempty"`
 	OutsideTripDatesConfirmed bool                       `json:"outsideTripDatesConfirmed"`
+	Property                  *TripLodgingProperty       `json:"property,omitempty"`
+	Photos                    []TripLodgingPhoto         `json:"photos"`
 }
 type TripFlightLeg struct {
 	Airline           string `json:"airline"`
@@ -173,6 +175,23 @@ func validateTripLogistics(c *StopContent) error {
 		l := &c.Lodging[i]
 		if err := validateEntryIdentity(&l.ID, seen); err != nil {
 			return err
+		}
+		if l.Property != nil {
+			if l.Property.Provider != "google" || !validLodgingPlaceID(l.Property.PlaceID) {
+				return bad("Choose a valid Google property or add lodging manually")
+			}
+		}
+		if len(l.Photos) > 6 {
+			return bad("Each lodging supports up to 6 uploaded photos")
+		}
+		photoIDs := map[uuid.UUID]bool{}
+		for j := range l.Photos {
+			photo := &l.Photos[j]
+			photo.AltText = strings.TrimSpace(photo.AltText)
+			if photo.MediaID == uuid.Nil || photoIDs[photo.MediaID] || photo.AltText == "" || utf8.RuneCountInString(photo.AltText) > 500 {
+				return bad("Each lodging photo needs a distinct uploaded image and a description up to 500 characters")
+			}
+			photoIDs[photo.MediaID] = true
 		}
 		l.Name = strings.TrimSpace(l.Name)
 		if l.Name == "" || utf8.RuneCountInString(l.Name) > 200 || len(l.Type) > 100 || len(l.GeneralLocation) > 500 || len(l.Description) > 10000 || len(l.HostNotes) > 10000 || len(l.RoomsOrBeds) > 2000 {
@@ -395,12 +414,24 @@ func (s *Service) validateTripContentReferences(tx *gorm.DB, stop *Stop, content
 	}
 	if content.Hero != nil {
 		var media TripMedia
-		if tx.Select("id, stop_id, width, height").Where("id = ? AND stop_id = ?", content.Hero.MediaID, stop.ID).First(&media).Error != nil {
+		if tx.Select("id, stop_id, width, height").Where("id = ? AND stop_id = ? AND lodging_id IS NULL", content.Hero.MediaID, stop.ID).First(&media).Error != nil {
 			return bad("Upload a hero image for this trip before attaching it")
 		}
 		content.Hero.Width = media.Width
 		content.Hero.Height = media.Height
 		content.Hero.URL = tripHeroURL(stop.ID, content.Hero.MediaID)
+	}
+	for i := range content.Lodging {
+		entry := &content.Lodging[i]
+		for j := range entry.Photos {
+			photo := &entry.Photos[j]
+			var media TripMedia
+			if tx.Select("id, width, height").Where("id = ? AND stop_id = ? AND lodging_id = ?", photo.MediaID, stop.ID, entry.ID).First(&media).Error != nil {
+				return bad("Upload lodging photos to this trip and lodging before attaching them")
+			}
+			photo.Width, photo.Height = media.Width, media.Height
+			photo.URL = lodgingPhotoURL(stop.ID, entry.ID, photo.MediaID)
+		}
 	}
 	// Retain existing historical assignments for hosts after a traveler leaves.
 	// They must not prevent unrelated content edits, but cannot be copied into

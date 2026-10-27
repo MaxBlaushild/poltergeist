@@ -45,6 +45,15 @@ module "ecs" {
 
       tasks_iam_role_statements = [
         {
+          sid     = "TravelAngelsTripMediaObjectAccess"
+          effect  = "Allow"
+          actions = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+          resources = [
+            "${aws_s3_bucket.travel_angels_trip_media.arn}/trip-heroes/*",
+            "${aws_s3_bucket.travel_angels_trip_media.arn}/trip-lodging/*",
+          ]
+        },
+        {
           sid       = "ReefSiteArtifactsObjectAccess"
           effect    = "Allow"
           actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
@@ -89,6 +98,10 @@ module "ecs" {
             ]
           }
           environment = [
+            {
+              name  = "TRAVEL_ANGELS_TRIP_MEDIA_BUCKET"
+              value = aws_s3_bucket.travel_angels_trip_media.id
+            },
             {
               name  = "DB_HOST"
               value = aws_db_instance.poltergeist-db.address

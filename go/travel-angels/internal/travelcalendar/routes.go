@@ -461,6 +461,7 @@ func (s *Service) updateStop(c *gin.Context) {
 		return
 	}
 	var stop *Stop
+	var obsolete []TripMedia
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var e error
 		stop, e = s.lockedStop(tx, c.Param("id"))
@@ -486,12 +487,17 @@ func (s *Service) updateStop(c *gin.Context) {
 		if e = s.saveTripChange(tx, stop, u.ID, "draft_updated", nil); e != nil {
 			return e
 		}
-		return s.recordDestinationUsage(tx, stop, u.ID)
+		if e = s.recordDestinationUsage(tx, stop, u.ID); e != nil {
+			return e
+		}
+		obsolete, e = pruneTripMedia(tx, stop)
+		return e
 	})
 	if e != nil {
 		respondError(c, e)
 		return
 	}
+	s.deleteTripImageObjects(obsolete)
 	c.JSON(200, gin.H{"stop": s.stopDTO(stop, Viewer{UserID: u.ID})})
 }
 func materialChange(before, after *StopContent) bool {
@@ -512,6 +518,7 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 		return
 	}
 	var stop *Stop
+	var obsolete []TripMedia
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var e error
 		stop, e = s.lockedStop(tx, c.Param("id"))
@@ -588,12 +595,14 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 				return e
 			}
 		}
-		return nil
+		obsolete, e = pruneTripMedia(tx, stop)
+		return e
 	})
 	if e != nil {
 		respondError(c, e)
 		return
 	}
+	s.deleteTripImageObjects(obsolete)
 	c.JSON(200, gin.H{"stop": s.stopDTO(stop, Viewer{UserID: u.ID})})
 }
 

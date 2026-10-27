@@ -521,6 +521,7 @@ func (s *Service) deleteTrip(c *gin.Context) {
 		respondError(c, bad("Explicitly confirm permanent deletion"))
 		return
 	}
+	var obsolete []TripMedia
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		stop, e := s.lockedStop(tx, c.Param("id"))
 		if e != nil {
@@ -539,12 +540,16 @@ func (s *Service) deleteTrip(c *gin.Context) {
 		if e = s.recordTripAudit(tx, stop.ID, user.ID, "trip_deleted", nil); e != nil {
 			return e
 		}
+		if e = tx.Select("id, storage_bucket, storage_key").Where("stop_id = ?", stop.ID).Find(&obsolete).Error; e != nil {
+			return e
+		}
 		return tx.Delete(stop).Error
 	})
 	if e != nil {
 		respondError(c, e)
 		return
 	}
+	s.deleteTripImageObjects(obsolete)
 	c.JSON(200, gin.H{"deleted": true})
 }
 

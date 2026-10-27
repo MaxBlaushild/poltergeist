@@ -68,6 +68,14 @@ func NewServer(
 		webURL := strings.TrimRight(os.Getenv("TRAVEL_ANGELS_WEB_URL"), "/")
 		s.calendar = travelcalendar.New(connection, s.GetAuthenticatedUser, webURL)
 		s.calendar.ConfigureDestinationSearch(googleDestinationSearch(s.googleMapsClient))
+		s.calendar.ConfigureLodgingPropertyProvider(googleLodgingPropertyProvider(s.googleMapsClient))
+		if bucket := strings.TrimSpace(os.Getenv("TRAVEL_ANGELS_TRIP_MEDIA_BUCKET")); bucket != "" {
+			if storage, ok := s.awsClient.(aws.ObjectClient); ok {
+				s.calendar.ConfigureTripImageStorage(storage, bucket)
+			} else {
+				log.Printf("trip image storage unavailable: shared AWS client lacks object support")
+			}
+		}
 		s.library = travellibrary.New(connection, s.GetAuthenticatedUser, s.calendar.LibraryTrip, s.calendar.LibraryTrips)
 		var sender email.EmailClient
 		from := os.Getenv("TRAVEL_ANGELS_EMAIL_FROM")

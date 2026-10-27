@@ -139,7 +139,53 @@ class TravelCalendarService {
     );
   }
 
-  Future<Uint8List> loadHero(String url, {Map<String, dynamic>? query}) async {
+  Future<Map<String, dynamic>> uploadLodgingPhoto(
+    String stopId,
+    String entryId,
+    Uint8List bytes,
+    String filename, {
+    required String altText,
+    required int revision,
+  }) {
+    if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
+      throw const TravelCalendarException('Choose an image up to 8 MB.');
+    }
+    return _request(
+      'POST',
+      '/calendar/stops/${Uri.encodeComponent(stopId)}/lodging/${Uri.encodeComponent(entryId)}/photos',
+      data: FormData.fromMap({
+        'image': MultipartFile.fromBytes(bytes, filename: filename),
+        'revision': revision,
+        'altText': altText,
+      }),
+    );
+  }
+
+  Future<Uint8List> loadHero(String url, {Map<String, dynamic>? query}) =>
+      _loadProtectedImage(
+        url,
+        query,
+        RegExp(
+          r'^/travel-angels/calendar/stops/[A-Za-z0-9-]+/hero/[A-Za-z0-9-]+$',
+        ),
+      );
+
+  Future<Uint8List> loadLodgingImage(
+    String url, {
+    Map<String, dynamic>? query,
+  }) => _loadProtectedImage(
+    url,
+    query,
+    RegExp(
+      r'^/travel-angels/calendar/stops/[A-Za-z0-9-]+/(lodging/[A-Za-z0-9-]+/(photos/[A-Za-z0-9-]+|property/photos/[0-9]+)|lodging-properties/[A-Za-z0-9_-]+/photos/[0-9]+)$',
+    ),
+  );
+
+  Future<Uint8List> _loadProtectedImage(
+    String url,
+    Map<String, dynamic>? query,
+    RegExp allowedPath,
+  ) async {
     final base = Uri.parse(_client.options.baseUrl);
     final candidate = Uri.tryParse(url);
     if (candidate == null ||
@@ -150,9 +196,7 @@ class TravelCalendarService {
             (candidate.scheme != base.scheme ||
                 candidate.host != base.host ||
                 candidate.port != base.port)) ||
-        !RegExp(
-          r'^/travel-angels/calendar/stops/[A-Za-z0-9-]+/hero/[A-Za-z0-9-]+$',
-        ).hasMatch(candidate.path)) {
+        !allowedPath.hasMatch(candidate.path)) {
       throw const TravelCalendarException('This trip image is unavailable.');
     }
     try {

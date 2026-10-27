@@ -2,11 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/models/travel_destination.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_trip_design.dart';
+
+class _LocationDrag {
+  const _LocationDrag(this.owner, this.identity, this.epoch);
+  final Object owner;
+  final String identity;
+  final int epoch;
+}
+
+class _MoveLocationIntent extends Intent {
+  const _MoveLocationIntent(this.offset);
+  final int offset;
+}
 
 class TripDestinationPicker extends StatefulWidget {
   const TripDestinationPicker({
@@ -32,6 +45,9 @@ class TripDestinationPicker extends StatefulWidget {
 class _TripDestinationPickerState extends State<TripDestinationPicker> {
   final _input = TextEditingController();
   final _focus = FocusNode();
+  final _dragOwner = Object();
+  int _dragEpoch = 0;
+  String? _focusedLocation;
   Timer? _debounce;
   int _request = 0;
   bool _loading = false;
@@ -71,6 +87,10 @@ class _TripDestinationPickerState extends State<TripDestinationPicker> {
   @override
   void didUpdateWidget(TripDestinationPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled ||
+        oldWidget.service != widget.service) {
+      ++_dragEpoch;
+    }
     if (oldWidget.service != widget.service) {
       _debounce?.cancel();
       ++_request;
@@ -84,6 +104,7 @@ class _TripDestinationPickerState extends State<TripDestinationPicker> {
   void _accountChanged() {
     if (_invalidated || _auth?.user?.id == _account) return;
     _invalidated = true;
+    ++_dragEpoch;
     _debounce?.cancel();
     ++_request;
     _input.clear();
@@ -205,74 +226,184 @@ class _TripDestinationPickerState extends State<TripDestinationPicker> {
     _focus.unfocus();
   }
 
-  void _move(int index, int offset) {
+  void _move(String identity, int offset) {
     if (!_enabled) return;
+    final index = widget.value.indexWhere((item) => item.identity == identity);
+    if (index < 0 ||
+        index + offset < 0 ||
+        index + offset >= widget.value.length) {
+      return;
+    }
     final updated = [...widget.value];
     final destination = updated.removeAt(index);
     updated.insert(index + offset, destination);
     widget.onChanged(updated);
   }
 
-  Widget _chip(TravelDestination destination, int index, double width) =>
-      Semantics(
-        customSemanticsActions: {
-          if (index > 0)
-            const CustomSemanticsAction(label: 'Move earlier'): () =>
-                _move(index, -1),
-          if (index < widget.value.length - 1)
-            const CustomSemanticsAction(label: 'Move later'): () =>
-                _move(index, 1),
-        },
-        child: Container(
-          key: ValueKey('trip-location-${destination.identity}'),
-          constraints: BoxConstraints(maxWidth: width),
-          decoration: BoxDecoration(
-            color: tripPeach,
-            border: Border.all(color: tripOutline),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  destination.label,
-                  style: const TextStyle(color: tripInk),
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Reorder ${destination.label}',
-                enabled: _enabled && widget.value.length > 1,
-                icon: const Icon(Icons.more_vert, size: 18),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onSelected: (value) =>
-                    _move(index, value == 'earlier' ? -1 : 1),
-                itemBuilder: (_) => [
-                  if (index > 0)
-                    const PopupMenuItem(
-                      value: 'earlier',
-                      child: Text('Move earlier'),
-                    ),
-                  if (index < widget.value.length - 1)
-                    const PopupMenuItem(
-                      value: 'later',
-                      child: Text('Move later'),
-                    ),
-                ],
-              ),
-              IconButton(
-                tooltip: 'Remove ${destination.label}',
-                onPressed: _enabled
-                    ? () => widget.onChanged([...widget.value]..removeAt(index))
-                    : null,
-                icon: const Icon(Icons.close, size: 18),
-              ),
-            ],
+  bool _acceptsDrag(_LocationDrag drag, String target) =>
+      _enabled &&
+      identical(drag.owner, _dragOwner) &&
+      drag.epoch == _dragEpoch &&
+      drag.identity != target &&
+      widget.value.any((item) => item.identity == drag.identity) &&
+      widget.value.any((item) => item.identity == target);
+
+  void _drop(_LocationDrag drag, String target) {
+    if (!_acceptsDrag(drag, target)) return;
+    final from = widget.value.indexWhere(
+      (item) => item.identity == drag.identity,
+    );
+    final to = widget.value.indexWhere((item) => item.identity == target);
+    final updated = [...widget.value];
+    updated.insert(to, updated.removeAt(from));
+    widget.onChanged(updated);
+  }
+
+  void _remove(String identity) {
+    if (!_enabled) return;
+    widget.onChanged([
+      for (final destination in widget.value)
+        if (destination.identity != identity) destination,
+    ]);
+  }
+
+  Widget _pill(
+    TravelDestination destination,
+    double width, {
+    bool highlighted = false,
+    bool feedback = false,
+  }) => Container(
+    constraints: BoxConstraints(maxWidth: width),
+    decoration: BoxDecoration(
+      color: tripPeach,
+      border: Border.all(
+        color: highlighted || _focusedLocation == destination.identity
+            ? tripRust
+            : tripOutline,
+      ),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    padding: const EdgeInsets.only(left: 12),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            destination.label,
+            style: const TextStyle(color: tripInk),
           ),
         ),
-      );
+        IconButton(
+          tooltip: 'Remove ${destination.label}',
+          onPressed: _enabled && !feedback
+              ? () => _remove(destination.identity)
+              : null,
+          icon: const Icon(Icons.close, size: 18),
+        ),
+      ],
+    ),
+  );
+
+  Widget _chip(TravelDestination destination, int index, double width) {
+    final canDrag = _enabled && widget.value.length > 1;
+    final touchPlatform = switch (Theme.of(context).platform) {
+      TargetPlatform.android || TargetPlatform.iOS => true,
+      _ => false,
+    };
+    return FocusableActionDetector(
+      key: ValueKey('trip-location-${destination.identity}'),
+      enabled: _enabled,
+      mouseCursor: canDrag ? SystemMouseCursors.grab : MouseCursor.defer,
+      onShowFocusHighlight: (focused) {
+        if (!mounted) return;
+        setState(() {
+          if (focused) {
+            _focusedLocation = destination.identity;
+          } else if (_focusedLocation == destination.identity) {
+            _focusedLocation = null;
+          }
+        });
+      },
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
+            _MoveLocationIntent(-1),
+        SingleActivator(LogicalKeyboardKey.arrowUp, alt: true):
+            _MoveLocationIntent(-1),
+        SingleActivator(LogicalKeyboardKey.arrowRight, alt: true):
+            _MoveLocationIntent(1),
+        SingleActivator(LogicalKeyboardKey.arrowDown, alt: true):
+            _MoveLocationIntent(1),
+      },
+      actions: {
+        _MoveLocationIntent: CallbackAction<_MoveLocationIntent>(
+          onInvoke: (intent) {
+            _move(destination.identity, intent.offset);
+            return null;
+          },
+        ),
+      },
+      child: Semantics(
+        hint: canDrag
+            ? touchPlatform
+                  ? 'Press and hold to reorder'
+                  : 'Drag to reorder'
+            : null,
+        customSemanticsActions: {
+          if (_enabled && index > 0)
+            const CustomSemanticsAction(label: 'Move earlier'): () =>
+                _move(destination.identity, -1),
+          if (_enabled && index < widget.value.length - 1)
+            const CustomSemanticsAction(label: 'Move later'): () =>
+                _move(destination.identity, 1),
+        },
+        child: DragTarget<_LocationDrag>(
+          onWillAcceptWithDetails: (details) =>
+              _acceptsDrag(details.data, destination.identity),
+          onAcceptWithDetails: (details) =>
+              _drop(details.data, destination.identity),
+          builder: (context, candidates, rejected) {
+            final child = _pill(
+              destination,
+              width,
+              highlighted: candidates.isNotEmpty,
+            );
+            final feedback = Material(
+              color: Colors.transparent,
+              elevation: 6,
+              borderRadius: BorderRadius.circular(4),
+              child: _pill(
+                destination,
+                width,
+                highlighted: true,
+                feedback: true,
+              ),
+            );
+            final data = _LocationDrag(
+              _dragOwner,
+              destination.identity,
+              _dragEpoch,
+            );
+            if (touchPlatform) {
+              return LongPressDraggable<_LocationDrag>(
+                data: data,
+                maxSimultaneousDrags: canDrag ? 1 : 0,
+                feedback: feedback,
+                childWhenDragging: Opacity(opacity: 0.35, child: child),
+                child: child,
+              );
+            }
+            return Draggable<_LocationDrag>(
+              data: data,
+              maxSimultaneousDrags: canDrag ? 1 : 0,
+              feedback: feedback,
+              childWhenDragging: Opacity(opacity: 0.35, child: child),
+              child: child,
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

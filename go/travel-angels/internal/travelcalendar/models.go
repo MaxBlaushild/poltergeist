@@ -160,11 +160,14 @@ func (Participation) TableName() string { return "tc_participations" }
 type Viewer struct{ UserID, RecipientID, CalendarLinkID, StopLinkID uuid.UUID }
 
 type Service struct {
-	db                *gorm.DB
-	authenticate      func(*gin.Context) (*models.User, error)
-	baseURL           string
-	guestDelivery     *GuestDeliveryConfig
-	destinationSearch DestinationSearchProvider
+	db                      *gorm.DB
+	authenticate            func(*gin.Context) (*models.User, error)
+	baseURL                 string
+	guestDelivery           *GuestDeliveryConfig
+	destinationSearch       DestinationSearchProvider
+	tripImageStorage        TripImageStorage
+	tripImageBucket         string
+	lodgingPropertyProvider LodgingPropertyProvider
 }
 
 func New(db *gorm.DB, authenticate func(*gin.Context) (*models.User, error), baseURL string) *Service {

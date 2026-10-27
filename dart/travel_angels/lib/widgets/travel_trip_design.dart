@@ -335,6 +335,7 @@ class TripFormDialog extends StatelessWidget {
     this.busy = false,
     this.error,
     this.saveLabel = 'Save changes',
+    this.onCancel,
   });
   final String title;
   final List<Widget> children;
@@ -342,6 +343,7 @@ class TripFormDialog extends StatelessWidget {
   final bool busy;
   final String? error;
   final String saveLabel;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) => PopScope(
@@ -385,7 +387,7 @@ class TripFormDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
-          onPressed: busy ? null : () => Navigator.pop(context),
+          onPressed: busy ? null : onCancel ?? () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         FilledButton(

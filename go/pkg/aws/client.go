@@ -2,6 +2,9 @@ package aws
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,6 +24,49 @@ type AWSClient interface {
 	GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURLWithContentType(bucket, key string, contentType string, expiry time.Duration) (string, error)
+}
+
+// ObjectClient extends the shared S3 client without changing the older media
+// signing interface used by existing services and test doubles.
+type ObjectClient interface {
+	PutObject(context.Context, string, string, string, []byte) error
+	ReadObject(context.Context, string, string, int64) ([]byte, error)
+	DeleteObject(context.Context, string, string) error
+}
+
+func (client *client) PutObject(ctx context.Context, bucket, key, contentType string, data []byte) error {
+	_, err := client.s3.PutObjectWithContext(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket), Key: aws.String(key), Body: bytes.NewReader(data),
+		ContentType: aws.String(contentType), CacheControl: aws.String("private, no-store"),
+	})
+	return err
+}
+
+func (client *client) ReadObject(ctx context.Context, bucket, key string, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("object read limit must be positive")
+	}
+	object, err := client.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, err
+	}
+	defer object.Body.Close()
+	if object.ContentLength != nil && *object.ContentLength > limit {
+		return nil, fmt.Errorf("object exceeds read limit")
+	}
+	data, err := io.ReadAll(io.LimitReader(object.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("object exceeds read limit")
+	}
+	return data, nil
+}
+
+func (client *client) DeleteObject(ctx context.Context, bucket, key string) error {
+	_, err := client.s3.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	return err
 }
 
 func NewAWSClient(region string) AWSClient {

@@ -229,6 +229,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
   }
 
   Future<void> _hostAction(String action) async {
+    if (_stop == null || _busy) return;
     final stop = _stop!;
     switch (action) {
       case 'hero':
@@ -734,11 +735,45 @@ class _TravelTripScreenState extends State<TravelTripScreen>
         ),
         child: AspectRatio(
           aspectRatio: split ? 1.12 : 1.55,
-          child: TripProtectedHero(
-            key: ValueKey('${shown['id']}:$_identity'),
-            hero: tripMap(shown['hero']),
-            service: widget.service,
-            accessQuery: widget.accessQuery,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              TripProtectedHero(
+                key: ValueKey('${shown['id']}:$_identity'),
+                hero: tripMap(shown['hero']),
+                service: widget.service,
+                accessQuery: widget.accessQuery,
+              ),
+              if (_manage)
+                Positioned(
+                  right: 10,
+                  bottom: 10,
+                  child: FilledButton.tonalIcon(
+                    key: const ValueKey('trip-edit-cover'),
+                    onPressed: _busy ? null : () => _hostAction('hero'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: tripCream,
+                      foregroundColor: tripInk,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      minimumSize: const Size(0, 36),
+                      textStyle: const TextStyle(
+                        fontFamily: AppTheme.bodyFont,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 17,
+                    ),
+                    label: Text(
+                      tripMap(tripDraft(_stop!)['hero']).isEmpty
+                          ? 'Add cover'
+                          : 'Edit cover',
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       );
@@ -767,7 +802,10 @@ class _TravelTripScreenState extends State<TravelTripScreen>
 
   Widget _content(bool wide) {
     final stop = _stop!;
-    final shown = _manage && _showDraft ? {...stop, ...tripDraft(stop)} : stop;
+    final draft = tripDraft(stop);
+    final shown = _manage && _showDraft
+        ? {...stop, ...draft, 'hero': draft['hero']}
+        : stop;
     final hosts = tripMaps(stop['hosts']);
     final attendees = tripMaps(stop['attendees']);
     final lodging = tripMaps(shown['lodging']);
@@ -994,7 +1032,14 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: TravelTripLodgingCard(
+                          key: ValueKey(
+                            '${stop['id']}:${lodging[i]['id']}:$_identity:$_showDraft',
+                          ),
                           entry: lodging[i],
+                          stopId: stop['id'] as String,
+                          service: widget.service,
+                          accessQuery: widget.accessQuery,
+                          draft: _manage && _showDraft,
                           actions: _manage
                               ? _entryActions(
                                   'lodging',
