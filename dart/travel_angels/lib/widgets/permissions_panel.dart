@@ -1,284 +1,314 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:travel_angels/theme/app_theme.dart';
+import 'package:provider/provider.dart';
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/google_drive_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Permissions panel widget for managing third-party integrations
+/// A connection is shown as active only after the server confirms its status.
 class PermissionsPanel extends StatefulWidget {
-  const PermissionsPanel({super.key});
+  const PermissionsPanel({
+    super.key,
+    this.service,
+    this.deepLinkStream,
+    this.launchAuthorization,
+    this.listenForDeepLinks = true,
+  });
+
+  final GoogleDriveService? service;
+  final Stream<Uri>? deepLinkStream;
+  final Future<bool> Function(Uri)? launchAuthorization;
+  final bool listenForDeepLinks;
 
   @override
   State<PermissionsPanel> createState() => _PermissionsPanelState();
 }
 
-class _PermissionsPanelState extends State<PermissionsPanel> {
-  final GoogleDriveService _googleDriveService = GoogleDriveService(
-    APIClient(ApiConstants.baseUrl),
-  );
-  final AppLinks _appLinks = AppLinks();
+class _PermissionsPanelState extends State<PermissionsPanel>
+    with WidgetsBindingObserver {
+  late final GoogleDriveService _service =
+      widget.service ?? GoogleDriveService(APIClient(ApiConstants.baseUrl));
   StreamSubscription<Uri>? _linkSubscription;
-  bool _isGoogleDriveConnected = false;
-  bool _isLoading = true;
-  bool _isToggling = false;
-  bool _expectingOAuthCallback = false;
+  AuthProvider? _auth;
+  String? _identity;
+  bool _started = false;
+  bool? _connected;
+  bool _loading = true;
+  bool _toggling = false;
+  bool _awaitingAuthorization = false;
+  String? _error;
+  int _statusGeneration = 0;
+  int _actionGeneration = 0;
+  bool get _canLoad => _auth == null || _identity?.isNotEmpty == true;
 
   @override
   void initState() {
     super.initState();
-    _loadStatus();
-    _initDeepLinkListener();
+    WidgetsBinding.instance.addObserver(this);
+    _listenForLinks();
   }
 
-  void _initDeepLinkListener() {
-    // Listen for NEW deep links (stream events only, not initial link)
-    // The initial link is handled once in main.dart when app starts
-    _linkSubscription = _appLinks.uriLinkStream.listen(
-      (Uri uri) {
-        _handleDeepLink(uri);
-      },
-      onError: (err) {
-        // Handle error silently or log it
-        debugPrint('Deep link error: $err');
-      },
-    );
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider?>();
+    if (auth != _auth) {
+      _auth?.removeListener(_authChanged);
+      _auth = auth;
+      _auth?.addListener(_authChanged);
+    }
+    if (!_started) {
+      _started = true;
+      _identity = _auth?.user?.id;
+      if (_canLoad) {
+        _loadStatus();
+      } else {
+        _loading = false;
+      }
+    } else {
+      _authChanged();
+    }
+  }
+
+  void _authChanged() {
+    if (!mounted) return;
+    final identity = _auth?.user?.id;
+    if (identity == _identity) return;
+    _identity = identity;
+    _statusGeneration++;
+    _actionGeneration++;
+    setState(() {
+      _connected = null;
+      _loading = false;
+      _toggling = false;
+      _awaitingAuthorization = false;
+      _error = null;
+    });
+    if (_canLoad) _loadStatus();
+  }
+
+  void _listenForLinks() {
+    if (!widget.listenForDeepLinks) return;
+    // Browser OAuth does not return through the native app-links plugin.
+    // Refresh and app-resume checks also work when no deep link is delivered.
+    if (widget.deepLinkStream == null && kIsWeb) return;
+    try {
+      _linkSubscription = (widget.deepLinkStream ?? AppLinks().uriLinkStream)
+          .listen(_handleDeepLink, onError: (Object _) {});
+    } catch (_) {
+      // Some host platforms have no link listener. Manual refresh stays usable.
+    }
   }
 
   void _handleDeepLink(Uri uri) {
-    if (uri.scheme == 'travelangels' && uri.host == 'oauth-callback') {
-      final success = uri.queryParameters['success'];
-      final service = uri.queryParameters['service'];
-
-      if (success == 'true' && service == 'google-drive') {
-        // Refresh status to check if connection was established
-        final wasConnected = _isGoogleDriveConnected;
-        _loadStatus();
-
-        // Only show success message if we were expecting the callback
-        // (i.e., we initiated the OAuth flow) or if status changed from disconnected to connected
-        if (_expectingOAuthCallback) {
-          _expectingOAuthCallback = false;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Google Drive connected successfully!'),
-                backgroundColor: AppTheme.success,
-              ),
-            );
-          }
-        } else if (!wasConnected) {
-          // Status changed from disconnected to connected (e.g., app opened via deep link)
-          // Refresh silently without showing message
-        }
-      }
+    if (!mounted ||
+        uri.scheme != 'travelangels' ||
+        uri.host != 'oauth-callback' ||
+        uri.queryParameters['service'] != 'google-drive') {
+      return;
+    }
+    if (uri.queryParameters['success'] == 'true') {
+      _loadStatus();
+    } else if (_awaitingAuthorization) {
+      setState(() {
+        _awaitingAuthorization = false;
+        _error =
+            'Google Drive authorization was not completed. Try connecting again.';
+      });
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) _loadStatus();
+  }
+
+  @override
   void dispose() {
+    _statusGeneration++;
+    _actionGeneration++;
+    WidgetsBinding.instance.removeObserver(this);
+    _auth?.removeListener(_authChanged);
     _linkSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadStatus() async {
+    if (!mounted || !_canLoad) return;
+    final generation = ++_statusGeneration;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      setState(() {
-        _isLoading = true;
-      });
-      final status = await _googleDriveService.getStatus();
-      setState(() {
-        _isGoogleDriveConnected = status['connected'] ?? false;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        String errorMessage = 'Failed to load permissions status';
-        if (e is DioException) {
-          if (e.response != null) {
-            errorMessage =
-                '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
-            if (e.response?.data != null && e.response?.data is Map) {
-              final errorData = e.response?.data as Map<String, dynamic>;
-              errorMessage = errorData['error']?.toString() ?? errorMessage;
-            }
-          } else {
-            errorMessage = '$errorMessage: ${e.message ?? e.toString()}';
-          }
-        } else {
-          errorMessage = '$errorMessage: $e';
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: AppTheme.error,
-          ),
-        );
+      final status = await _service.getStatus();
+      if (!mounted || generation != _statusGeneration) return;
+      final connected = status['connected'];
+      if (connected is! bool) {
+        throw const FormatException('Missing connection status');
       }
+      setState(() {
+        _connected = connected;
+        _loading = false;
+        if (connected) _awaitingAuthorization = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _statusGeneration) return;
+      setState(() {
+        _loading = false;
+        _error = 'Google Drive status could not be checked. Please try again.';
+      });
     }
   }
 
-  Future<void> _handleGoogleDriveToggle(bool value) async {
-    if (_isToggling) return;
-
+  Future<void> _toggle(bool connect) async {
+    if (!_canLoad || _toggling || _loading || _connected == null) return;
+    final action = ++_actionGeneration;
+    _statusGeneration++;
     setState(() {
-      _isToggling = true;
+      _toggling = true;
+      _error = null;
     });
-
     try {
-      if (value) {
-        // Enable: Get auth URL and open in browser
-        final authResponse = await _googleDriveService.getAuthUrl();
-        final authUrl = authResponse['authUrl'] as String?;
-
-        if (authUrl == null || authUrl.isEmpty) {
-          throw Exception('No auth URL received');
+      if (connect) {
+        final response = await _service.getAuthUrl();
+        if (!mounted || action != _actionGeneration) return;
+        final uri = Uri.tryParse(response['authUrl']?.toString() ?? '');
+        if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+          throw const FormatException('Invalid authorization URL');
         }
-
-        // Open auth URL in browser
-        final uri = Uri.parse(authUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          // Set flag to expect OAuth callback
-          setState(() {
-            _expectingOAuthCallback = true;
-          });
-          // Show message that user should complete OAuth flow
-          // The deep link listener will handle the callback and refresh status
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Please complete the Google Drive authorization in your browser. '
-                  'You will be redirected back to the app automatically.',
-                ),
-                duration: Duration(seconds: 5),
-              ),
-            );
-          }
-        } else {
-          throw Exception('Could not launch URL: $authUrl');
-        }
+        setState(() => _awaitingAuthorization = true);
+        final launched =
+            await (widget.launchAuthorization?.call(uri) ??
+                launchUrl(uri, mode: LaunchMode.externalApplication));
+        if (!mounted || action != _actionGeneration) return;
+        if (!launched) throw StateError('Authorization could not be opened');
       } else {
-        // Disable: Revoke access
-        await _googleDriveService.revoke();
+        await _service.revoke();
+        if (!mounted || action != _actionGeneration) return;
         setState(() {
-          _isGoogleDriveConnected = false;
+          _connected = null;
+          _awaitingAuthorization = false;
         });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Google Drive access revoked successfully'),
-              backgroundColor: AppTheme.success,
-            ),
-          );
-        }
+        await _loadStatus();
       }
-    } catch (e) {
-      String errorMessage =
-          'Failed to ${value ? 'connect' : 'disconnect'} Google Drive';
-      if (e is DioException) {
-        if (e.response != null) {
-          errorMessage =
-              '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
-          if (e.response?.data != null && e.response?.data is Map) {
-            final errorData = e.response?.data as Map<String, dynamic>;
-            errorMessage = errorData['error']?.toString() ?? errorMessage;
-          }
-        } else {
-          errorMessage = '$errorMessage: ${e.message ?? e.toString()}';
-        }
-      } else {
-        errorMessage = '$errorMessage: $e';
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-      // Revert toggle state on error
+    } catch (_) {
+      if (!mounted || action != _actionGeneration) return;
       setState(() {
-        _isGoogleDriveConnected = !value;
-        _expectingOAuthCallback = false; // Reset flag on error
+        _awaitingAuthorization = false;
+        _error = connect
+            ? 'Google Drive authorization could not be opened. Please try again.'
+            : 'Google Drive could not be disconnected. Please try again.';
       });
     } finally {
-      setState(() {
-        _isToggling = false;
-      });
+      if (mounted && action == _actionGeneration) {
+        setState(() => _toggling = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
+    final status = !_canLoad
+        ? 'Sign in to manage connected accounts.'
+        : _loading
+        ? 'Checking connection…'
+        : _connected == true
+        ? 'Connected'
+        : _connected == false
+        ? 'Not connected'
+        : 'Connection status unavailable';
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Permissions', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: CircularProgressIndicator(),
+            Row(
+              children: [
+                Icon(
+                  Icons.add_to_drive_outlined,
+                  color: theme.colorScheme.primary,
                 ),
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud, color: theme.colorScheme.primary),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Google Drive',
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                _isGoogleDriveConnected
-                                    ? 'Connected'
-                                    : 'Not connected',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: _isGoogleDriveConnected
-                                      ? AppTheme.success
-                                      : theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Google Drive', style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          status,
+                          key: const ValueKey('drive-connection-status'),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _isGoogleDriveConnected,
-                    onChanged: _isToggling ? null : _handleGoogleDriveToggle,
+                ),
+                const SizedBox(width: 8),
+                Semantics(
+                  label: 'Google Drive connection',
+                  child: Switch(
+                    key: const ValueKey('drive-connection-toggle'),
+                    value: _connected ?? false,
+                    onChanged: _loading || _toggling || _connected == null
+                        ? null
+                        : _toggle,
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Bring Google Docs and Sheets into your travel library.',
+            ),
+            if (_loading || _toggling) ...[
+              const SizedBox(height: 16),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+            if (_awaitingAuthorization) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Complete authorization in your browser, then return here. Refresh the connection if its status has not updated.',
               ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                key: const ValueKey('drive-connection-error'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: ValueKey(
+                  _error == null
+                      ? 'drive-connection-refresh'
+                      : 'drive-connection-retry',
+                ),
+                onPressed: !_canLoad || _loading || _toggling
+                    ? null
+                    : _loadStatus,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(_error == null ? 'Refresh connection' : 'Retry'),
+              ),
+            ),
           ],
         ),
       ),

@@ -14,8 +14,8 @@ class APIClient {
   ///
   /// [baseURL] - The base URL for the API
   /// [onAuthError] - Optional callback to be called when a 401/403 error occurs
-  APIClient(String baseURL, {VoidCallback? onAuthError})
-    : _client = Dio(BaseOptions(baseUrl: baseURL)),
+  APIClient(String baseURL, {VoidCallback? onAuthError, Dio? client})
+    : _client = client ?? Dio(BaseOptions(baseUrl: baseURL)),
       _onAuthError = onAuthError {
     _setupInterceptors();
   }
@@ -37,7 +37,9 @@ class APIClient {
         onRequest: (options, handler) async {
           // Add authentication token from storage
           final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString(_tokenKey);
+          final token =
+              options.extra['sessionToken'] as String? ??
+              prefs.getString(_tokenKey);
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
           }
@@ -52,9 +54,15 @@ class APIClient {
           if (error.response?.statusCode == 401 ||
               (_invalidateOnForbidden && error.response?.statusCode == 403)) {
             final prefs = await SharedPreferences.getInstance();
-            await prefs.remove(_tokenKey);
-            // Call the auth error callback if provided
-            _onAuthError?.call();
+            final token = prefs.getString(_tokenKey);
+            // A delayed response for a previous account must not invalidate a
+            // newer session, nor may an anonymous request log a user out.
+            if (token != null &&
+                error.requestOptions.headers['Authorization'] ==
+                    'Bearer $token') {
+              await prefs.remove(_tokenKey);
+              if (prefs.getString(_tokenKey) == null) _onAuthError?.call();
+            }
           }
           return handler.next(error);
         },
@@ -88,6 +96,24 @@ class APIClient {
       url,
       data: data,
       options: Options(responseType: ResponseType.json),
+    );
+    return response.data as T;
+  }
+
+  /// Verification must use the same identity in its body and Authorization
+  /// header, even if a newer sign-in completes before the request is sent.
+  Future<T> postForSession<T>(
+    String url, {
+    required String token,
+    dynamic data,
+  }) async {
+    final response = await _client.post<T>(
+      url,
+      data: data,
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'sessionToken': token},
+      ),
     );
     return response.data as T;
   }

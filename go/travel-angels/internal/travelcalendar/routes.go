@@ -50,6 +50,7 @@ func (s *Service) RegisterRoutes(r *gin.Engine) {
 		c.Next()
 	})
 	g.GET("/calendar", s.getCalendar)
+	g.GET("/destinations", s.searchDestinations)
 	g.PUT("/calendar", s.updateCalendar)
 	g.GET("/calendar/permissions", s.getPermissions)
 	g.PUT("/calendar/permissions", s.updatePermissions)
@@ -133,6 +134,7 @@ func (s *Service) stopDTO(stop *Stop, v Viewer) gin.H {
 		content = &stop.Draft
 	}
 	dto := gin.H{"id": stop.ID, "calendarId": stop.CalendarID, "title": content.Title, "destination": content.Destination, "startDate": content.StartDate, "endDate": content.EndDate, "datePrecision": content.DatePrecision, "timeZone": effectiveTimeZone(content.TimeZone), "description": content.Description, "status": content.Status, "joinOpen": content.JoinOpen, "published": stop.Published != nil, "canManage": manager, "canManagePermissions": s.canManagePermissions(s.db, stop, v)}
+	dto["destinations"] = contentDestinations(content)
 	isPast := content.EndDate != "" && content.EndDate < todayForStop(content, time.Now())
 	dto["isPast"] = isPast
 	dto["acceptingParticipation"] = stop.Published != nil && content.JoinOpen && content.Status != "cancelled" && !isPast
@@ -141,7 +143,9 @@ func (s *Service) stopDTO(stop *Stop, v Viewer) gin.H {
 		dto["canManageCollaborators"] = v.UserID == owning.OwnerID
 	}
 	if manager {
-		dto["draft"] = stop.Draft
+		draft := stop.Draft
+		draft.Destinations = contentDestinations(&draft)
+		dto["draft"] = draft
 		dto["visibility"] = stop.Visibility
 		dto["shareToken"] = stop.ShareToken
 		dto["sharingEnabled"] = stop.SharingEnabled
@@ -174,7 +178,11 @@ func (s *Service) visibleStops(stops []Stop, v Viewer, c *gin.Context) []gin.H {
 			continue
 		}
 		dto := s.stopDTO(st, v)
-		if destination != "" && !strings.Contains(strings.ToLower(dto["destination"].(string)), destination) {
+		content := st.Published
+		if content == nil {
+			content = &st.Draft
+		}
+		if destination != "" && !matchesDestinationQuery(content, destination) {
 			continue
 		}
 		start, end := dto["startDate"].(string), dto["endDate"].(string)
@@ -364,10 +372,6 @@ func (s *Service) createStop(c *gin.Context) {
 		respondError(c, bad("Invalid stop details"))
 		return
 	}
-	if e := b.StopContent.validate(); e != nil {
-		respondError(c, bad(e.Error()))
-		return
-	}
 	var stop Stop
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var cal *Calendar
@@ -387,10 +391,19 @@ func (s *Service) createStop(c *gin.Context) {
 			}
 		}
 		stop = Stop{ID: uuid.New(), CalendarID: cal.ID, Draft: b.StopContent, Visibility: "inherit", ShareToken: newToken(), SharingEnabled: true, HostModel: true, Revision: 1, RosterVersion: 1, RosterVisibility: "attendees", ShowAttendeeCount: true}
+		if e := s.prepareDestinations(tx, &stop.Draft, nil); e != nil {
+			return e
+		}
+		if e := stop.Draft.validate(); e != nil {
+			return bad(e.Error())
+		}
 		if e := s.validateTripContentReferences(tx, &stop, &stop.Draft); e != nil {
 			return e
 		}
 		if e := tx.Create(&stop).Error; e != nil {
+			return e
+		}
+		if e := s.recordDestinationUsage(tx, &stop, u.ID); e != nil {
 			return e
 		}
 		p := Participation{ID: uuid.New(), StopID: stop.ID, UserID: u.ID, Status: "joined", RosterConsentVersion: 1}
@@ -447,10 +460,6 @@ func (s *Service) updateStop(c *gin.Context) {
 		respondError(c, bad("Invalid stop details"))
 		return
 	}
-	if e := b.validate(); e != nil {
-		respondError(c, bad(e.Error()))
-		return
-	}
 	var stop *Stop
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		var e error
@@ -464,11 +473,20 @@ func (s *Service) updateStop(c *gin.Context) {
 		if e = s.checkTripRevision(stop, b.Revision); e != nil {
 			return e
 		}
+		if e = s.prepareDestinations(tx, &b.StopContent, &stop.Draft); e != nil {
+			return e
+		}
+		if e = b.validate(); e != nil {
+			return bad(e.Error())
+		}
 		if e = s.validateTripContentReferences(tx, stop, &b.StopContent); e != nil {
 			return e
 		}
 		stop.Draft = b.StopContent
-		return s.saveTripChange(tx, stop, u.ID, "draft_updated", nil)
+		if e = s.saveTripChange(tx, stop, u.ID, "draft_updated", nil); e != nil {
+			return e
+		}
+		return s.recordDestinationUsage(tx, stop, u.ID)
 	})
 	if e != nil {
 		respondError(c, e)
@@ -477,7 +495,7 @@ func (s *Service) updateStop(c *gin.Context) {
 	c.JSON(200, gin.H{"stop": s.stopDTO(stop, Viewer{UserID: u.ID})})
 }
 func materialChange(before, after *StopContent) bool {
-	return before != nil && (before.Destination != after.Destination || before.StartDate != after.StartDate || before.EndDate != after.EndDate || before.DatePrecision != after.DatePrecision || effectiveTimeZone(before.TimeZone) != effectiveTimeZone(after.TimeZone))
+	return before != nil && (destinationIdentities(before) != destinationIdentities(after) || before.StartDate != after.StartDate || before.EndDate != after.EndDate || before.DatePrecision != after.DatePrecision || effectiveTimeZone(before.TimeZone) != effectiveTimeZone(after.TimeZone))
 }
 func (s *Service) publishStop(c *gin.Context)   { s.changePublication(c, true) }
 func (s *Service) unpublishStop(c *gin.Context) { s.changePublication(c, false) }
@@ -513,6 +531,9 @@ func (s *Service) changePublication(c *gin.Context, publish bool) {
 		event := ""
 		cancelled := false
 		if publish {
+			if e = s.prepareDestinations(tx, &stop.Draft, nil); e != nil {
+				return e
+			}
 			if e = stop.Draft.validate(); e != nil {
 				return bad(e.Error())
 			}

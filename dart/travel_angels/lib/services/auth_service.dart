@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 class AuthService {
   final APIClient _apiClient;
   static const String _tokenKey = 'token';
+  int _sessionRevision = 0;
 
   AuthService(this._apiClient);
 
@@ -14,12 +15,12 @@ class AuthService {
   String _formatPhoneNumber(String phoneNumber) {
     // Remove all non-digit characters except +
     String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-    
+
     // If it doesn't start with +, add it
     if (!cleaned.startsWith('+')) {
       cleaned = '+$cleaned';
     }
-    
+
     return cleaned;
   }
 
@@ -30,10 +31,7 @@ class AuthService {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
       final response = await _apiClient.post(
         ApiConstants.verificationCodeEndpoint,
-        data: {
-          'phoneNumber': formattedPhone,
-          'appName': ApiConstants.appName,
-        },
+        data: {'phoneNumber': formattedPhone, 'appName': ApiConstants.appName},
       );
 
       return response != null;
@@ -45,14 +43,12 @@ class AuthService {
   /// Attempts to login with phone number and verification code
   /// Returns the authenticated user and token
   Future<AuthResponse> login(String phoneNumber, String code) async {
+    final session = ++_sessionRevision;
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.loginEndpoint,
-        data: {
-          'phoneNumber': formattedPhone,
-          'code': code,
-        },
+        data: {'phoneNumber': formattedPhone, 'code': code},
       );
 
       final user = User.fromJson(response['user'] as Map<String, dynamic>);
@@ -60,6 +56,9 @@ class AuthService {
 
       // Store token
       final prefs = await SharedPreferences.getInstance();
+      if (session != _sessionRevision) {
+        throw StateError('Sign-in was cancelled');
+      }
       await prefs.setString(_tokenKey, token);
 
       return AuthResponse(user: user, token: token);
@@ -96,23 +95,25 @@ class AuthService {
     String? locationAddress,
     String? bio,
   }) async {
+    final session = ++_sessionRevision;
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
       final data = <String, dynamic>{
         'phoneNumber': formattedPhone,
         'code': code,
       };
-      
+
       if (username != null && username.isNotEmpty) {
         data['username'] = username;
       }
-      
+
       if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
         data['profilePictureUrl'] = profilePictureUrl;
       }
 
       if (dateOfBirth != null) {
-        data['dateOfBirth'] = '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
+        data['dateOfBirth'] =
+            '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
       }
 
       if (gender != null && gender.isNotEmpty) {
@@ -145,6 +146,9 @@ class AuthService {
 
       // Store token
       final prefs = await SharedPreferences.getInstance();
+      if (session != _sessionRevision) {
+        throw StateError('Sign-in was cancelled');
+      }
       await prefs.setString(_tokenKey, token);
 
       return AuthResponse(user: user, token: token);
@@ -166,17 +170,18 @@ class AuthService {
   }) async {
     try {
       final data = <String, dynamic>{};
-      
+
       if (username != null && username.isNotEmpty) {
         data['username'] = username;
       }
-      
+
       if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
         data['profilePictureUrl'] = profilePictureUrl;
       }
 
       if (dateOfBirth != null) {
-        data['dateOfBirth'] = '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
+        data['dateOfBirth'] =
+            '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
       }
 
       if (gender != null && gender.isNotEmpty) {
@@ -195,7 +200,7 @@ class AuthService {
         data['locationAddress'] = locationAddress;
       }
 
-      if (bio != null && bio.isNotEmpty) {
+      if (bio != null) {
         data['bio'] = bio;
       }
 
@@ -210,44 +215,69 @@ class AuthService {
     }
   }
 
-  /// Verifies the stored token and returns the user if valid
+  /// Returns null only when no token exists or the server rejects the session.
+  /// Temporary network/server failures leave the stored token available to retry.
   Future<User?> verifyToken() async {
+    final session = _sessionRevision;
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_tokenKey);
+    if (token == null) return null;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString(_tokenKey);
-      if (token == null) {
-        return null;
-      }
-
-      // Use whoami endpoint which returns user in same format as login/register
+      Map<String, dynamic> data;
       try {
-        final user = await _apiClient.get<Map<String, dynamic>>(
+        data = await _apiClient.get<Map<String, dynamic>>(
           ApiConstants.whoamiEndpoint,
         );
-        return User.fromJson(user);
-      } catch (e) {
-        // If whoami fails, fall back to verifyToken endpoint
-        final dio = Dio(BaseOptions(baseUrl: ApiConstants.baseUrl));
-        final response = await dio.post<Map<String, dynamic>>(
+      } on DioException catch (error) {
+        // Keep compatibility with older deployments lacking whoami. A timeout,
+        // rejected session or server outage is not a reason to change endpoints.
+        if (error.response?.statusCode != 404 &&
+            error.response?.statusCode != 405) {
+          rethrow;
+        }
+        if (session != _sessionRevision ||
+            prefs.getString(_tokenKey) != token) {
+          throw StateError('Session changed during refresh');
+        }
+        data = await _apiClient.postForSession<Map<String, dynamic>>(
           ApiConstants.verifyTokenEndpoint,
-          data: {
-            'token': token,
-          },
+          token: token,
+          data: {'token': token},
         );
-
-        return User.fromJson(response.data!);
       }
-    } catch (e) {
-      // Token is invalid, clear it
-      await logout();
-      return null;
+      if (session != _sessionRevision) {
+        throw StateError('Session changed during refresh');
+      }
+      final currentToken = prefs.getString(_tokenKey);
+      if (currentToken == null) return null;
+      if (currentToken != token) {
+        throw StateError('Session changed during refresh');
+      }
+      final user = User.fromJson(data);
+      if (user.id == null || user.id!.isEmpty) {
+        throw const FormatException('Account response is missing its identity');
+      }
+      return user;
+    } catch (error) {
+      if (session != _sessionRevision) rethrow;
+      final currentToken = prefs.getString(_tokenKey);
+      if (currentToken == null) return null;
+      if (currentToken != token) rethrow;
+      if (error is DioException &&
+          (error.response?.statusCode == 401 ||
+              error.response?.statusCode == 403)) {
+        await prefs.remove(_tokenKey);
+        return null;
+      }
+      rethrow;
     }
   }
 
-  /// Logs out the user by clearing the stored token
+  /// A previous logout must not remove the token from a newer sign-in.
   Future<void> logout() async {
+    final session = ++_sessionRevision;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
+    if (session == _sessionRevision) await prefs.remove(_tokenKey);
   }
 
   /// Gets the stored token
@@ -263,4 +293,3 @@ class AuthResponse {
 
   AuthResponse({required this.user, required this.token});
 }
-

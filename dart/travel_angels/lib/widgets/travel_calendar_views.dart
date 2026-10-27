@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:travel_angels/models/travel_destination.dart';
 import 'package:travel_angels/theme/app_theme.dart';
 import 'package:travel_angels/widgets/travel_calendar_layout.dart';
 
@@ -124,7 +125,7 @@ List<TravelStop> filterTravelStops(
   final query = destination.trim().toLowerCase();
   return stops.where((stop) {
     if (query.isNotEmpty &&
-        !'${stop['title'] ?? ''} ${stop['destination'] ?? ''}'
+        !'${stop['title'] ?? ''} ${travelDestinations(stop).map((place) => place.searchText).join(' ')}'
             .toLowerCase()
             .contains(query)) {
       return false;
@@ -239,7 +240,7 @@ class TravelStopCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TravelCalendarEyebrow(stop['destination'] as String? ?? ''),
+                    TravelCalendarEyebrow(travelDestinationLabel(stop)),
                     const SizedBox(height: 6),
                     Text(
                       stop['title'] as String? ?? 'Travel stop',
@@ -696,7 +697,7 @@ class TravelCalendarMonth extends StatelessWidget {
   ) {
     final trip = ribbon.trip;
     final title = (trip.stop['title'] as String?)?.trim();
-    final destination = (trip.stop['destination'] as String?)?.trim() ?? '';
+    final destination = travelDestinationLabel(trip.stop);
     final name = title?.isNotEmpty == true ? title! : 'Untitled trip';
     final description =
         '$name${destination.isEmpty ? '' : ', $destination'}, '

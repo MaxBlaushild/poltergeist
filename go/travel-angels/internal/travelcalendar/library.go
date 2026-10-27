@@ -22,7 +22,7 @@ func (s *Service) LibraryTrip(tx *gorm.DB, userID, tripID uuid.UUID) (map[string
 	if stop.Published != nil {
 		content = stop.Published
 	}
-	return map[string]interface{}{"id": stop.ID.String(), "title": content.Title, "destination": content.Destination, "startDate": content.StartDate, "endDate": content.EndDate}, nil
+	return map[string]interface{}{"id": stop.ID.String(), "title": content.Title, "destination": content.Destination, "destinations": contentDestinations(content), "startDate": content.StartDate, "endDate": content.EndDate}, nil
 }
 
 // The picker mirrors personal calendar references, not every discoverable plan.

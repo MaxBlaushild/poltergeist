@@ -10,6 +10,11 @@ class AuthProvider extends ChangeNotifier {
   bool _isWaitingForVerificationCode = false;
   bool _isRegister = false;
   String? _error;
+  int _sessionRevision = 0;
+  int _verificationRevision = 0;
+  int _codeRevision = 0;
+  bool _loggingOut = false;
+  bool _disposed = false;
 
   AuthProvider(this._authService) {
     _initialize();
@@ -27,36 +32,56 @@ class AuthProvider extends ChangeNotifier {
     await verifyToken();
   }
 
-  /// Verifies the stored token and loads user if valid
+  /// Refreshes account details without tearing down an authenticated screen.
+  /// A null result is an absent/invalid session; transport failures are retryable.
   Future<void> verifyToken() async {
-    _loading = true;
+    if (_loggingOut || _disposed) return;
+    final session = _sessionRevision;
+    final request = ++_verificationRevision;
+    bool isCurrent() =>
+        !_disposed &&
+        session == _sessionRevision &&
+        request == _verificationRevision;
+    _loading = _user == null;
     _error = null;
     notifyListeners();
-
     try {
       final user = await _authService.verifyToken();
+      if (!isCurrent()) return;
       _user = user;
     } catch (e) {
-      _error = 'Failed to verify token';
-      _user = null;
+      if (!isCurrent()) return;
+      if (e is DioException &&
+          (e.response?.statusCode == 401 || e.response?.statusCode == 403)) {
+        _user = null;
+      }
+      _error = 'Unable to refresh your account. Please try again.';
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (isCurrent()) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Gets a verification code for the given phone number
   Future<void> getVerificationCode(String phoneNumber) async {
+    final session = _sessionRevision;
+    final request = ++_codeRevision;
+    bool isCurrent() =>
+        !_disposed && session == _sessionRevision && request == _codeRevision;
     _error = null;
     _isWaitingForVerificationCode = false;
     notifyListeners();
 
     try {
       final userExists = await _authService.getVerificationCode(phoneNumber);
+      if (!isCurrent()) return;
       _isWaitingForVerificationCode = true;
       _isRegister = !userExists; // If user exists, it's login (not register)
       notifyListeners();
     } catch (e) {
+      if (!isCurrent()) return;
       _error = _extractErrorMessage(e);
       _isWaitingForVerificationCode = false;
       notifyListeners();
@@ -66,6 +91,11 @@ class AuthProvider extends ChangeNotifier {
 
   /// Attempts to login or register with phone number and verification code
   Future<void> logister(String phoneNumber, String code) async {
+    final session = ++_sessionRevision;
+    ++_verificationRevision;
+    ++_codeRevision;
+    _loggingOut = false;
+    _loading = false;
     _error = null;
     notifyListeners();
 
@@ -79,13 +109,15 @@ class AuthProvider extends ChangeNotifier {
         response = await _authService.login(phoneNumber, code);
       }
 
+      if (_disposed || session != _sessionRevision) return;
       _user = response.user;
       _isWaitingForVerificationCode = false;
       notifyListeners();
-      
+
       // Refresh user details from server to ensure we have all profile fields
       await verifyToken();
     } catch (e) {
+      if (_disposed || session != _sessionRevision) return;
       _error = _extractErrorMessage(e);
       notifyListeners();
       rethrow;
@@ -94,6 +126,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// Cancels the verification code flow and resets to phone input
   void cancelVerificationCode() {
+    ++_codeRevision;
     _isWaitingForVerificationCode = false;
     _isRegister = false;
     _error = null;
@@ -120,6 +153,8 @@ class AuthProvider extends ChangeNotifier {
     String? locationAddress,
     String? bio,
   }) async {
+    final session = _sessionRevision;
+    final userId = _user?.id;
     _error = null;
     notifyListeners();
 
@@ -134,23 +169,47 @@ class AuthProvider extends ChangeNotifier {
         locationAddress: locationAddress,
         bio: bio,
       );
+      if (_disposed || session != _sessionRevision || _user?.id != userId) {
+        return;
+      }
+      ++_verificationRevision;
+      _loading = false;
       _user = updatedUser;
       notifyListeners();
     } catch (e) {
+      if (_disposed || session != _sessionRevision) return;
       _error = _extractErrorMessage(e);
       notifyListeners();
       rethrow;
     }
   }
 
-  /// Logs out the user
+  /// Clears local identity immediately and invalidates pending account requests.
   Future<void> logout() async {
-    await _authService.logout();
+    final session = ++_sessionRevision;
+    ++_verificationRevision;
+    ++_codeRevision;
+    _loggingOut = true;
     _user = null;
+    _loading = false;
     _isWaitingForVerificationCode = false;
     _isRegister = false;
     _error = null;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
+    try {
+      await _authService.logout();
+    } finally {
+      if (session == _sessionRevision) _loggingOut = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    ++_sessionRevision;
+    ++_verificationRevision;
+    ++_codeRevision;
+    super.dispose();
   }
 
   /// Extracts error message from DioException response body
@@ -173,4 +232,3 @@ class AuthProvider extends ChangeNotifier {
     return error.toString();
   }
 }
-

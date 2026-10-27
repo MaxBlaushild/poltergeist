@@ -319,13 +319,50 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
     final document = _document;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Travel library'),
+        title: Text(
+          'Library',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        backgroundColor: AppTheme.paper,
         actions: [
-          IconButton(
-            tooltip: 'Refresh guide',
-            onPressed: _loading || _busy ? null : () => _load(),
-            icon: const Icon(Icons.refresh),
-          ),
+          if (!_loading && document != null) ...[
+            IconButton(
+              key: const ValueKey('library-reader-save'),
+              tooltip: document.isSaved
+                  ? 'Remove from saved guides'
+                  : 'Save guide',
+              isSelected: document.isSaved,
+              onPressed: _busy ? null : _save,
+              iconSize: 20,
+              icon: const Icon(Icons.bookmark_border),
+              selectedIcon: const Icon(Icons.bookmark, color: AppTheme.rust),
+            ),
+            IconButton(
+              key: const ValueKey('library-reader-trip'),
+              tooltip: 'Save to a trip',
+              onPressed: _busy ? null : _trips,
+              iconSize: 20,
+              icon: const Icon(Icons.calendar_today_outlined),
+            ),
+            if (librarySafeUri(document.link) case final source?)
+              IconButton(
+                key: const ValueKey('library-reader-source'),
+                tooltip: 'Open source',
+                onPressed: () => openLibrarySource(context, source.toString()),
+                iconSize: 20,
+                icon: const Icon(Icons.open_in_new),
+              ),
+            _options(),
+          ] else
+            IconButton(
+              tooltip: 'Refresh guide',
+              onPressed: _loading || _busy ? null : () => _load(),
+              iconSize: 20,
+              icon: const Icon(Icons.refresh),
+            ),
+          const SizedBox(width: 4),
         ],
       ),
       body: _loading
@@ -359,117 +396,65 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
                     constraints: const BoxConstraints(maxWidth: 1200),
                     child: Padding(
                       padding: EdgeInsets.all(
-                        MediaQuery.sizeOf(context).width < 600 ? 16 : 28,
+                        MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
                       ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final wide =
-                              constraints.maxWidth >= 850 &&
-                              MediaQuery.textScalerOf(context).scale(14) <= 21;
-                          final destination = libraryDestination(document);
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (libraryDestination(document).isNotEmpty) ...[
+                            Text(
+                              libraryDestination(document),
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(color: AppTheme.rust),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          Text(
+                            document.title,
+                            style: Theme.of(context).textTheme.headlineLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
                             children: [
-                              if (destination.isNotEmpty)
-                                Text(
-                                  destination,
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(
-                                        color: AppTheme.rust,
-                                        letterSpacing: 1,
-                                      ),
-                                ),
-                              const SizedBox(height: 8),
                               Text(
-                                document.title,
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineLarge,
+                                libraryAuthor(document),
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 18,
-                                runSpacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(
-                                    libraryFormatLabel(libraryFormat(document)),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                  if (document.updatedAt != null)
-                                    Text(
-                                      'Updated ${DateFormat.yMMMd().format(document.updatedAt!.toLocal())}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(color: AppTheme.muted),
-                                    ),
-                                  if (_owner) ...[
-                                    TextButton.icon(
-                                      key: const ValueKey(
-                                        'library-reader-edit',
-                                      ),
-                                      onPressed: _busy ? null : _edit,
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        size: 18,
-                                      ),
-                                      label: const Text('Edit'),
-                                    ),
-                                    TextButton.icon(
-                                      key: const ValueKey(
-                                        'library-reader-share',
-                                      ),
-                                      onPressed: _busy ? null : _share,
-                                      icon: const Icon(
-                                        Icons.people_outline,
-                                        size: 18,
-                                      ),
-                                      label: const Text('Share'),
-                                    ),
-                                    TextButton.icon(
-                                      key: const ValueKey(
-                                        'library-reader-delete',
-                                      ),
-                                      onPressed: _busy ? null : _delete,
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        size: 18,
-                                      ),
-                                      label: const Text('Delete'),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-                              if (wide)
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(flex: 7, child: _reader(document)),
-                                    const SizedBox(width: 28),
-                                    Expanded(
-                                      flex: 3,
-                                      child: _sidebar(document),
-                                    ),
-                                  ],
-                                )
-                              else
-                                Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _sidebar(document),
-                                    const SizedBox(height: 24),
-                                    _reader(document),
-                                  ],
+                              if (document.updatedAt != null)
+                                Text(
+                                  'Updated ${DateFormat.yMMMd().format(document.updatedAt!.toLocal())}',
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
-                              const SizedBox(height: 32),
                             ],
-                          );
-                        },
+                          ),
+                          const SizedBox(height: 16),
+                          _reader(document),
+                          if (document.personalNote.trim().isNotEmpty) ...[
+                            const SizedBox(height: 20),
+                            Text(
+                              _owner
+                                  ? 'Your note'
+                                  : 'A note from ${libraryAuthor(document)}',
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(color: AppTheme.rust),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              document.personalNote,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                          if (_tripNames.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              'Saved to ${_tripNames.join(' · ')}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                        ],
                       ),
                     ),
                   ),
@@ -498,7 +483,7 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
         children: [
           Container(
             color: libraryFormatColor(format),
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Wrap(
               spacing: 16,
               runSpacing: 8,
@@ -520,7 +505,9 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
+            ),
             child: SelectionArea(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -563,134 +550,49 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
               ),
             ),
           ),
-          Container(
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppTheme.outline)),
-            ),
-            padding: const EdgeInsets.all(14),
-            child: Text(
-              linked
-                  ? 'This guide links to the original file. Its owner controls access there.'
-                  : imported
-                  ? 'Imported copy. Changes to the original file do not sync automatically. Its access permissions are kept separately.'
-                  : 'A guide saved in Travel Angels.',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _sidebar(Document document) {
-    final author = libraryAuthor(document);
-    final source = librarySafeUri(document.link);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+  Widget _options() => PopupMenuButton<String>(
+    key: const ValueKey('library-reader-more'),
+    tooltip: 'Guide options',
+    enabled: !_busy,
+    iconSize: 20,
+    onSelected: (action) async {
+      switch (action) {
+        case 'edit':
+          await _edit();
+        case 'share':
+          await _share();
+        case 'delete':
+          await _delete();
+        case 'refresh':
+          await _load();
+      }
+    },
+    itemBuilder: (_) => [
+      if (_owner) ...[
+        _menuItem('edit', 'Edit', Icons.edit_outlined),
+        _menuItem('share', 'Share', Icons.people_outline),
+        _menuItem('delete', 'Delete', Icons.delete_outline),
+        const PopupMenuDivider(),
+      ],
+      _menuItem('refresh', 'Refresh guide', Icons.refresh),
+    ],
+  );
+
+  PopupMenuItem<String> _menuItem(String action, String label, IconData icon) =>
+      PopupMenuItem(
+        key: ValueKey('library-reader-$action'),
+        value: action,
+        child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: AppTheme.peach,
-              foregroundColor: AppTheme.ink,
-              child: Text(author.characters.first.toUpperCase()),
-            ),
+            Icon(icon, size: 18),
             const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '$author${_owner ? ' · owner' : ''}',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
+            Expanded(child: Text(label)),
           ],
         ),
-        if (document.personalNote.trim().isNotEmpty) ...[
-          const SizedBox(height: 22),
-          Text(
-            _owner ? 'Your note' : 'A note from $author',
-            style: Theme.of(
-              context,
-            ).textTheme.labelLarge?.copyWith(color: AppTheme.rust),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            document.personalNote,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.7),
-          ),
-        ],
-        const SizedBox(height: 22),
-        FilledButton.icon(
-          key: const ValueKey('library-reader-save'),
-          onPressed: _busy ? null : _save,
-          icon: Icon(document.isSaved ? Icons.bookmark : Icons.bookmark_border),
-          label: Text(document.isSaved ? 'Saved' : 'Save guide'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          key: const ValueKey('library-reader-trip'),
-          onPressed: _busy ? null : _trips,
-          icon: const Icon(Icons.calendar_today_outlined),
-          label: const Text('Save to a trip'),
-        ),
-        if (source != null) ...[
-          const SizedBox(height: 10),
-          TextButton.icon(
-            key: const ValueKey('library-reader-source'),
-            onPressed: () => openLibrarySource(context, source.toString()),
-            icon: const Icon(Icons.open_in_new, size: 18),
-            label: const Text('Open source'),
-          ),
-        ],
-        const SizedBox(height: 22),
-        Container(
-          padding: const EdgeInsets.only(top: 18),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: AppTheme.outline)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    _owner && document.visibility == 'private'
-                        ? Icons.lock_outline
-                        : Icons.people_outline,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _owner
-                          ? libraryAudience(document.visibility)
-                          : 'Shared with you',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _owner
-                    ? 'You choose who can read this guide.'
-                    : 'Saving keeps the author and original sharing permissions. Access can change if its owner stops sharing.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  height: 1.6,
-                  color: AppTheme.muted,
-                ),
-              ),
-              if (_tripNames.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 14),
-                  child: Text(
-                    'Your trip references: ${_tripNames.join(' · ')}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+      );
 }

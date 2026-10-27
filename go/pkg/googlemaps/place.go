@@ -1,15 +1,17 @@
 package googlemaps
 
 type Place struct {
-	Name                     string        `json:"name,omitempty"`
-	ID                       string        `json:"id,omitempty"`
-	DisplayName              LocalizedText `json:"displayName,omitempty"`
-	Types                    []string      `json:"types,omitempty"`
-	PrimaryType              string        `json:"primaryType,omitempty"`
-	PrimaryTypeDisplayName   LocalizedText `json:"primaryTypeDisplayName,omitempty"`
-	NationalPhoneNumber      string        `json:"nationalPhoneNumber,omitempty"`
-	InternationalPhoneNumber string        `json:"internationalPhoneNumber,omitempty"`
-	FormattedAddress         string        `json:"formattedAddress,omitempty"`
+	Name                     string             `json:"name,omitempty"`
+	ID                       string             `json:"id,omitempty"`
+	DisplayName              LocalizedText      `json:"displayName,omitempty"`
+	Types                    []string           `json:"types,omitempty"`
+	PrimaryType              string             `json:"primaryType,omitempty"`
+	PrimaryTypeDisplayName   LocalizedText      `json:"primaryTypeDisplayName,omitempty"`
+	NationalPhoneNumber      string             `json:"nationalPhoneNumber,omitempty"`
+	InternationalPhoneNumber string             `json:"internationalPhoneNumber,omitempty"`
+	FormattedAddress         string             `json:"formattedAddress,omitempty"`
+	AddressComponents        []AddressComponent `json:"addressComponents,omitempty"`
+	TimeZone                 *PlaceTimeZone     `json:"timeZone,omitempty"`
 	Location                 struct {
 		Latitude  float64 `json:"latitude,omitempty"`
 		Longitude float64 `json:"longitude,omitempty"`
@@ -44,6 +46,18 @@ type Place struct {
 	GoodForGroups         *bool         `json:"goodForGroups,omitempty"`
 	GoodForWatchingSports *bool         `json:"goodForWatchingSports,omitempty"`
 	PlaceId               string        `json:"placeId,omitempty"`
+}
+
+// Structured fields from the Places API. Country codes come from the country
+// component, never from guessing at a formatted address or a place's name.
+type AddressComponent struct {
+	LongText  string   `json:"longText"`
+	ShortText string   `json:"shortText"`
+	Types     []string `json:"types"`
+}
+
+type PlaceTimeZone struct {
+	ID string `json:"id"`
 }
 
 type Photo struct {

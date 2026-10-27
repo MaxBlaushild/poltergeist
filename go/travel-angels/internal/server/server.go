@@ -67,6 +67,7 @@ func NewServer(
 	if err == nil {
 		webURL := strings.TrimRight(os.Getenv("TRAVEL_ANGELS_WEB_URL"), "/")
 		s.calendar = travelcalendar.New(connection, s.GetAuthenticatedUser, webURL)
+		s.calendar.ConfigureDestinationSearch(googleDestinationSearch(s.googleMapsClient))
 		s.library = travellibrary.New(connection, s.GetAuthenticatedUser, s.calendar.LibraryTrip, s.calendar.LibraryTrips)
 		var sender email.EmailClient
 		from := os.Getenv("TRAVEL_ANGELS_EMAIL_FROM")

@@ -18,12 +18,15 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    TravelCalendarScreen(),
-    LibraryScreen(),
-    MyNetworkScreen(),
-    ProfileScreen(),
-    AdviceScreen(),
+  List<Widget> get _screens => [
+    const TravelCalendarScreen(),
+    const LibraryScreen(),
+    const MyNetworkScreen(),
+    ProfileScreen(
+      onOpenCalendar: () => _onDestinationChanged(0),
+      onOpenCircle: () => _onDestinationChanged(2),
+    ),
+    const AdviceScreen(),
   ];
 
   void _onDestinationChanged(int index) {

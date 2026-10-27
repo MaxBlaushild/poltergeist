@@ -597,14 +597,16 @@ void main() {
       );
       await tester.tap(find.text('Edit stop'));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is TextField &&
-              widget.decoration?.labelText == 'Destination time zone',
-        ),
-        'Pacific/Auckland',
+      await tester.ensureVisible(find.text('More options'));
+      await tester.tap(find.text('More options'));
+      await tester.pumpAndSettle();
+      final timeZoneField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Destination time zone',
       );
+      await tester.ensureVisible(timeZoneField);
+      await tester.enterText(timeZoneField, 'Pacific/Auckland');
       await tester.tap(find.text('Save draft'));
       await tester.pumpAndSettle();
       expect(
@@ -926,6 +928,45 @@ void main() {
       ['c'],
     );
   });
+
+  test(
+    'destination filters match all selected places, aliases and countries',
+    () {
+      final plans = [
+        {
+          ...stop('japan', 'Autumn adventure'),
+          'destination': 'Tokyo → Kyoto',
+          'destinations': [
+            {
+              'id': 'tokyo',
+              'name': 'Tokyo',
+              'kind': 'city',
+              'countryName': 'Japan',
+              'countryCode': 'JP',
+            },
+            {
+              'id': 'kyoto',
+              'name': 'Kyoto',
+              'kind': 'city',
+              'countryName': 'Japan',
+              'aliases': ['京都'],
+            },
+          ],
+        },
+        stop('legacy', 'Lisbon'),
+      ];
+      for (final query in ['Tokyo', 'Kyoto', 'Japan', 'JP', '京都']) {
+        expect(
+          filterTravelStops(plans, destination: query).map((s) => s['id']),
+          ['japan'],
+        );
+      }
+      expect(
+        filterTravelStops(plans, destination: 'Lisbon').map((s) => s['id']),
+        ['legacy'],
+      );
+    },
+  );
 
   testWidgets(
     'shared plans browse without an authentication provider and filter destinations',

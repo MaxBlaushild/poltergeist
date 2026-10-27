@@ -1290,6 +1290,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         ),
       ],
     );
+    if (!_shared) return controls;
     return LayoutBuilder(
       builder: (context, constraints) {
         final title = Text(
@@ -1440,7 +1441,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       appBar: AppBar(
         title: _shared
             ? const TravelAngelsWordmark()
-            : const Text('Travel calendar'),
+            : Text(_calendar['title'] as String? ?? 'Travel calendar'),
         actions: [
           if (!_shared)
             IconButton(

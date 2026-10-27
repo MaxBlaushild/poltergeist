@@ -2,12 +2,14 @@ package googlemaps
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type RankPreference string
@@ -74,18 +76,22 @@ type searchNearbyRequest struct {
 }
 
 func (c *client) FindCandidatesByQuery(query string) ([]Candidate, error) {
+	return c.FindCandidatesByQueryContext(context.Background(), query)
+}
+
+func (c *client) FindCandidatesByQueryContext(ctx context.Context, query string) ([]Candidate, error) {
 	// Create URL with query parameters
 	url := fmt.Sprintf("%s?input=%s&inputtype=textquery&fields=place_id,name,formatted_address,geometry,types,photos,opening_hours&key=%s",
 		placeSearchURL,
 		url.QueryEscape(query),
 		c.apiKey)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %w", err)
@@ -125,7 +131,11 @@ func (c *client) FindCandidatesByQuery(query string) ([]Candidate, error) {
 }
 
 func (c *client) FindPlaceByID(id string) (*Place, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", placeDetailsURL, id), nil)
+	return c.FindPlaceByIDContext(context.Background(), id)
+}
+
+func (c *client) FindPlaceByIDContext(ctx context.Context, id string) (*Place, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/%s", placeDetailsURL, url.PathEscape(id)), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
@@ -133,7 +143,7 @@ func (c *client) FindPlaceByID(id string) (*Place, error) {
 	req.Header.Set("X-Goog-Api-Key", c.apiKey)
 	req.Header.Set("X-Goog-FieldMask", "*")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %w", err)
@@ -145,6 +155,9 @@ func (c *client) FindPlaceByID(id string) (*Place, error) {
 		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google places details returned status %d", resp.StatusCode)
+	}
 	var place Place
 	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&place); err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)

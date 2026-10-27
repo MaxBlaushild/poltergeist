@@ -56,6 +56,7 @@ Future<GlobalKey> _mount(
   Widget child, {
   double width = 1200,
   double scale = 1,
+  bool pushRoute = false,
 }) async {
   final size = Size(width, width >= 600 ? 1000 : 844);
   await tester.binding.setSurfaceSize(size);
@@ -74,10 +75,18 @@ Future<GlobalKey> _mount(
           ),
           child: child!,
         ),
-        home: Scaffold(body: child),
+        home: Scaffold(body: pushRoute ? const SizedBox() : child),
       ),
     ),
   );
+  if (pushRoute) {
+    final context = tester.element(find.byType(Scaffold).first);
+    unawaited(
+      Navigator.of(
+        context,
+      ).push<void>(MaterialPageRoute(builder: (_) => child)),
+    );
+  }
   await tester.pump();
   return boundary;
 }
@@ -98,7 +107,12 @@ Future<void> _select(WidgetTester tester, String key, String label) async {
       scrollable: find.byType(Scrollable).last,
     );
   }
-  await _tap(tester, find.text(label).last);
+  final text = find.text(label).last;
+  final popupItem = find.ancestor(
+    of: text,
+    matching: find.byType(CheckedPopupMenuItem<String>),
+  );
+  await _tap(tester, popupItem.evaluate().isEmpty ? text : popupItem.last);
 }
 
 Future<void> _capture(
@@ -152,7 +166,7 @@ void main() {
       expect(find.text('Saved copy'), findsNothing);
       expect(
         find.textContaining('This guide links to the original file.'),
-        findsOneWidget,
+        findsNothing,
       );
       expect(_key('library-reader-source'), findsOneWidget);
       expect(_key('library-reader-content'), findsNothing);
@@ -168,7 +182,7 @@ void main() {
         find.textContaining(
           'Changes to the original file do not sync automatically.',
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(_key('library-reader-content'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
@@ -205,6 +219,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       expect(_key('library-reader-share'), findsOneWidget);
       await _tap(tester, _key('library-reader-share'));
       auth.change(null);
@@ -215,6 +230,7 @@ void main() {
       auth.change(User(id: 'another-person', name: 'Nora'));
       await tester.pumpAndSettle();
       expect(_key('library-reader-content'), findsOneWidget);
+      await _tap(tester, _key('library-reader-more'));
       expect(_key('library-reader-share'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       auth.dispose();
@@ -239,6 +255,7 @@ void main() {
         scale: 2,
       );
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       await _tap(tester, _key('library-reader-share'));
       await _select(tester, 'library-sharing-visibility', 'Selected friends');
       await _tap(tester, _key('library-sharing-friend-friend-1'));
@@ -275,10 +292,20 @@ void main() {
       expect(_key('library-card-lisbon'), findsOneWidget);
       expect(_key('library-card-kyoto'), findsOneWidget);
       expect(_key('library-card-mine'), findsNothing);
+      expect(_key('library-search'), findsNothing);
+      await _tap(tester, _key('library-search-toggle'));
       await tester.enterText(_key('library-search'), 'KYOTO');
       await tester.pump();
       expect(_key('library-card-lisbon'), findsNothing);
       expect(_key('library-card-kyoto'), findsOneWidget);
+      await _tap(tester, _key('library-search-toggle'));
+      expect(_key('library-search'), findsNothing);
+      expect(find.text('Search: KYOTO'), findsOneWidget);
+      expect(_key('library-card-lisbon'), findsNothing);
+      await _tap(tester, find.byTooltip('Clear search'));
+      expect(_key('library-card-lisbon'), findsOneWidget);
+      expect(_key('library-card-kyoto'), findsOneWidget);
+      await _tap(tester, _key('library-search-toggle'));
       await tester.enterText(_key('library-search'), 'Maya');
       await tester.pump();
       expect(_key('library-card-lisbon'), findsOneWidget);
@@ -426,17 +453,19 @@ void main() {
       ]);
       await _mount(tester, _reader(service));
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       for (final action in ['edit', 'share', 'delete']) {
         expect(_key('library-reader-$action'), findsNothing);
       }
       expect(_key('library-reader-save'), findsOneWidget);
       expect(_key('library-reader-trip'), findsOneWidget);
-      expect(find.text('Shared with you'), findsOneWidget);
+      expect(find.text('Shared with you'), findsNothing);
       await tester.pumpWidget(const SizedBox());
 
       service.documents['guide']!['userId'] = '';
       await _mount(tester, _reader(service, userId: ''));
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       expect(_key('library-reader-share'), findsNothing);
       await tester.pumpWidget(const SizedBox());
 
@@ -454,12 +483,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       for (final action in ['edit', 'share', 'delete']) {
         expect(_key('library-reader-$action'), findsOneWidget);
       }
       await _tap(tester, _key('library-reader-edit'));
       expect(edited, isTrue);
       expect(find.text('Edited guide'), findsOneWidget);
+      await _tap(tester, _key('library-reader-more'));
       await _tap(tester, _key('library-reader-delete'));
       await _tap(tester, find.text('Cancel'));
       expect(service.calls.any((call) => call['action'] == 'delete'), isFalse);
@@ -480,6 +511,7 @@ void main() {
       ]);
       await _mount(tester, _reader(service));
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       await _tap(tester, _key('library-reader-share'));
       await _select(tester, 'library-sharing-visibility', 'Selected friends');
       await _tap(tester, _key('library-sharing-save'));
@@ -492,12 +524,13 @@ void main() {
       await _tap(tester, _key('library-sharing-save'));
       expect(service.documents['guide']!['visibility'], 'selected');
       expect(service.documents['guide']!['sharedWithUserIds'], ['friend-2']);
+      await _tap(tester, _key('library-reader-more'));
       await _tap(tester, _key('library-reader-share'));
       await _select(tester, 'library-sharing-visibility', 'Only me');
       await _tap(tester, _key('library-sharing-save'));
       expect(service.documents['guide']!['visibility'], 'private');
       expect(service.documents['guide']!['sharedWithUserIds'], isEmpty);
-      expect(find.text('Only you'), findsOneWidget);
+      expect(find.text('Only you'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -543,6 +576,7 @@ void main() {
       ]);
       await _mount(tester, _reader(service));
       await tester.pumpAndSettle();
+      await _tap(tester, _key('library-reader-more'));
       await _tap(tester, _key('library-reader-share'));
       expect(find.text('Who can see this?'), findsOneWidget);
       service.readFailure = _denied();
@@ -558,6 +592,7 @@ void main() {
   for (final viewport in [
     (1200.0, 1.0, '1200'),
     (390.0, 1.0, '390'),
+    (320.0, 1.0, '320'),
     (320.0, 2.0, '320-2x'),
   ]) {
     testWidgets(
@@ -573,6 +608,7 @@ void main() {
           ),
           libraryGuide('days', 'A few days on the coast', format: 'itinerary'),
         ]);
+        service.documents['guide']!['link'] = 'https://example.test/guide';
         final boundary = await _mount(
           tester,
           LibraryScreen(service: service, userId: 'me'),
@@ -580,10 +616,33 @@ void main() {
           scale: viewport.$2,
         );
         await tester.pumpAndSettle();
-        await _capture(tester, boundary, viewport.$3);
+        await _capture(tester, boundary, 'compact-${viewport.$3}');
+        if (const bool.fromEnvironment('TRIP_SCREENSHOTS')) {
+          debugPrint(
+            'Library ${viewport.$3}: first card starts at ${tester.getTopLeft(_key('library-card-guide')).dy}px',
+          );
+        }
         expect(_key('library-add-guide'), findsOneWidget);
+        expect(_key('library-search'), findsNothing);
+        await _tap(tester, _key('library-search-toggle'));
+        await tester.enterText(_key('library-search'), 'A slow week');
+        await tester.pumpAndSettle();
+        expect(_key('library-card-guide'), findsOneWidget);
+        expect(_key('library-card-budget'), findsNothing);
+        await _capture(tester, boundary, 'compact-search-${viewport.$3}');
+        await tester.enterText(_key('library-search'), '');
+        await _tap(tester, _key('library-search-toggle'));
+        expect(_key('library-search'), findsNothing);
+        await _select(tester, 'library-format-filter', 'Spreadsheets');
+        expect(_key('library-card-guide'), findsNothing);
+        expect(_key('library-card-budget'), findsOneWidget);
+        await _capture(tester, boundary, 'compact-format-${viewport.$3}');
+        await _select(tester, 'library-format-filter', 'All formats');
         await _tap(tester, _key('library-save-guide'));
         expect(service.documents['guide']!['isSaved'], isTrue);
+        await _tap(tester, _key('library-tab-yours'));
+        expect(_key('library-tab-yours').hitTestable(), findsOneWidget);
+        expect(service.calls.last['scope'], 'yours');
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
         final readerBoundary = await _mount(
@@ -591,9 +650,20 @@ void main() {
           _reader(service),
           width: viewport.$1,
           scale: viewport.$2,
+          pushRoute: true,
         );
         await tester.pumpAndSettle();
-        await _capture(tester, readerBoundary, 'reader-${viewport.$3}');
+        await _capture(tester, readerBoundary, 'reader-compact-${viewport.$3}');
+        if (const bool.fromEnvironment('TRIP_SCREENSHOTS')) {
+          debugPrint(
+            'Reader ${viewport.$3}: document content starts at ${tester.getTopLeft(_key('library-reader-content')).dy}px',
+          );
+        }
+        expect(find.byType(BackButton), findsOneWidget);
+        expect(_key('library-reader-source').hitTestable(), findsOneWidget);
+        await _tap(tester, _key('library-reader-save'));
+        expect(service.documents['guide']!['isSaved'], isFalse);
+        expect(find.byTooltip('Save guide'), findsOneWidget);
         await _tap(tester, _key('library-reader-trip'));
         await _tap(tester, _key('library-trip-trip-2'));
         await _tap(tester, _key('library-trips-save'));

@@ -31,18 +31,19 @@ type Calendar struct {
 func (Calendar) TableName() string { return "tc_calendars" }
 
 type StopContent struct {
-	Lodging       []TripLodging `json:"lodging,omitempty"`
-	Flights       []TripFlight  `json:"flights,omitempty"`
-	Hero          *TripHero     `json:"hero,omitempty"`
-	TimeZone      string        `json:"timeZone"`
-	Title         string        `json:"title"`
-	Destination   string        `json:"destination"`
-	StartDate     string        `json:"startDate"`
-	EndDate       string        `json:"endDate"`
-	DatePrecision string        `json:"datePrecision"`
-	Description   string        `json:"description"`
-	Status        string        `json:"status"`
-	JoinOpen      bool          `json:"joinOpen"`
+	Destinations  []DestinationSnapshot `json:"destinations,omitempty"`
+	Lodging       []TripLodging         `json:"lodging,omitempty"`
+	Flights       []TripFlight          `json:"flights,omitempty"`
+	Hero          *TripHero             `json:"hero,omitempty"`
+	TimeZone      string                `json:"timeZone"`
+	Title         string                `json:"title"`
+	Destination   string                `json:"destination"`
+	StartDate     string                `json:"startDate"`
+	EndDate       string                `json:"endDate"`
+	DatePrecision string                `json:"datePrecision"`
+	Description   string                `json:"description"`
+	Status        string                `json:"status"`
+	JoinOpen      bool                  `json:"joinOpen"`
 }
 
 func (c *StopContent) validate() error {
@@ -56,7 +57,14 @@ func (c *StopContent) validate() error {
 
 	c.Title = strings.TrimSpace(c.Title)
 	c.Destination = strings.TrimSpace(c.Destination)
-	if c.Title == "" || c.Destination == "" || utf8.RuneCountInString(c.Title) > 200 || utf8.RuneCountInString(c.Destination) > 300 || utf8.RuneCountInString(c.Description) > 10000 {
+	if len(c.Destinations) > 0 {
+		c.Destination = destinationSummary(c.Destinations)
+	}
+	destinationLimit := 300
+	if len(c.Destinations) > 0 {
+		destinationLimit = 3622
+	}
+	if c.Title == "" || c.Destination == "" || utf8.RuneCountInString(c.Title) > 200 || utf8.RuneCountInString(c.Destination) > destinationLimit || utf8.RuneCountInString(c.Description) > 10000 {
 		return errors.New("title and destination are required; content exceeds limits")
 	}
 	if c.DatePrecision == "" {
@@ -152,10 +160,11 @@ func (Participation) TableName() string { return "tc_participations" }
 type Viewer struct{ UserID, RecipientID, CalendarLinkID, StopLinkID uuid.UUID }
 
 type Service struct {
-	db            *gorm.DB
-	authenticate  func(*gin.Context) (*models.User, error)
-	baseURL       string
-	guestDelivery *GuestDeliveryConfig
+	db                *gorm.DB
+	authenticate      func(*gin.Context) (*models.User, error)
+	baseURL           string
+	guestDelivery     *GuestDeliveryConfig
+	destinationSearch DestinationSearchProvider
 }
 
 func New(db *gorm.DB, authenticate func(*gin.Context) (*models.User, error), baseURL string) *Service {

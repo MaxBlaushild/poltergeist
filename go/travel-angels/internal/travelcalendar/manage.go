@@ -435,6 +435,7 @@ func (s *Service) previewStop(c *gin.Context) {
 		result = gin.H{"canView": allowed, "draft": true}
 		if allowed {
 			row := gin.H{"id": stop.ID, "calendarId": stop.CalendarID, "title": draft.Title, "destination": draft.Destination, "startDate": draft.StartDate, "endDate": draft.EndDate, "datePrecision": draft.DatePrecision, "timeZone": effectiveTimeZone(draft.TimeZone), "description": draft.Description, "status": draft.Status, "joinOpen": draft.JoinOpen, "published": true, "canManage": false, "canManagePermissions": false}
+			row["destinations"] = contentDestinations(&draft)
 			for key, value := range filteredTripLogistics(&draft, uuid.Nil, false, b.Audience == "attendee") {
 				row[key] = value
 			}

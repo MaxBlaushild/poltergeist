@@ -161,8 +161,10 @@ func TestCalendarMigrationsCanRollbackAndReapply(t *testing.T) {
 	f := newGuestTestFixture(t)
 	_, source, _, _ := runtime.Caller(0)
 	for _, name := range []string{
+		"000477_travel_destinations.down.sql",
 		"000475_travel_trip_pages.down.sql", "000474_travel_calendar_guests.down.sql", "000473_travel_calendars.down.sql",
 		"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql", "000475_travel_trip_pages.up.sql",
+		"000477_travel_destinations.up.sql",
 	} {
 		contents, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../../migrate/internal/migrations", name))
 		if err != nil {

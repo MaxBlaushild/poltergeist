@@ -136,7 +136,7 @@ func newGuestTestFixture(t *testing.T) *guestTestFixture {
 		t.Fatal(err)
 	}
 	_, source, _, _ := runtime.Caller(0)
-	for _, migration := range []string{"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql", "000475_travel_trip_pages.up.sql"} {
+	for _, migration := range []string{"000473_travel_calendars.up.sql", "000474_travel_calendar_guests.up.sql", "000475_travel_trip_pages.up.sql", "000477_travel_destinations.up.sql"} {
 		path := filepath.Join(filepath.Dir(source), "../../../migrate/internal/migrations", migration)
 		data, err := os.ReadFile(path)
 		if err != nil {

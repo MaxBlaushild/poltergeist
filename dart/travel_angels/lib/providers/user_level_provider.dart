@@ -8,6 +8,8 @@ class UserLevelProvider extends ChangeNotifier {
   UserLevel? _userLevel;
   bool _loading = false;
   String? _error;
+  int _requestRevision = 0;
+  bool _disposed = false;
 
   UserLevelProvider(this._userLevelService);
 
@@ -17,27 +19,43 @@ class UserLevelProvider extends ChangeNotifier {
 
   /// Fetches the user level for the authenticated user
   Future<void> fetchUserLevel() async {
+    if (_disposed) return;
+    final request = ++_requestRevision;
+    bool isCurrent() => !_disposed && request == _requestRevision;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _userLevel = await _userLevelService.getUserLevel();
+      final level = await _userLevelService.getUserLevel();
+      if (!isCurrent()) return;
+      _userLevel = level;
     } catch (e) {
+      if (!isCurrent()) return;
       _error = _extractErrorMessage(e);
       _userLevel = null;
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (isCurrent()) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Clears the user level data
   void clear() {
+    ++_requestRevision;
     _userLevel = null;
     _error = null;
     _loading = false;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    ++_requestRevision;
+    super.dispose();
   }
 
   /// Extracts error message from DioException response body

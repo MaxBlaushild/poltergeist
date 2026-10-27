@@ -14,56 +14,25 @@ class HomeWidget extends StatefulWidget {
 }
 
 class _HomeWidgetState extends State<HomeWidget> {
-  bool _hasInitialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeUserLevel();
-  }
-
-  void _initializeUserLevel() {
-    if (_hasInitialized) return;
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      
-      final authProvider = context.read<AuthProvider>();
-      final userLevelProvider = context.read<UserLevelProvider>();
-      
-      if (!authProvider.isAuthenticated) {
-        userLevelProvider.clear();
-      } else if (!userLevelProvider.loading && userLevelProvider.userLevel == null) {
-        userLevelProvider.fetchUserLevel();
-      }
-      
-      _hasInitialized = true;
-    });
-  }
+  String? _levelUserId;
+  bool _observedIdentity = false;
+  int _levelRevision = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    
-    final authProvider = context.watch<AuthProvider>();
-    final userLevelProvider = context.read<UserLevelProvider>();
-    
-    // Reset initialization flag if auth state changes
-    if (!authProvider.isAuthenticated && _hasInitialized) {
-      _hasInitialized = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          userLevelProvider.clear();
-        }
-      });
-    } else if (authProvider.isAuthenticated && !userLevelProvider.loading && userLevelProvider.userLevel == null && _hasInitialized) {
-      // Only fetch if we've already initialized and auth is now valid
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !userLevelProvider.loading && userLevelProvider.userLevel == null) {
-          userLevelProvider.fetchUserLevel();
-        }
-      });
-    }
+    final auth = context.watch<AuthProvider>();
+    final userId = auth.isAuthenticated ? auth.user?.id : null;
+    if (_observedIdentity && userId == _levelUserId) return;
+    _observedIdentity = true;
+    _levelUserId = userId;
+    final revision = ++_levelRevision;
+    final level = context.read<UserLevelProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || revision != _levelRevision) return;
+      level.clear();
+      if (userId != null) level.fetchUserLevel();
+    });
   }
 
   @override
@@ -71,12 +40,8 @@ class _HomeWidgetState extends State<HomeWidget> {
     final authProvider = context.watch<AuthProvider>();
 
     // Show loading indicator while checking auth
-    if (authProvider.loading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+    if (authProvider.loading && !authProvider.isAuthenticated) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // Show login screen if not authenticated
@@ -85,7 +50,6 @@ class _HomeWidgetState extends State<HomeWidget> {
     }
 
     // Show main app if authenticated
-    return const MainScaffold();
+    return MainScaffold(key: ValueKey(authProvider.user?.id));
   }
 }
-

@@ -41,6 +41,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   late final DocumentService _service =
       widget.service ?? DocumentService(APIClient(ApiConstants.baseUrl));
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searchExpanded = false;
+  static const _formats = {
+    'all': 'All formats',
+    'spreadsheet': 'Spreadsheets',
+    'itinerary': 'Itineraries',
+    'guide': 'Guides',
+    'video': 'Videos',
+  };
   final _saving = <String>{};
   AuthProvider? _auth;
   String? _identity;
@@ -96,6 +105,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _auth?.removeListener(_authChanged);
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -192,6 +202,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _scope = 'yours';
             _search.clear();
             _format = 'all';
+            _searchExpanded = false;
             _documents = [];
           });
           await _open(document);
@@ -226,6 +237,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _load();
   }
 
+  void _toggleSearch() {
+    setState(() => _searchExpanded = !_searchExpanded);
+    if (_searchExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchExpanded) _searchFocus.requestFocus();
+      });
+    } else {
+      _searchFocus.unfocus();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => SafeArea(
     child: RefreshIndicator(
@@ -237,7 +259,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             constraints: const BoxConstraints(maxWidth: 1200),
             child: Padding(
               padding: EdgeInsets.all(
-                MediaQuery.sizeOf(context).width < 600 ? 16 : 28,
+                MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -249,205 +271,158 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       : 1;
                   final cardWidth =
                       (constraints.maxWidth - 20 * (columns - 1)) / columns;
-                  final heading = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Travel library',
-                        style: Theme.of(context).textTheme.headlineLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Good plans, passed from friend to friend.',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-                      ),
-                    ],
-                  );
-                  final add = FilledButton.icon(
-                    key: const ValueKey('library-add-guide'),
-                    onPressed: _adding ? null : _add,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add a guide'),
-                  );
+                  final compact =
+                      constraints.maxWidth < 600 ||
+                      MediaQuery.textScalerOf(context).scale(14) > 21;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (constraints.maxWidth < 660 ||
-                          MediaQuery.textScalerOf(context).scale(14) > 21)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [heading, const SizedBox(height: 16), add],
-                        )
-                      else
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: heading),
-                            const SizedBox(width: 20),
-                            add,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Travel library',
+                              style: Theme.of(context).textTheme.headlineMedium,
+                            ),
+                          ),
+                          if (!compact && !_loading && _error == null) ...[
+                            Text(
+                              '${documents.length} ${documents.length == 1 ? 'guide' : 'guides'}',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            const SizedBox(width: 16),
                           ],
-                        ),
-                      const SizedBox(height: 24),
+                          const SizedBox(width: 8),
+                          _addButton(compact),
+                          if (_scope == 'yours') _libraryOptions(),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
                       Container(
                         decoration: const BoxDecoration(
                           border: Border(
                             bottom: BorderSide(color: AppTheme.outline),
                           ),
                         ),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final tab in [
-                                ('network', 'From your network'),
-                                ('saved', 'Saved'),
-                                ('yours', 'Yours'),
-                              ])
-                                Semantics(
-                                  selected: _scope == tab.$1,
-                                  button: true,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: _scope == tab.$1
-                                              ? AppTheme.rust
-                                              : Colors.transparent,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    child: TextButton(
-                                      key: ValueKey('library-tab-${tab.$1}'),
-                                      onPressed: () => _changeScope(tab.$1),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 6,
-                                        ),
-                                        child: Text(tab.$2),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      if (constraints.maxWidth < 600)
-                        Column(
+                        child: Row(
                           children: [
-                            _searchField(),
-                            const SizedBox(height: 12),
-                            _formatField(),
-                          ],
-                        )
-                      else
-                        Row(
-                          children: [
-                            Expanded(child: _searchField()),
-                            const SizedBox(width: 16),
-                            SizedBox(width: 220, child: _formatField()),
+                            Expanded(child: _scopeTabs()),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              key: const ValueKey('library-search-toggle'),
+                              tooltip: _searchExpanded
+                                  ? 'Hide search'
+                                  : 'Search library',
+                              constraints: const BoxConstraints(
+                                minWidth: 44,
+                                minHeight: 44,
+                              ),
+                              iconSize: 20,
+                              color:
+                                  _searchExpanded ||
+                                      _search.text.trim().isNotEmpty
+                                  ? AppTheme.rust
+                                  : AppTheme.ink,
+                              icon: Icon(
+                                _searchExpanded ? Icons.close : Icons.search,
+                              ),
+                              onPressed: _toggleSearch,
+                            ),
+                            _formatMenu(),
                           ],
                         ),
-                      const SizedBox(height: 22),
-                      Wrap(
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 12,
-                        runSpacing: 8,
-                        children: [
-                          Text(switch (_scope) {
-                            'saved' => 'Ready for your next trip',
-                            'yours' => 'Your guides & works in progress',
-                            _ => 'Recently shared',
-                          }, style: Theme.of(context).textTheme.titleMedium),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!_loading && _error == null)
-                                Semantics(
-                                  liveRegion: true,
-                                  child: Text(
-                                    '${documents.length} ${documents.length == 1 ? 'guide' : 'guides'}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.labelSmall,
-                                  ),
-                                ),
-                              if (_scope == 'yours')
-                                PopupMenuButton<String>(
-                                  tooltip: 'Library options',
-                                  onSelected: (_) async {
-                                    await Navigator.push<void>(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => Scaffold(
-                                          appBar: AppBar(
-                                            title: const Text('Manage files'),
-                                          ),
-                                          body: const DocumentsScreen(),
-                                        ),
-                                      ),
-                                    );
-                                    if (mounted) _load();
-                                  },
-                                  itemBuilder: (_) => [
-                                    const PopupMenuItem(
-                                      value: 'manage',
-                                      child: Text('Manage files'),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ],
                       ),
-                      const SizedBox(height: 14),
-                      if (_loading)
-                        const Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (_error != null)
-                        _empty(_error!, retry: true)
-                      else if (documents.isEmpty)
-                        _empty(
-                          _search.text.isNotEmpty || _format != 'all'
-                              ? 'No guides match your search and filters.'
-                              : switch (_scope) {
-                                  'saved' =>
-                                    'Save a guide to keep it close for your next trip.',
-                                  'yours' =>
-                                    'Bring in a favorite itinerary, spreadsheet, or a guide of your own.',
-                                  _ =>
-                                    'Guides shared by your friends will appear here.',
-                                },
-                        )
-                      else
+                      if (_searchExpanded) ...[
+                        const SizedBox(height: 12),
+                        _searchField(),
+                      ],
+                      if (_format != 'all' ||
+                          (!_searchExpanded &&
+                              _search.text.trim().isNotEmpty)) ...[
+                        const SizedBox(height: 8),
                         Wrap(
-                          spacing: 20,
-                          runSpacing: 20,
+                          spacing: 8,
+                          runSpacing: 4,
                           children: [
-                            for (final document in documents)
-                              SizedBox(
-                                width: cardWidth,
-                                child: LibraryDocumentCard(
-                                  key: ValueKey('library-card-${document.id}'),
-                                  document: document,
-                                  isOwner:
-                                      _identity?.isNotEmpty == true &&
-                                      document.userId == _identity,
-                                  saving: _saving.contains(document.id),
-                                  onOpen: () => _open(document),
-                                  onSave: () => _save(document),
+                            if (_format != 'all')
+                              InputChip(
+                                label: Text(_formats[_format]!),
+                                deleteButtonTooltipMessage:
+                                    'Clear format filter',
+                                onDeleted: () =>
+                                    setState(() => _format = 'all'),
+                              ),
+                            if (!_searchExpanded &&
+                                _search.text.trim().isNotEmpty)
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: constraints.maxWidth,
+                                ),
+                                child: InputChip(
+                                  label: Text(
+                                    'Search: ${_search.text.trim()}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  deleteButtonTooltipMessage: 'Clear search',
+                                  onPressed: _toggleSearch,
+                                  onDeleted: () => setState(_search.clear),
                                 ),
                               ),
                           ],
                         ),
+                      ],
+                      const SizedBox(height: 16),
+                      Semantics(
+                        liveRegion: true,
+                        label: _loading
+                            ? 'Loading guides'
+                            : '${documents.length} guides',
+                        child: _loading
+                            ? const Padding(
+                                padding: EdgeInsets.all(32),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            : _error != null
+                            ? _empty(_error!, retry: true)
+                            : documents.isEmpty
+                            ? _empty(
+                                _search.text.isNotEmpty || _format != 'all'
+                                    ? 'No guides match your search and filters.'
+                                    : switch (_scope) {
+                                        'saved' =>
+                                          'Save a guide to keep it close for your next trip.',
+                                        'yours' =>
+                                          'Bring in a favorite itinerary, spreadsheet, or a guide of your own.',
+                                        _ =>
+                                          'Guides shared by your friends will appear here.',
+                                      },
+                              )
+                            : Wrap(
+                                spacing: 20,
+                                runSpacing: 20,
+                                children: [
+                                  for (final document in documents)
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: LibraryDocumentCard(
+                                        key: ValueKey(
+                                          'library-card-${document.id}',
+                                        ),
+                                        document: document,
+                                        isOwner:
+                                            _identity?.isNotEmpty == true &&
+                                            document.userId == _identity,
+                                        saving: _saving.contains(document.id),
+                                        onOpen: () => _open(document),
+                                        onSave: () => _save(document),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
                       const SizedBox(height: 32),
                     ],
                   );
@@ -459,33 +434,145 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ),
     ),
   );
+
+  Widget _addButton(bool compact) => compact
+      ? IconButton(
+          key: const ValueKey('library-add-guide'),
+          tooltip: 'Add a guide',
+          onPressed: _adding ? null : _add,
+          icon: const Icon(Icons.add, size: 22),
+          color: AppTheme.rust,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        )
+      : TextButton.icon(
+          key: const ValueKey('library-add-guide'),
+          onPressed: _adding ? null : _add,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add guide'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.rust,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minimumSize: const Size(44, 44),
+          ),
+        );
+
+  Widget _scopeTabs() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (final tab in [
+          ('network', 'Network'),
+          ('saved', 'Saved'),
+          ('yours', 'Yours'),
+        ])
+          Semantics(
+            selected: _scope == tab.$1,
+            button: true,
+            label: tab.$1 == 'network' ? 'From your network' : null,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: _scope == tab.$1
+                        ? AppTheme.rust
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: TextButton(
+                key: ValueKey('library-tab-${tab.$1}'),
+                onPressed: () => _changeScope(tab.$1),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(44, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  foregroundColor: _scope == tab.$1
+                      ? AppTheme.rust
+                      : AppTheme.ink,
+                ),
+                child: Text(tab.$2),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
   Widget _searchField() => TextField(
     key: const ValueKey('library-search'),
     controller: _search,
-    decoration: const InputDecoration(
-      prefixIcon: Icon(Icons.search),
-      hintText: 'Where are you headed?',
-      labelText: 'Search title, destination, or person',
+    focusNode: _searchFocus,
+    textInputAction: TextInputAction.search,
+    style: Theme.of(context).textTheme.bodyMedium,
+    decoration: InputDecoration(
+      isDense: true,
+      hintText: 'Search title, destination, or person',
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      prefixIcon: const Icon(Icons.search, size: 18),
+      prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+      suffixIcon: _search.text.isEmpty
+          ? null
+          : IconButton(
+              tooltip: 'Clear search',
+              icon: const Icon(Icons.clear, size: 18),
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              onPressed: () => setState(_search.clear),
+            ),
     ),
+    onSubmitted: (_) => _searchFocus.unfocus(),
     onChanged: (_) => setState(() {}),
   );
-  Widget _formatField() => KeyedSubtree(
-    key: ValueKey('library-format-state-$_format'),
-    child: DropdownButtonFormField<String>(
-      key: const ValueKey('library-format-filter'),
-      initialValue: _format,
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Format'),
-      items: const [
-        DropdownMenuItem(value: 'all', child: Text('All formats')),
-        DropdownMenuItem(value: 'spreadsheet', child: Text('Spreadsheets')),
-        DropdownMenuItem(value: 'itinerary', child: Text('Itineraries')),
-        DropdownMenuItem(value: 'guide', child: Text('Guides')),
-        DropdownMenuItem(value: 'video', child: Text('Videos')),
-      ],
-      onChanged: (value) => setState(() => _format = value ?? 'all'),
+
+  Widget _formatMenu() => PopupMenuButton<String>(
+    key: const ValueKey('library-format-filter'),
+    tooltip: _format == 'all'
+        ? 'Filter by format'
+        : 'Format: ${_formats[_format]}',
+    initialValue: _format,
+    iconSize: 20,
+    icon: Badge(
+      isLabelVisible: _format != 'all',
+      smallSize: 6,
+      backgroundColor: AppTheme.rust,
+      child: Icon(
+        Icons.tune,
+        color: _format == 'all' ? AppTheme.ink : AppTheme.rust,
+      ),
     ),
+    onSelected: (value) {
+      _searchFocus.unfocus();
+      setState(() => _format = value);
+    },
+    itemBuilder: (_) => [
+      for (final format in _formats.entries)
+        CheckedPopupMenuItem(
+          value: format.key,
+          checked: _format == format.key,
+          child: Text(format.value),
+        ),
+    ],
   );
+
+  Widget _libraryOptions() => PopupMenuButton<String>(
+    tooltip: 'Library options',
+    iconSize: 20,
+    onSelected: (_) async {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Manage files')),
+            body: const DocumentsScreen(),
+          ),
+        ),
+      );
+      if (mounted) _load();
+    },
+    itemBuilder: (_) => [
+      const PopupMenuItem(value: 'manage', child: Text('Manage files')),
+    ],
+  );
+
   Widget _empty(String message, {bool retry = false}) => Container(
     padding: const EdgeInsets.all(28),
     decoration: BoxDecoration(

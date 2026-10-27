@@ -1,6 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:travel_angels/models/travel_destination.dart';
+import 'package:travel_angels/providers/auth_provider.dart';
+import 'package:travel_angels/widgets/trip_destination_picker.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/services/api_client.dart';
@@ -42,15 +46,23 @@ class TravelStopEditor extends StatefulWidget {
 
 class _TravelStopEditorState extends State<TravelStopEditor> {
   final _form = GlobalKey<FormState>();
+  final _optionsController = ExpansibleController();
+  final _timeZoneAnchor = GlobalKey();
   late final TextEditingController _title;
-  late final TextEditingController _destination;
   late final TextEditingController _description;
   late final TextEditingController _timeZone;
+  late List<TravelDestination> _destinations;
   late String _precision;
   late String _status;
   late bool _joinOpen;
   DateTimeRange? _range;
   bool _busy = false;
+  bool _timeZoneEdited = false;
+  bool _validateLocations = false;
+  bool _initializedIdentity = false;
+  bool _identityChanged = false;
+  AuthProvider? _auth;
+  String? _account;
   String? _error;
   String? _calendarId;
 
@@ -61,9 +73,7 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
         ? Map<String, dynamic>.from(widget.stop!['draft'] as Map)
         : widget.stop ?? {};
     _title = TextEditingController(text: source['title'] as String? ?? '');
-    _destination = TextEditingController(
-      text: source['destination'] as String? ?? '',
-    );
+    _destinations = travelDestinations(source);
     _description = TextEditingController(
       text: source['description'] as String? ?? '',
     );
@@ -82,18 +92,73 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider?>();
+    if (_auth != auth) {
+      _auth?.removeListener(_checkIdentity);
+      _auth = auth;
+      auth?.addListener(_checkIdentity);
+    }
+    if (!_initializedIdentity) {
+      _initializedIdentity = true;
+      _account = auth?.user?.id;
+    }
+    _checkIdentity();
+  }
+
+  void _checkIdentity() {
+    if (_identityChanged || _auth?.user?.id == _account) return;
+    _identityChanged = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive) {
+        Navigator.of(context).removeRoute(route);
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _auth?.removeListener(_checkIdentity);
+    _optionsController.dispose();
     _title.dispose();
-    _destination.dispose();
     _description.dispose();
     _timeZone.dispose();
     super.dispose();
   }
 
+  void _locationsChanged(List<TravelDestination> value) {
+    setState(() {
+      _destinations = value;
+      if (widget.stop == null && !_timeZoneEdited) {
+        final zones = value.map((destination) => destination.timeZone).toSet();
+        _timeZone.text = zones.length == 1 && zones.single.isNotEmpty
+            ? zones.single
+            : 'UTC';
+      }
+    });
+  }
+
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (_busy || _identityChanged) return;
+    setState(() => _validateLocations = true);
+    if (!_form.currentState!.validate() ||
+        _destinations.isEmpty ||
+        _destinations.length > TripDestinationPicker.maxLocations) {
+      return;
+    }
     if (_precision != 'tbd' && _range == null) {
       setState(() => _error = 'Choose dates or select Dates to be decided.');
+      return;
+    }
+    if (_timeZone.text.trim().isEmpty) {
+      setState(
+        () => _error = 'Enter a trip time zone in More options, or use UTC.',
+      );
       return;
     }
     setState(() {
@@ -109,7 +174,12 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
         if (widget.stop == null && _calendarId != null)
           'calendarId': _calendarId,
         'title': _title.text.trim(),
-        'destination': _destination.text.trim(),
+        'destination': _destinations
+            .map((location) => location.label)
+            .join(' → '),
+        'destinations': _destinations
+            .map((location) => location.toSelectionJson())
+            .toList(),
         'description': _description.text.trim(),
         'datePrecision': _precision,
         'timeZone': _timeZone.text.trim(),
@@ -126,192 +196,322 @@ class _TravelStopEditorState extends State<TravelStopEditor> {
           data: data,
         );
       }
-      if (mounted) Navigator.pop(context, true);
+      if (mounted && !_identityChanged) Navigator.pop(context, true);
     } catch (error) {
-      if (mounted) setState(() => _error = travelError(error));
+      if (mounted && !_identityChanged) {
+        setState(() => _error = travelError(error));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  Future<void> _chooseDates() async {
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDateRange: _range,
+      helpText: 'Trip local dates',
+    );
+    if (range != null && mounted && !_identityChanged) {
+      setState(() => _range = range);
+    }
+  }
+
+  bool get _ambiguousTimeZone {
+    final zones = _destinations
+        .map((destination) => destination.timeZone)
+        .toSet();
+    return zones.length != 1 || zones.single.isEmpty;
+  }
+
+  Future<void> _showTimeZone() async {
+    _optionsController.expand();
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted || _identityChanged) return;
+    final anchor = _timeZoneAnchor.currentContext;
+    if (anchor != null && anchor.mounted) {
+      await Scrollable.ensureVisible(
+        anchor,
+        duration: const Duration(milliseconds: 200),
+      );
+    }
+  }
+
+  Widget _moreOptions() => ExpansionTile(
+    key: const ValueKey('trip-more-options'),
+    controller: _optionsController,
+    tilePadding: EdgeInsets.zero,
+    childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
+    shape: const Border(),
+    collapsedShape: const Border(),
+    title: const Text('More options'),
+    children: [
+      if (widget.stop == null && widget.calendars.length > 1) ...[
+        DropdownButtonFormField<String>(
+          initialValue: _calendarId,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Owning calendar'),
+          items:
+              {
+                    for (final calendar in widget.calendars)
+                      calendar['id']: calendar,
+                  }.values
+                  .map(
+                    (calendar) => DropdownMenuItem<String>(
+                      value: calendar['id'] as String,
+                      child: Text(
+                        calendar['title'] as String? ?? 'Calendar',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+          onChanged: (value) => setState(() => _calendarId = value),
+        ),
+        const SizedBox(height: 16),
+      ],
+      DropdownButtonFormField<String>(
+        initialValue: _status,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Planning status'),
+        items: const [
+          DropdownMenuItem(value: 'tentative', child: Text('Tentative')),
+          DropdownMenuItem(value: 'confirmed', child: Text('Confirmed')),
+          DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+        ],
+        onChanged: (value) => setState(() => _status = value!),
+      ),
+      const SizedBox(height: 16),
+      KeyedSubtree(
+        key: _timeZoneAnchor,
+        child: TextFormField(
+          key: const ValueKey('trip-time-zone'),
+          controller: _timeZone,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Destination time zone',
+            helperText: 'Trip time zone; edit for travel across regions.',
+            helperMaxLines: 3,
+            counterText: '',
+          ),
+          maxLength: 100,
+          onChanged: (_) => _timeZoneEdited = true,
+          validator: (value) => value == null || value.trim().isEmpty
+              ? 'Enter a time zone, or UTC.'
+              : null,
+        ),
+      ),
+      const SizedBox(height: 16),
+      if (widget.stop?['hostModel'] == true)
+        const Text(
+          'Manage joining requests in Attendance & privacy on the trip page.',
+        )
+      else
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Open to friends joining'),
+          subtitle: const Text('Requests need host approval.'),
+          value: _joinOpen,
+          onChanged: (value) => setState(() => _joinOpen = value),
+        ),
+    ],
+  );
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: TravelCalendarDialogTitle(
-      widget.stop == null ? 'Create a trip' : 'Edit trip draft',
-      label: 'Make a plan',
-    ),
-    content: SizedBox(
-      width: 520,
-      child: SingleChildScrollView(
-        child: Form(
-          key: _form,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const TravelCalendarCallout(
-                'Save a draft, then review its audience and publish when ready.',
-                icon: Icons.edit_note,
-              ),
-              if (widget.stop == null) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'You will be the first host and listed as attending. You can change your attendance on the trip page.',
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_busy,
+    child: Dialog(
+      backgroundColor: tripPaper,
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: const BorderSide(color: tripOutline),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 800),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+              child: Text(
+                widget.stop == null ? 'Create a trip' : 'Edit trip draft',
+                style: const TextStyle(
+                  fontFamily: tripDisplayFont,
+                  fontSize: 28,
+                  height: 1.15,
+                  color: tripInk,
                 ),
-              ],
-              const SizedBox(height: 16),
-              if (widget.stop == null && widget.calendars.length > 1)
-                DropdownButtonFormField<String>(
-                  initialValue: _calendarId,
-                  decoration: const InputDecoration(
-                    labelText: 'Owning calendar',
-                  ),
-                  items:
-                      {
-                            for (final calendar in widget.calendars)
-                              calendar['id']: calendar,
-                          }.values
-                          .map(
-                            (calendar) => DropdownMenuItem<String>(
-                              value: calendar['id'] as String,
+              ),
+            ),
+            const Divider(height: 1, color: tripOutline),
+            Flexible(
+              child: SingleChildScrollView(
+                key: const ValueKey('trip-editor-scroll'),
+                padding: const EdgeInsets.all(24),
+                child: Form(
+                  key: _form,
+                  child: AbsorbPointer(
+                    absorbing: _busy || _identityChanged,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          key: const ValueKey('trip-title'),
+                          controller: _title,
+                          decoration: const InputDecoration(
+                            labelText: 'Trip name',
+                            counterText: '',
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                          maxLength: 200,
+                          validator: (value) =>
+                              value == null || value.trim().isEmpty
+                              ? 'Give this trip a name.'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+                        TripDestinationPicker(
+                          service: widget.service,
+                          value: _destinations,
+                          onChanged: _locationsChanged,
+                          enabled: !_busy && !_identityChanged,
+                          errorText: _validateLocations && _destinations.isEmpty
+                              ? 'Add at least one location.'
+                              : _destinations.length >
+                                    TripDestinationPicker.maxLocations
+                              ? 'Choose up to 12 locations.'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          initialValue: _precision,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: 'Dates'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'fixed',
                               child: Text(
-                                calendar['title'] as String? ?? 'Calendar',
+                                'Exact dates',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          )
-                          .toList(),
-                  onChanged: (value) => setState(() => _calendarId = value),
-                ),
-              TextFormField(
-                controller: _title,
-                decoration: const InputDecoration(labelText: 'Title'),
-                maxLength: 200,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Give this trip a name.'
-                    : null,
-              ),
-              TextFormField(
-                controller: _destination,
-                decoration: const InputDecoration(labelText: 'Destination'),
-                maxLength: 200,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter a destination.'
-                    : null,
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: _precision,
-                decoration: const InputDecoration(labelText: 'Date certainty'),
-                items: const [
-                  DropdownMenuItem(value: 'fixed', child: Text('Exact dates')),
-                  DropdownMenuItem(
-                    value: 'approximate',
-                    child: Text('Approximate dates'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'tbd',
-                    child: Text('Dates to be decided'),
-                  ),
-                ],
-                onChanged: (value) => setState(() => _precision = value!),
-              ),
-              if (_precision != 'tbd')
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.date_range),
-                    label: Text(
-                      _range == null
-                          ? 'Choose dates'
-                          : '${travelDateValue(_range!.start)} – ${travelDateValue(_range!.end)}',
+                            DropdownMenuItem(
+                              value: 'approximate',
+                              child: Text(
+                                'Approximate dates',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'tbd',
+                              child: Text(
+                                'Dates to be decided',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) => setState(() {
+                            _precision = value!;
+                            _error = null;
+                          }),
+                        ),
+                        if (_precision != 'tbd') ...[
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.date_range),
+                            label: Text(
+                              _range == null
+                                  ? 'Choose dates'
+                                  : '${travelDateValue(_range!.start)} – ${travelDateValue(_range!.end)}',
+                            ),
+                            onPressed: _chooseDates,
+                          ),
+                          if (_ambiguousTimeZone)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: _showTimeZone,
+                                icon: const Icon(Icons.schedule, size: 18),
+                                label: Text('Time zone: ${_timeZone.text}'),
+                              ),
+                            ),
+                        ],
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const ValueKey('trip-description'),
+                          controller: _description,
+                          decoration: const InputDecoration(
+                            labelText: 'About this trip',
+                            alignLabelWithHint: true,
+                            hintText: 'What do you have in mind?',
+                            counterText: '',
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                          minLines: 3,
+                          maxLines: 6,
+                          maxLength: 5000,
+                        ),
+                        const SizedBox(height: 16),
+                        _moreOptions(),
+                      ],
                     ),
-                    onPressed: () async {
-                      final range = await showDateRangePicker(
-                        context: context,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                        initialDateRange: _range,
-                        helpText: 'Destination local dates',
-                      );
-                      if (range != null && mounted) {
-                        setState(() => _range = range);
-                      }
-                    },
                   ),
                 ),
-              DropdownButtonFormField<String>(
-                initialValue: _status,
-                decoration: const InputDecoration(labelText: 'Planning status'),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'tentative',
-                    child: Text('Tentative'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'confirmed',
-                    child: Text('Confirmed'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'cancelled',
-                    child: Text('Cancelled'),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: tripOutline)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_error != null) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  OverflowBar(
+                    alignment: MainAxisAlignment.end,
+                    spacing: 16,
+                    overflowSpacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: _busy ? null : () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        key: const ValueKey('trip-save-draft'),
+                        onPressed: _busy || _identityChanged ? null : _save,
+                        child: Text(_busy ? 'Saving…' : 'Save draft'),
+                      ),
+                    ],
                   ),
                 ],
-                onChanged: (value) => setState(() => _status = value!),
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _timeZone,
-                autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: 'Destination time zone',
-                  helperText:
-                      'Used to determine when this stop has ended. For example, Europe/Lisbon.',
-                  helperMaxLines: 3,
-                ),
-                maxLength: 100,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter a destination time zone, or UTC.'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _description,
-                decoration: const InputDecoration(labelText: 'About this trip'),
-                minLines: 3,
-                maxLines: 6,
-                maxLength: 5000,
-              ),
-              if (widget.stop?['hostModel'] == true)
-                const Text(
-                  'Use Attendance & privacy on the trip page to open or close requests immediately.',
-                )
-              else
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Open to friends joining'),
-                  subtitle: const Text('Requests need host approval.'),
-                  value: _joinOpen,
-                  onChanged: (value) => setState(() => _joinOpen = value),
-                ),
-              if (_error != null)
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     ),
-    actions: [
-      TextButton(
-        onPressed: _busy ? null : () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _busy ? null : _save,
-        child: Text(_busy ? 'Saving…' : 'Save draft'),
-      ),
-    ],
   );
 }
 

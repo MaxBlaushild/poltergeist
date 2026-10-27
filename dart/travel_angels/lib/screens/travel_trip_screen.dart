@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:travel_angels/models/travel_destination.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/theme/app_theme.dart';
@@ -780,12 +781,11 @@ class _TravelTripScreenState extends State<TravelTripScreen>
           spacing: 8,
           runSpacing: 8,
           children: [
-            TripPill(
-              (shown['destination'] as String? ?? '').isEmpty
-                  ? 'A new adventure'
-                  : shown['destination'],
-              icon: Icons.place_outlined,
-            ),
+            if (travelDestinations(shown).isEmpty)
+              const TripPill('A new adventure', icon: Icons.place_outlined)
+            else
+              for (final destination in travelDestinations(shown))
+                TripPill(destination.name, icon: Icons.place_outlined),
             TripPill(
               shown['status'] == 'cancelled'
                   ? 'Cancelled'

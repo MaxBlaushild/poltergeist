@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:travel_angels/constants/api_constants.dart';
@@ -10,19 +11,16 @@ class MediaService {
   MediaService(this._apiClient);
 
   /// Gets a presigned upload URL from the backend
-  /// 
+  ///
   /// [bucket] - The S3 bucket name
   /// [key] - The S3 object key
-  /// 
+  ///
   /// Returns the presigned URL or null if failed
   Future<String?> getPresignedUploadURL(String bucket, String key) async {
     try {
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.presignedUploadUrlEndpoint,
-        data: {
-          'bucket': bucket,
-          'key': key,
-        },
+        data: {'bucket': bucket, 'key': key},
       );
 
       return response['url'] as String?;
@@ -33,16 +31,16 @@ class MediaService {
   }
 
   /// Uploads a file to S3 using a presigned URL
-  /// 
+  ///
   /// [presignedUrl] - The presigned URL from getPresignedUploadURL
   /// [file] - The file to upload
-  /// 
+  ///
   /// Returns true if upload was successful
   Future<bool> uploadMedia(String presignedUrl, File file) async {
     try {
       final fileName = file.path.split('/').last;
       final extension = fileName.split('.').last.toLowerCase();
-      
+
       // Determine content type based on extension
       String contentType = 'application/octet-stream';
       if (extension == 'jpg' || extension == 'jpeg') {
@@ -63,15 +61,11 @@ class MediaService {
 
       final dio = Dio();
       final fileBytes = await file.readAsBytes();
-      
+
       final response = await dio.put(
         presignedUrl,
         data: fileBytes,
-        options: Options(
-          headers: {
-            'Content-Type': contentType,
-          },
-        ),
+        options: Options(headers: {'Content-Type': contentType}),
       );
 
       return response.statusCode == 200;
@@ -82,10 +76,10 @@ class MediaService {
   }
 
   /// Uploads a profile picture and returns the final S3 URL
-  /// 
+  ///
   /// [file] - The image file to upload
   /// [userId] - The user ID for generating the key
-  /// 
+  ///
   /// Returns the final S3 URL or null if upload failed
   Future<String?> uploadProfilePicture(File file, String userId) async {
     try {
@@ -94,7 +88,10 @@ class MediaService {
       final extension = fileName.split('.').last.toLowerCase();
       final key = '$userId-$timestamp.$extension';
 
-      final presignedUrl = await getPresignedUploadURL('crew-profile-icons', key);
+      final presignedUrl = await getPresignedUploadURL(
+        'crew-profile-icons',
+        key,
+      );
       if (presignedUrl == null) {
         return null;
       }
@@ -107,10 +104,46 @@ class MediaService {
       // Extract the final S3 URL from the presigned URL (remove query parameters)
       final uri = Uri.parse(presignedUrl);
       final finalUrl = '${uri.scheme}://${uri.host}${uri.path}';
-      
+
       return finalUrl;
     } catch (e) {
       print('Failed to upload profile picture: $e');
+      return null;
+    }
+  }
+
+  /// Uploads a selected avatar on web or native platforms without a file path.
+  Future<String?> uploadProfilePictureBytes(
+    Uint8List bytes,
+    String filename,
+    String userId,
+  ) async {
+    final extension = filename.split('.').last.toLowerCase();
+    final contentType = switch (extension) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => null,
+    };
+    if (contentType == null ||
+        bytes.isEmpty ||
+        bytes.length > 8 * 1024 * 1024) {
+      return null;
+    }
+    try {
+      final timestamp = DateTime.now().microsecondsSinceEpoch;
+      final key = '$userId-$timestamp.$extension';
+      final uploadUrl = await getPresignedUploadURL('crew-profile-icons', key);
+      if (uploadUrl == null) return null;
+      final response = await Dio().put<void>(
+        uploadUrl,
+        data: bytes,
+        options: Options(contentType: contentType),
+      );
+      if (response.statusCode != 200) return null;
+      final uri = Uri.parse(uploadUrl);
+      return '${uri.scheme}://${uri.host}${uri.path}';
+    } catch (_) {
       return null;
     }
   }
@@ -132,7 +165,10 @@ class MediaService {
       }
       final key = 'videos/$userId-$timestamp.$extension';
 
-      final presignedUrl = await getPresignedUploadURL('crew-profile-icons', key);
+      final presignedUrl = await getPresignedUploadURL(
+        'crew-profile-icons',
+        key,
+      );
       if (presignedUrl == null) {
         return null;
       }
@@ -170,7 +206,9 @@ class MediaService {
 
       final tempDir = await getTemporaryDirectory();
       final extension = _getVideoExtension(url);
-      final file = File('${tempDir.path}/video_${DateTime.now().millisecondsSinceEpoch}.$extension');
+      final file = File(
+        '${tempDir.path}/video_${DateTime.now().millisecondsSinceEpoch}.$extension',
+      );
       await file.writeAsBytes(response.data!);
       return file;
     } catch (e) {
@@ -188,4 +226,3 @@ class MediaService {
     return 'mp4'; // Default
   }
 }
-
