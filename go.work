@@ -19,6 +19,7 @@ use (
 	./go/pkg/dropbox
 	./go/pkg/email
 	./go/pkg/encoding
+	./go/pkg/flightaware
 	./go/pkg/googledrive
 	./go/pkg/http
 	./go/pkg/hue

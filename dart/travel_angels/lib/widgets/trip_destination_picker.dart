@@ -512,7 +512,7 @@ class _TripDestinationPickerState extends State<TripDestinationPicker> {
                             ),
                             TextButton.icon(
                               onPressed: () => _search(query),
-                              icon: const Icon(Icons.refresh, size: 18),
+                              icon: const Icon(Icons.replay, size: 18),
                               label: const Text('Retry'),
                             ),
                           ],

@@ -354,14 +354,8 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
                 iconSize: 20,
                 icon: const Icon(Icons.open_in_new),
               ),
-            _options(),
-          ] else
-            IconButton(
-              tooltip: 'Refresh guide',
-              onPressed: _loading || _busy ? null : () => _load(),
-              iconSize: 20,
-              icon: const Icon(Icons.refresh),
-            ),
+            if (_owner) _options(),
+          ],
           const SizedBox(width: 4),
         ],
       ),
@@ -387,75 +381,71 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
                 ),
               ),
             )
-          : RefreshIndicator(
-              onRefresh: () => _load(),
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1200),
-                    child: Padding(
-                      padding: EdgeInsets.all(
-                        MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (libraryDestination(document).isNotEmpty) ...[
-                            Text(
-                              libraryDestination(document),
-                              style: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(color: AppTheme.rust),
-                            ),
-                            const SizedBox(height: 6),
-                          ],
+          : SingleChildScrollView(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Padding(
+                    padding: EdgeInsets.all(
+                      MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (libraryDestination(document).isNotEmpty) ...[
                           Text(
-                            document.title,
-                            style: Theme.of(context).textTheme.headlineLarge,
+                            libraryDestination(document),
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(color: AppTheme.rust),
                           ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 4,
-                            children: [
-                              Text(
-                                libraryAuthor(document),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              if (document.updatedAt != null)
-                                Text(
-                                  'Updated ${DateFormat.yMMMd().format(document.updatedAt!.toLocal())}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _reader(document),
-                          if (document.personalNote.trim().isNotEmpty) ...[
-                            const SizedBox(height: 20),
+                          const SizedBox(height: 6),
+                        ],
+                        Text(
+                          document.title,
+                          style: Theme.of(context).textTheme.headlineLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
+                          children: [
                             Text(
-                              _owner
-                                  ? 'Your note'
-                                  : 'A note from ${libraryAuthor(document)}',
-                              style: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(color: AppTheme.rust),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              document.personalNote,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ],
-                          if (_tripNames.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            Text(
-                              'Saved to ${_tripNames.join(' · ')}',
+                              libraryAuthor(document),
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                            if (document.updatedAt != null)
+                              Text(
+                                'Updated ${DateFormat.yMMMd().format(document.updatedAt!.toLocal())}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                           ],
-                          const SizedBox(height: 24),
+                        ),
+                        const SizedBox(height: 16),
+                        _reader(document),
+                        if (document.personalNote.trim().isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            _owner
+                                ? 'Your note'
+                                : 'A note from ${libraryAuthor(document)}',
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(color: AppTheme.rust),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            document.personalNote,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
                         ],
-                      ),
+                        if (_tripNames.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Saved to ${_tripNames.join(' · ')}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                      ],
                     ),
                   ),
                 ),
@@ -568,18 +558,12 @@ class _LibraryDocumentScreenState extends State<LibraryDocumentScreen>
           await _share();
         case 'delete':
           await _delete();
-        case 'refresh':
-          await _load();
       }
     },
     itemBuilder: (_) => [
-      if (_owner) ...[
-        _menuItem('edit', 'Edit', Icons.edit_outlined),
-        _menuItem('share', 'Share', Icons.people_outline),
-        _menuItem('delete', 'Delete', Icons.delete_outline),
-        const PopupMenuDivider(),
-      ],
-      _menuItem('refresh', 'Refresh guide', Icons.refresh),
+      _menuItem('edit', 'Edit', Icons.edit_outlined),
+      _menuItem('share', 'Share', Icons.people_outline),
+      _menuItem('delete', 'Delete', Icons.delete_outline),
     ],
   );
 

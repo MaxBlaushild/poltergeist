@@ -569,125 +569,105 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         MediaQuery.textScalerOf(context).scale(14) > 21;
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadData,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1040),
-                child: Padding(
-                  padding: EdgeInsets.all(compact ? 16 : 24),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) => Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'My circle',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineMedium,
-                              ),
+        child: SingleChildScrollView(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1040),
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 16 : 24),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'My circle',
+                              style: Theme.of(context).textTheme.headlineMedium,
                             ),
+                          ),
+                          if (compact)
                             IconButton(
-                              key: const ValueKey('circle-refresh'),
-                              tooltip: 'Refresh circle',
-                              onPressed: _loadingFriends || _loadingInvites
-                                  ? null
-                                  : _loadData,
-                              icon: const Icon(Icons.refresh, size: 20),
-                            ),
-                            if (compact)
-                              IconButton(
-                                key: const ValueKey('circle-find-people'),
-                                tooltip: 'Find people',
-                                onPressed: _findPeople,
-                                color: AppTheme.rust,
-                                icon: const Icon(
-                                  Icons.person_add_alt,
-                                  size: 20,
-                                ),
-                              )
-                            else
-                              TextButton.icon(
-                                key: const ValueKey('circle-find-people'),
-                                onPressed: _findPeople,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: AppTheme.rust,
-                                ),
-                                icon: const Icon(
-                                  Icons.person_add_alt,
-                                  size: 18,
-                                ),
-                                label: const Text('Find people'),
+                              key: const ValueKey('circle-find-people'),
+                              tooltip: 'Find people',
+                              onPressed: _findPeople,
+                              color: AppTheme.rust,
+                              icon: const Icon(Icons.person_add_alt, size: 20),
+                            )
+                          else
+                            TextButton.icon(
+                              key: const ValueKey('circle-find-people'),
+                              onPressed: _findPeople,
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppTheme.rust,
                               ),
+                              icon: const Icon(Icons.person_add_alt, size: 18),
+                              label: const Text('Find people'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: AppTheme.outline),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(child: _tabs()),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              key: const ValueKey('circle-search-toggle'),
+                              tooltip: _searchExpanded
+                                  ? 'Hide search'
+                                  : 'Search your circle',
+                              color:
+                                  _searchExpanded ||
+                                      _search.text.trim().isNotEmpty
+                                  ? AppTheme.rust
+                                  : AppTheme.ink,
+                              onPressed: _toggleSearch,
+                              icon: Icon(
+                                _searchExpanded ? Icons.close : Icons.search,
+                                size: 20,
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Container(
-                          decoration: const BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(color: AppTheme.outline),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(child: _tabs()),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                key: const ValueKey('circle-search-toggle'),
-                                tooltip: _searchExpanded
-                                    ? 'Hide search'
-                                    : 'Search your circle',
-                                color:
-                                    _searchExpanded ||
-                                        _search.text.trim().isNotEmpty
-                                    ? AppTheme.rust
-                                    : AppTheme.ink,
-                                onPressed: _toggleSearch,
-                                icon: Icon(
-                                  _searchExpanded ? Icons.close : Icons.search,
-                                  size: 20,
-                                ),
+                      ),
+                      if (_searchExpanded) ...[
+                        const SizedBox(height: 12),
+                        _searchField(),
+                      ],
+                      if (!_searchExpanded && _search.text.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: InputChip(
+                              label: Text(
+                                'Search: ${_search.text.trim()}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ],
+                              onPressed: _toggleSearch,
+                              deleteButtonTooltipMessage: 'Clear search',
+                              onDeleted: () => setState(() {
+                                _search.clear();
+                                _page = 0;
+                              }),
+                            ),
                           ),
                         ),
-                        if (_searchExpanded) ...[
-                          const SizedBox(height: 12),
-                          _searchField(),
-                        ],
-                        if (!_searchExpanded && _search.text.trim().isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: InputChip(
-                                label: Text(
-                                  'Search: ${_search.text.trim()}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                onPressed: _toggleSearch,
-                                deleteButtonTooltipMessage: 'Clear search',
-                                onDeleted: () => setState(() {
-                                  _search.clear();
-                                  _page = 0;
-                                }),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 8),
-                        if (_tab == 'friends')
-                          _friendsList(constraints.maxWidth)
-                        else
-                          _invitesList(constraints.maxWidth),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
+                      const SizedBox(height: 8),
+                      if (_tab == 'friends')
+                        _friendsList(constraints.maxWidth)
+                      else
+                        _invitesList(constraints.maxWidth),
+                      const SizedBox(height: 24),
+                    ],
                   ),
                 ),
               ),

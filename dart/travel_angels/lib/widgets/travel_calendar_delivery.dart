@@ -82,20 +82,9 @@ class _TravelCalendarNotificationsDialogState
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Row(
-      children: [
-        const Expanded(
-          child: TravelCalendarDialogTitle(
-            'Travel notifications',
-            label: 'Keep in touch',
-          ),
-        ),
-        IconButton(
-          tooltip: 'Refresh notifications',
-          onPressed: _busy ? null : _load,
-          icon: const Icon(Icons.refresh),
-        ),
-      ],
+    title: const TravelCalendarDialogTitle(
+      'Travel notifications',
+      label: 'Keep in touch',
     ),
     content: SizedBox(
       width: 580,
@@ -109,11 +98,16 @@ class _TravelCalendarNotificationsDialogState
               icon: Icons.notifications_none,
             ),
             if (_busy) const LinearProgressIndicator(),
-            if (_error != null)
+            if (_error != null) ...[
               Text(
                 _error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
+              TextButton(
+                onPressed: _busy ? null : _load,
+                child: const Text('Try again'),
+              ),
+            ],
             if (_confirmation != null) Text(_confirmation!),
             if (!_busy && _notifications.isEmpty)
               const Padding(
@@ -159,10 +153,9 @@ class _TravelCalendarNotificationsDialogState
                   ),
                 ),
               if (_deliveries.any((delivery) => delivery['status'] == 'failed'))
-                OutlinedButton.icon(
+                OutlinedButton(
                   onPressed: _busy ? null : _retry,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry my failed email notices'),
+                  child: const Text('Retry my failed email notices'),
                 ),
             ],
           ],
@@ -559,20 +552,9 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
             if (_success != null) Text(_success!),
             if (_broadcasts.isNotEmpty) ...[
               const Divider(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Delivery history',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Refresh delivery status',
-                    onPressed: _busy ? null : _load,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ],
+              Text(
+                'Delivery history',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               for (final broadcast in _broadcasts)
                 Card(
@@ -600,12 +582,11 @@ class _TravelBroadcastDialogState extends State<TravelBroadcastDialog> {
                             travelMaps(
                               broadcast['deliveries'],
                             ).any((d) => d['status'] == 'failed'))
-                          TextButton.icon(
+                          TextButton(
                             onPressed: _busy
                                 ? null
                                 : () => _retry(broadcast['id'] as String),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Retry failed deliveries'),
+                            child: const Text('Retry failed deliveries'),
                           ),
                       ],
                     ),

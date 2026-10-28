@@ -95,13 +95,13 @@ class _PermissionsPanelState extends State<PermissionsPanel>
   void _listenForLinks() {
     if (!widget.listenForDeepLinks) return;
     // Browser OAuth does not return through the native app-links plugin.
-    // Refresh and app-resume checks also work when no deep link is delivered.
+    // App-resume checks also work when no deep link is delivered.
     if (widget.deepLinkStream == null && kIsWeb) return;
     try {
       _linkSubscription = (widget.deepLinkStream ?? AppLinks().uriLinkStream)
           .listen(_handleDeepLink, onError: (Object _) {});
     } catch (_) {
-      // Some host platforms have no link listener. Manual refresh stays usable.
+      // Some host platforms have no link listener. App-resume checks still work.
     }
   }
 
@@ -280,7 +280,7 @@ class _PermissionsPanelState extends State<PermissionsPanel>
             if (_awaitingAuthorization) ...[
               const SizedBox(height: 16),
               const Text(
-                'Complete authorization in your browser, then return here. Refresh the connection if its status has not updated.',
+                'Complete authorization in your browser, then return here.',
               ),
             ],
             if (_error != null) ...[
@@ -292,23 +292,19 @@ class _PermissionsPanelState extends State<PermissionsPanel>
                   color: theme.colorScheme.error,
                 ),
               ),
-            ],
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: ValueKey(
-                  _error == null
-                      ? 'drive-connection-refresh'
-                      : 'drive-connection-retry',
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('drive-connection-retry'),
+                  onPressed: !_canLoad || _loading || _toggling
+                      ? null
+                      : _loadStatus,
+                  icon: const Icon(Icons.replay, size: 18),
+                  label: const Text('Retry'),
                 ),
-                onPressed: !_canLoad || _loading || _toggling
-                    ? null
-                    : _loadStatus,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: Text(_error == null ? 'Refresh connection' : 'Retry'),
               ),
-            ),
+            ],
           ],
         ),
       ),

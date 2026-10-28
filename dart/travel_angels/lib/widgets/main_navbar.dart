@@ -4,7 +4,7 @@ import 'package:travel_angels/utils/platform_utils.dart';
 
 /// Enum for navigation destinations
 enum NavDestination {
-  calendar(Icons.calendar_month, 'Calendar'),
+  calendar(Icons.luggage_outlined, 'Trips'),
   library(Icons.auto_stories_outlined, 'Library'),
   myCircle(Icons.people, 'My Circle'),
   profile(Icons.person, 'Profile'),

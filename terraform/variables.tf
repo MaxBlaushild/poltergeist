@@ -168,22 +168,46 @@ variable "slant_platform_id" {
 variable "google_client_id" {
   description = "Google OAuth client ID for reef-site's \"Sign in with Google\" — also the audience checked when the authenticator verifies Google ID tokens. Not secret (embedded in the frontend bundle too), but stored the same way as google_client_secret for consistency."
   type        = string
+  nullable    = false
+
+  validation {
+    condition     = try(length(trimspace(var.google_client_id)) > 0, false)
+    error_message = "google_client_id must be nonempty. Supply the existing Google OAuth client ID; do not submit a blank value."
+  }
 }
 
 variable "google_client_secret" {
   description = "Google OAuth client secret. Not currently used by the ID-token verification flow (no server-side code exchange happens), kept for potential future use (e.g. server-side refresh tokens)."
   type        = string
   sensitive   = true
+  nullable    = false
+
+  validation {
+    condition     = try(length(trimspace(var.google_client_secret)) > 0, false)
+    error_message = "google_client_secret must be nonempty. Supply the existing Google OAuth client secret; do not submit a blank value."
+  }
 }
 
 variable "reef_stripe_secret_key" {
   description = "Stripe secret key for reef-site's own, separate Stripe account (distinct from travel_angels_stripe_secret_key) — used only when PaymentCheckoutSessionParams.Platform == \"reef\"."
   type        = string
   sensitive   = true
+  nullable    = false
+
+  validation {
+    condition     = try(length(trimspace(var.reef_stripe_secret_key)) > 0, false)
+    error_message = "reef_stripe_secret_key must be nonempty. Supply the existing Reef Stripe secret key; do not submit a blank value."
+  }
 }
 
 variable "reef_stripe_webhook_secret" {
   description = "Signing secret for the webhook endpoint registered under reef-site's Stripe account at https://api.unclaimedstreets.com/billing/stripe-webhook."
   type        = string
   sensitive   = true
+  nullable    = false
+
+  validation {
+    condition     = try(length(trimspace(var.reef_stripe_webhook_secret)) > 0, false)
+    error_message = "reef_stripe_webhook_secret must be nonempty. Supply the existing Reef Stripe webhook secret; do not submit a blank value."
+  }
 }

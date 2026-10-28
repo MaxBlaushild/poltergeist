@@ -115,6 +115,14 @@ type Stop struct {
 
 func (Stop) TableName() string { return "tc_stops" }
 
+func (stop *Stop) AfterFind(*gorm.DB) error {
+	ensureFlightLegIDs(&stop.Draft)
+	if stop.Published != nil {
+		ensureFlightLegIDs(stop.Published)
+	}
+	return nil
+}
+
 type Grant struct {
 	ID          uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
 	CalendarID  *uuid.UUID `json:"calendarId,omitempty" gorm:"type:uuid;index"`
@@ -168,6 +176,7 @@ type Service struct {
 	tripImageStorage        TripImageStorage
 	tripImageBucket         string
 	lodgingPropertyProvider LodgingPropertyProvider
+	flightSearchProvider    FlightSearchProvider
 }
 
 func New(db *gorm.DB, authenticate func(*gin.Context) (*models.User, error), baseURL string) *Service {

@@ -48,7 +48,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int? _savedCount;
   bool _loadingLibrary = false;
   bool _libraryError = false;
-  bool _refreshing = false;
 
   @override
   void didChangeDependencies() {
@@ -115,29 +114,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted && generation == _generation) {
         setState(() => _loadingLibrary = false);
       }
-    }
-  }
-
-  Future<void> _refresh() async {
-    if (_refreshing) return;
-    setState(() => _refreshing = true);
-    final auth = context.read<AuthProvider>();
-    final level = context.read<UserLevelProvider>();
-    try {
-      await Future.wait([
-        auth.verifyToken(),
-        _loadLibrary(),
-        level.fetchUserLevel(),
-      ]);
-      if (mounted && auth.error != null && auth.isAuthenticated) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Your profile could not be refreshed. Try again.'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -504,8 +480,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       const SizedBox(height: 12),
       _row(
         key: const ValueKey('profile-calendar'),
-        label: 'Your calendar',
-        icon: Icons.calendar_month_outlined,
+        label: 'Your trips',
+        icon: Icons.luggage_outlined,
         onTap: _openCalendar,
       ),
       const Divider(height: 1),
@@ -608,94 +584,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       key: const ValueKey('profile-screen'),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1040),
-                child: Padding(
-                  padding: EdgeInsets.all(
-                    MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final wide = constraints.maxWidth >= 760 && !largeText;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Profile',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.headlineMedium,
-                                ),
+        child: SingleChildScrollView(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1040),
+              child: Padding(
+                padding: EdgeInsets.all(
+                  MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= 760 && !largeText;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Profile',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.headlineMedium,
                               ),
+                            ),
+                            if (constraints.maxWidth < 400 || largeText)
                               IconButton(
-                                key: const ValueKey('profile-refresh'),
-                                tooltip: 'Refresh profile',
-                                onPressed: _refreshing ? null : _refresh,
-                                icon: const Icon(Icons.refresh, size: 20),
+                                key: const ValueKey('profile-edit'),
+                                tooltip: 'Edit profile',
+                                onPressed: _edit,
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                              )
+                            else
+                              TextButton.icon(
+                                key: const ValueKey('profile-edit'),
+                                onPressed: _edit,
+                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                label: const Text('Edit profile'),
                               ),
-                              if (constraints.maxWidth < 400 || largeText)
-                                IconButton(
-                                  key: const ValueKey('profile-edit'),
-                                  tooltip: 'Edit profile',
-                                  onPressed: _edit,
-                                  icon: const Icon(
-                                    Icons.edit_outlined,
-                                    size: 20,
-                                  ),
-                                )
-                              else
-                                TextButton.icon(
-                                  key: const ValueKey('profile-edit'),
-                                  onPressed: _edit,
-                                  icon: const Icon(
-                                    Icons.edit_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Edit profile'),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _identityHeader(
-                            user,
-                            largeText && constraints.maxWidth < 600,
-                          ),
-                          const SizedBox(height: 28),
-                          const Divider(height: 1),
-                          const SizedBox(height: 24),
-                          if (wide)
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 6,
-                                  child: _travelSpace(largeText),
-                                ),
-                                const SizedBox(width: 40),
-                                Expanded(
-                                  flex: 4,
-                                  child: _account(user, levels),
-                                ),
-                              ],
-                            )
-                          else ...[
-                            _travelSpace(largeText),
-                            const SizedBox(height: 24),
-                            _account(user, levels),
                           ],
+                        ),
+                        const SizedBox(height: 20),
+                        _identityHeader(
+                          user,
+                          largeText && constraints.maxWidth < 600,
+                        ),
+                        const SizedBox(height: 28),
+                        const Divider(height: 1),
+                        const SizedBox(height: 24),
+                        if (wide)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(flex: 6, child: _travelSpace(largeText)),
+                              const SizedBox(width: 40),
+                              Expanded(flex: 4, child: _account(user, levels)),
+                            ],
+                          )
+                        else ...[
+                          _travelSpace(largeText),
                           const SizedBox(height: 24),
+                          _account(user, levels),
                         ],
-                      );
-                    },
-                  ),
+                        const SizedBox(height: 24),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

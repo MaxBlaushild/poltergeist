@@ -11,6 +11,7 @@ import 'package:travel_angels/widgets/travel_account_claim.dart';
 import 'package:travel_angels/widgets/travel_calendar_delivery.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
 import 'package:travel_angels/widgets/travel_calendar_views.dart';
+import 'package:travel_angels/widgets/travel_trip_list.dart';
 import 'package:travel_angels/widgets/travel_trip_settings.dart';
 
 /// An ongoing personal calendar, or its account-free shared browser view.
@@ -58,12 +59,15 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
   bool _awaitingGuestVerification = false;
   int _identityGeneration = 0;
   int _loadGeneration = 0;
+  int _viewPreferenceGeneration = 0;
   bool get _shared => widget.calendarToken != null || widget.stopToken != null;
   bool get _canManageCalendar => !_shared && _calendar['canManage'] == true;
   bool get _canManageCalendarPermissions =>
       !_shared && _calendar['canManagePermissions'] == true;
   String get _selectionKey =>
       'travel_calendar_selections:${widget.calendarToken ?? widget.stopToken ?? 'personal'}:${_selectionIdentity ?? 'guest'}';
+  String get _viewPreferenceKey =>
+      'travel_trips_view:${_viewIdentity ?? 'guest'}';
   Map<String, dynamic> get _accessQuery => {
     if (widget.calendarToken != null) 'calendarToken': widget.calendarToken,
     if (widget.stopToken != null) 'stopToken': widget.stopToken,
@@ -94,7 +98,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
   }
 
   Future<void> _initialize() async {
-    await _restoreSelections();
+    await Future.wait([_restoreSelections(), _restoreViewPreference()]);
     await _load();
     _initializing = false;
     _authChanged();
@@ -136,10 +140,41 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       _awaitingGuestVerification = false;
       _error = null;
       _loading = true;
+      _monthView = true;
     });
-    await _restoreSelections();
+    await Future.wait([_restoreSelections(), _restoreViewPreference()]);
     if (!mounted || generation != _identityGeneration) return;
     await _load();
+  }
+
+  Future<void> _restoreViewPreference() async {
+    final key = _viewPreferenceKey;
+    final generation = ++_viewPreferenceGeneration;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted ||
+          generation != _viewPreferenceGeneration ||
+          key != _viewPreferenceKey) {
+        return;
+      }
+      setState(() => _monthView = prefs.getString(key) != 'list');
+    } catch (_) {
+      // The selected view still works if device preferences are unavailable.
+    }
+  }
+
+  Future<void> _setMonthView(bool monthView) async {
+    if (_monthView == monthView) return;
+    final key = _viewPreferenceKey;
+    final generation = ++_viewPreferenceGeneration;
+    setState(() => _monthView = monthView);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (generation != _viewPreferenceGeneration) return;
+      await prefs.setString(key, monthView ? 'calendar' : 'list');
+    } catch (_) {
+      // A preference write must not prevent switching views.
+    }
   }
 
   Future<void> _restoreSelections() async {
@@ -744,6 +779,33 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     }
   }
 
+  Future<bool> _claimForTrip() async {
+    final oldKey = _selectionKey;
+    _claimInProgress = true;
+    try {
+      final claimed = await (widget.claimAccount ?? claimTravelAccount)(
+        context,
+        _service,
+      );
+      if (!mounted) return false;
+      _viewIdentity = _auth?.user?.id;
+      if (!claimed) {
+        // Retain pending guest selections through a cancelled or failed claim.
+        await _load();
+        return false;
+      }
+      _selectionIdentity = _viewIdentity;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(oldKey);
+      await _saveSelections();
+      await _load();
+      return true;
+    } finally {
+      _claimInProgress = false;
+      _authChanged();
+    }
+  }
+
   Future<void> _reviewSelections({String? onlyStopId}) async {
     if (_selections.isEmpty) return;
     final authenticated =
@@ -755,30 +817,7 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
         await _service.guestNeedsClaim(currentAccountId ?? '');
     if (!mounted) return;
     if (needsClaim) {
-      final oldKey = _selectionKey;
-      _claimInProgress = true;
-      try {
-        final claimed = await (widget.claimAccount ?? claimTravelAccount)(
-          context,
-          _service,
-        );
-        if (!mounted) return;
-        _viewIdentity = _auth?.user?.id;
-        if (!claimed) {
-          // A recoverable claim failure keeps the original selections, without
-          // attaching them to a different account before a successful claim.
-          await _load();
-          return;
-        }
-        _selectionIdentity = _viewIdentity;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(oldKey);
-        await _saveSelections();
-        await _load();
-      } finally {
-        _claimInProgress = false;
-        _authChanged();
-      }
+      if (!await _claimForTrip()) return;
       if (!mounted || _selections.isEmpty || _error != null) return;
     }
     if (!mounted) return;
@@ -1141,6 +1180,8 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
 
   Future<void> _tripAction(String action, TravelStop stop) async {
     switch (action) {
+      case 'claim':
+        await _claimForTrip();
       case 'edit':
         await _edit(stop);
       case 'permissions':
@@ -1233,13 +1274,6 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (_canManageCalendar && _calendar['canCreateTrips'] != false)
-          FilledButton.icon(
-            style: buttonStyle,
-            onPressed: _busy ? null : _edit,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Create trip'),
-          ),
         if (_shared)
           OutlinedButton.icon(
             style: buttonStyle,
@@ -1247,35 +1281,41 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
             icon: const Icon(Icons.notifications_none, size: 18),
             label: const Text('Follow updates'),
           ),
-        PopupMenuButton<bool>(
-          tooltip: 'Calendar view',
-          initialValue: _monthView,
-          onSelected: (value) => setState(() => _monthView = value),
-          itemBuilder: (context) => [
-            CheckedPopupMenuItem(
-              value: true,
-              checked: _monthView,
-              child: const Text('Month'),
-            ),
-            CheckedPopupMenuItem(
-              value: false,
-              checked: !_monthView,
-              child: const Text('Agenda'),
-            ),
-          ],
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _monthView ? 'Month' : 'Agenda',
-                  style: theme.textTheme.labelMedium,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppTheme.outline),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final calendarView in [true, false])
+                IconButton(
+                  key: ValueKey(
+                    calendarView ? 'trips-calendar-view' : 'trips-list-view',
+                  ),
+                  tooltip: calendarView ? 'Calendar view' : 'List view',
+                  isSelected: _monthView == calendarView,
+                  onPressed: () => _setMonthView(calendarView),
+                  icon: Icon(
+                    calendarView
+                        ? Icons.calendar_month_outlined
+                        : Icons.format_list_bulleted,
+                    size: 20,
+                  ),
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size(44, 44),
+                    padding: EdgeInsets.zero,
+                    foregroundColor: AppTheme.ink,
+                    backgroundColor: _monthView == calendarView
+                        ? AppTheme.peach
+                        : Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(Icons.expand_more, size: 18),
-              ],
-            ),
+            ],
           ),
         ),
         IconButton(
@@ -1439,21 +1479,20 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
     return Scaffold(
       backgroundColor: AppTheme.paper,
       appBar: AppBar(
-        title: _shared
-            ? const TravelAngelsWordmark()
-            : Text(_calendar['title'] as String? ?? 'Travel calendar'),
+        title: _shared ? const TravelAngelsWordmark() : const Text('Trips'),
         actions: [
+          if (_canManageCalendar && _calendar['canCreateTrips'] != false)
+            IconButton(
+              tooltip: 'Create trip',
+              onPressed: _busy ? null : _edit,
+              icon: const Icon(Icons.add),
+            ),
           if (!_shared)
             IconButton(
               tooltip: 'Travel notifications',
               onPressed: _busy ? null : _notifications,
               icon: const Icon(Icons.notifications_none),
             ),
-          IconButton(
-            tooltip: 'Refresh calendar',
-            onPressed: _loading || _busy ? null : _load,
-            icon: const Icon(Icons.refresh),
-          ),
           if (_shared || _canManageCalendar || _canManageCalendarPermissions)
             PopupMenuButton<String>(
               tooltip: 'Calendar actions',
@@ -1511,224 +1550,202 @@ class _TravelCalendarScreenState extends State<TravelCalendarScreen> {
       body: SafeArea(
         child: _loading && _stops.isEmpty
             ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.sizeOf(context).width > 1320
-                        ? (MediaQuery.sizeOf(context).width - 1280) / 2
-                        : MediaQuery.sizeOf(context).width < 360
-                        ? 4
-                        : MediaQuery.sizeOf(context).width < 600
-                        ? 12
-                        : 24,
-                    vertical: 16,
-                  ),
-                  children: [
-                    if (_loading || _busy) const LinearProgressIndicator(),
-                    if (_error != null) ...[
+            : ListView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: MediaQuery.sizeOf(context).width > 1320
+                      ? (MediaQuery.sizeOf(context).width - 1280) / 2
+                      : MediaQuery.sizeOf(context).width < 360
+                      ? 4
+                      : MediaQuery.sizeOf(context).width < 600
+                      ? 12
+                      : 24,
+                  vertical: 16,
+                ),
+                children: [
+                  if (_loading || _busy) const LinearProgressIndicator(),
+                  if (_error != null) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.lock_outline, size: 36),
+                            const SizedBox(height: 12),
+                            Text(_error!),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                FilledButton(
+                                  onPressed: _load,
+                                  child: const Text('Try again'),
+                                ),
+                                if (_shared)
+                                  OutlinedButton(
+                                    onPressed: _verify,
+                                    child: const Text('Verify invited email'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    _calendarHeading(),
+                    _calendarFilters(),
+                    const SizedBox(height: 12),
+                    for (final invitation in _cohostInvitations)
+                      Card(
+                        color: AppTheme.peach,
+                        child: ListTile(
+                          leading: const Icon(Icons.group_add_outlined),
+                          title: Text(
+                            (invitation['tripTitle'] ?? invitation['title'])
+                                    as String? ??
+                                'Hosting invitation',
+                          ),
+                          subtitle: Text(
+                            invitation['isHost'] == true
+                                ? '${invitation['ownerDisplayName'] ?? 'The trip owner'} invited you to host. Review the role and choose whether you’re attending.'
+                                : 'Accept to show this shared trip on your calendar.',
+                          ),
+                          trailing: TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => _acceptHost(invitation),
+                            child: const Text('Accept'),
+                          ),
+                        ),
+                      ),
+                    if (_selectionNotice != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Text(
+                          _selectionNotice!,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ),
+                    if (_awaitingGuestVerification)
                       Card(
                         child: Padding(
-                          padding: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(16),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const Icon(Icons.lock_outline, size: 36),
-                              const SizedBox(height: 12),
-                              Text(_error!),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  FilledButton(
-                                    onPressed: _load,
-                                    child: const Text('Try again'),
-                                  ),
-                                  if (_shared)
-                                    OutlinedButton(
-                                      onPressed: _verify,
-                                      child: const Text('Verify invited email'),
-                                    ),
-                                ],
+                              const Text(
+                                'Verify your invited email to restore saved selections for restricted plans.',
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton(
+                                onPressed: _busy || _loading ? null : _verify,
+                                child: const Text('Restore saved selections'),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    ] else ...[
-                      _calendarHeading(),
-                      _calendarFilters(),
-                      const SizedBox(height: 12),
-                      for (final invitation in _cohostInvitations)
-                        Card(
-                          color: AppTheme.peach,
-                          child: ListTile(
-                            leading: const Icon(Icons.group_add_outlined),
-                            title: Text(
-                              (invitation['tripTitle'] ?? invitation['title'])
-                                      as String? ??
-                                  'Hosting invitation',
-                            ),
-                            subtitle: Text(
-                              invitation['isHost'] == true
-                                  ? '${invitation['ownerDisplayName'] ?? 'The trip owner'} invited you to host. Review the role and choose whether you’re attending.'
-                                  : 'Accept to show this shared trip on your calendar.',
-                            ),
-                            trailing: TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _acceptHost(invitation),
-                              child: const Text('Accept'),
-                            ),
-                          ),
-                        ),
-                      if (_selectionNotice != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Text(
-                            _selectionNotice!,
-                            style: TextStyle(color: theme.colorScheme.error),
-                          ),
-                        ),
-                      if (_awaitingGuestVerification)
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const Text(
-                                  'Verify your invited email to restore saved selections for restricted plans.',
-                                ),
-                                const SizedBox(height: 8),
-                                OutlinedButton(
-                                  onPressed: _busy || _loading ? null : _verify,
-                                  child: const Text('Restore saved selections'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (visibleSelections.isNotEmpty)
-                        Card(
-                          color: AppTheme.peach,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  '${visibleSelections.length} ${visibleSelections.length == 1 ? 'stop' : 'stops'} selected · nothing submitted',
-                                  style: theme.textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 8),
-                                for (final entry in visibleSelections.entries)
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          '${_stops.where((s) => s['id'] == entry.key).firstOrNull?['title'] ?? 'Travel stop'} · ${travelStatusLabel(entry.value['status'])}',
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Remove selection',
-                                        onPressed: _busy
-                                            ? null
-                                            : () {
-                                                setState(
-                                                  () => _selections.remove(
-                                                    entry.key,
-                                                  ),
-                                                );
-                                                _saveSelections();
-                                              },
-                                        icon: const Icon(Icons.close),
-                                      ),
-                                    ],
-                                  ),
-                                FilledButton(
-                                  onPressed: _busy ? null : _reviewSelections,
-                                  child: Text(
-                                    context
-                                                .watch<AuthProvider?>()
-                                                ?.isAuthenticated ==
-                                            true
-                                        ? 'Review selections'
-                                        : 'Claim account & review selections',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (_monthView)
-                        TravelCalendarMonth(
-                          month: _month,
-                          stops: filtered,
-                          onMonthChanged: (month) =>
-                              setState(() => _month = month),
-                          onStopTap: _showStop,
-                        )
-                      else if (filtered.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 36),
+                    if (visibleSelections.isNotEmpty)
+                      Card(
+                        color: AppTheme.peach,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Icon(
-                                Icons.explore_outlined,
-                                size: 48,
-                                color: AppTheme.rust,
-                              ),
-                              const SizedBox(height: 16),
                               Text(
-                                _stops.isEmpty
-                                    ? 'No travel stops to show yet'
-                                    : 'No plans match these filters',
-                                style: theme.textTheme.headlineSmall,
+                                '${visibleSelections.length} ${visibleSelections.length == 1 ? 'stop' : 'stops'} selected · nothing submitted',
+                                style: theme.textTheme.titleLarge,
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                _canManageCalendar
-                                    ? 'Add a destination to start planning. New stops begin as private drafts.'
-                                    : 'Only published plans you can view appear here.',
-                                textAlign: TextAlign.center,
+                              for (final entry in visibleSelections.entries)
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${_stops.where((s) => s['id'] == entry.key).firstOrNull?['title'] ?? 'Travel stop'} · ${travelStatusLabel(entry.value['status'])}',
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Remove selection',
+                                      onPressed: _busy
+                                          ? null
+                                          : () {
+                                              setState(
+                                                () => _selections.remove(
+                                                  entry.key,
+                                                ),
+                                              );
+                                              _saveSelections();
+                                            },
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ],
+                                ),
+                              FilledButton(
+                                onPressed: _busy ? null : _reviewSelections,
+                                child: Text(
+                                  context
+                                              .watch<AuthProvider?>()
+                                              ?.isAuthenticated ==
+                                          true
+                                      ? 'Review selections'
+                                      : 'Claim account & review selections',
+                                ),
                               ),
                             ],
                           ),
-                        )
-                      else ...[
-                        for (final stop in filtered.where(
-                          (s) => s['datePrecision'] == 'fixed',
-                        ))
-                          TravelStopCard(
-                            stop: stop,
-                            selected: _selections.containsKey(stop['id']),
-                            onTap: () => _showStop(stop),
-                          ),
-                        if (filtered.any(
-                          (s) => s['datePrecision'] != 'fixed',
-                        )) ...[
-                          const SizedBox(height: 20),
-                          Text(
-                            'Approximate & unscheduled plans',
-                            style: theme.textTheme.headlineSmall,
-                          ),
-                          const SizedBox(height: 8),
-                          for (final stop in filtered.where(
-                            (s) => s['datePrecision'] != 'fixed',
-                          ))
-                            TravelStopCard(
-                              stop: stop,
-                              selected: _selections.containsKey(stop['id']),
-                              onTap: () => _showStop(stop),
+                        ),
+                      ),
+                    if (_monthView)
+                      TravelCalendarMonth(
+                        month: _month,
+                        stops: filtered,
+                        onMonthChanged: (month) =>
+                            setState(() => _month = month),
+                        onStopTap: _showStop,
+                      )
+                    else if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 36),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.explore_outlined,
+                              size: 48,
+                              color: AppTheme.rust,
                             ),
-                        ],
-                      ],
-                    ],
-                    const SizedBox(height: 24),
+                            const SizedBox(height: 16),
+                            Text(
+                              _stops.isEmpty
+                                  ? 'Your next trip starts here'
+                                  : 'No trips match these filters',
+                              style: theme.textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _canManageCalendar
+                                  ? 'Create a trip to start planning.'
+                                  : 'Only published plans you can view appear here.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      TravelTripList(
+                        stops: filtered,
+                        onStopTap: _showStop,
+                        selectedIds: _selections.keys.toSet(),
+                        expandPast:
+                            _period == 'past' ||
+                            _search.text.trim().isNotEmpty ||
+                            _dateFilter != null,
+                      ),
                   ],
-                ),
+                  const SizedBox(height: 24),
+                ],
               ),
       ),
     );

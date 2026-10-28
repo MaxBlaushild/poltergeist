@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"math"
 	"net/http"
 	"net/url"
@@ -238,7 +239,7 @@ func (s *Service) propertyPhotoURLs(c *gin.Context, property *LodgingProperty) {
 	}
 	for i := range property.Photos {
 		property.Photos[i].URL = base + "/photos/" + strconv.Itoa(i)
-		query := url.Values{"photoVersion": []string{lodgingPhotoVersion(property.Photos[i].Name)}}
+		query := url.Values{"photoVersion": []string{lodgingPhotoVersion(property.Photos[i])}}
 		if c.Query("draft") == "true" {
 			query.Set("draft", "true")
 		}
@@ -246,8 +247,24 @@ func (s *Service) propertyPhotoURLs(c *gin.Context, property *LodgingProperty) {
 	}
 }
 
-func lodgingPhotoVersion(name string) string {
-	digest := sha256.Sum256([]byte(name))
+func lodgingPhotoVersion(photo LodgingPropertyPhoto) string {
+	// Places resource names can rotate between consecutive Details requests.
+	// Bind the version to the photo's Maps link and displayed metadata instead,
+	// then use the current response's resource name to retrieve its bytes. When
+	// no photo-specific Maps link is available, retain the resource name so a
+	// different image cannot be substituted based only on its array position.
+	name := ""
+	if photo.GoogleMapsURI == "" {
+		name = photo.Name
+	}
+	identity, _ := json.Marshal(struct {
+		GoogleMapsURI string
+		Name          string
+		Width         int
+		Height        int
+		Attributions  []LodgingPhotoAttribution
+	}{photo.GoogleMapsURI, name, photo.Width, photo.Height, photo.Attributions})
+	digest := sha256.Sum256(identity)
 	return hex.EncodeToString(digest[:])
 }
 
@@ -343,12 +360,12 @@ func (s *Service) getLodgingPropertyPhoto(c *gin.Context) {
 		respondError(c, errUnavailable)
 		return
 	}
-	// Bind bytes to the photo whose attribution the client saw, even if the
-	// provider reorders or removes photos before this request. Resource names
-	// remain short-lived provider data, never stored or exposed to the client.
+	// Bind bytes to the photo and attribution the client saw, even if the
+	// provider rotates resource names or reorders photos before this request.
+	// Resource names remain short-lived data, never stored or exposed here.
 	photoName := ""
 	for _, photo := range property.Photos {
-		if lodgingPhotoVersion(photo.Name) == c.Query("photoVersion") {
+		if lodgingPhotoVersion(photo) == c.Query("photoVersion") {
 			photoName = photo.Name
 			break
 		}

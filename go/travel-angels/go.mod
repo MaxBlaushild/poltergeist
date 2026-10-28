@@ -14,6 +14,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster => ../pkg/dungeonmaster
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/flightaware => ../pkg/flightaware
 	github.com/MaxBlaushild/poltergeist/pkg/googledrive => ../pkg/googledrive
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
@@ -40,6 +41,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/email v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/flightaware v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/googledrive v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
@@ -137,6 +139,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gorm.io/datatypes v1.2.7 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 )

@@ -507,19 +507,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     // If authenticated but user ID is missing, show error
     if (user?.id == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Documents'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                authProvider.verifyToken();
-                _loadDocuments();
-              },
-              tooltip: 'Refresh',
-            ),
-          ],
-        ),
+        appBar: AppBar(title: const Text('Documents')),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -537,7 +525,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text('Please try refreshing or log out and log back in'),
+              const Text('Please try again or log out and log back in'),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: () {
@@ -597,11 +585,6 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           tooltip: 'Delete selected',
                         ),
                       ],
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _loadDocuments,
-                        tooltip: 'Refresh',
-                      ),
                       IconButton(
                         icon: const Icon(Icons.add),
                         onPressed: _showImportBottomSheet,

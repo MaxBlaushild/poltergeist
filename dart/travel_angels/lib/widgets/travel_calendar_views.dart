@@ -130,8 +130,12 @@ List<TravelStop> filterTravelStops(
             .contains(query)) {
       return false;
     }
-    final start = travelDate(stop['startDate']);
-    final end = travelDate(stop['endDate']) ?? start;
+    // A trip whose dates were cleared can retain old date values in the API.
+    // Keep those values out of temporal filters until its dates are decided.
+    final start = stop['datePrecision'] == 'tbd'
+        ? null
+        : travelDate(stop['startDate']);
+    final end = start == null ? null : travelDate(stop['endDate']) ?? start;
     if (range != null &&
         (start == null ||
             end == null ||

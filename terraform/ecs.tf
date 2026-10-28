@@ -9,7 +9,7 @@ module "ecs" {
       cpu = 1024
       memory = 2048
 
-      task_exec_secret_arns = [
+      task_exec_secret_arns = concat([
         aws_secretsmanager_secret.db_password.arn,
         aws_secretsmanager_secret.auth_private_key.arn,
         aws_secretsmanager_secret.open_ai_key.arn,
@@ -41,7 +41,7 @@ module "ecs" {
         aws_secretsmanager_secret.google_client_secret.arn,
         aws_secretsmanager_secret.reef_stripe_secret_key.arn,
         aws_secretsmanager_secret.reef_stripe_webhook_secret.arn,
-      ]
+      ], local.travel_angels_flight_secret_arns)
 
       tasks_iam_role_statements = [
         {
@@ -214,7 +214,7 @@ module "ecs" {
               value = var.slant_platform_id
             }
           ]
-          secrets = [
+          secrets = concat([
             {
               name      = "DB_PASSWORD"
               valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
@@ -291,7 +291,7 @@ module "ecs" {
               name      = "CA_PRIVATE_KEY"
               valueFrom = "${aws_secretsmanager_secret.ca_private_key.arn}"
             }
-          ]
+          ], local.travel_angels_flight_secrets)
           portMappings = [
             {
               name          = local.core_container_name

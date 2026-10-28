@@ -50,16 +50,21 @@ type TripLodging struct {
 	Photos                    []TripLodgingPhoto         `json:"photos"`
 }
 type TripFlightLeg struct {
-	Airline           string `json:"airline"`
-	FlightNumber      string `json:"flightNumber"`
-	DepartureAirport  string `json:"departureAirport"`
-	ArrivalAirport    string `json:"arrivalAirport"`
-	DepartureDate     string `json:"departureDate"`
-	DepartureTime     string `json:"departureTime"`
-	DepartureTimeZone string `json:"departureTimeZone"`
-	ArrivalDate       string `json:"arrivalDate"`
-	ArrivalTime       string `json:"arrivalTime"`
-	ArrivalTimeZone   string `json:"arrivalTimeZone"`
+	ID                    string `json:"id"`
+	Provider              string `json:"provider,omitempty"`
+	ProviderID            string `json:"providerId,omitempty"`
+	OperatingAirline      string `json:"operatingAirline,omitempty"`
+	OperatingFlightNumber string `json:"operatingFlightNumber,omitempty"`
+	Airline               string `json:"airline"`
+	FlightNumber          string `json:"flightNumber"`
+	DepartureAirport      string `json:"departureAirport"`
+	ArrivalAirport        string `json:"arrivalAirport"`
+	DepartureDate         string `json:"departureDate"`
+	DepartureTime         string `json:"departureTime"`
+	DepartureTimeZone     string `json:"departureTimeZone"`
+	ArrivalDate           string `json:"arrivalDate"`
+	ArrivalTime           string `json:"arrivalTime"`
+	ArrivalTimeZone       string `json:"arrivalTimeZone"`
 }
 type TripFlight struct {
 	ID                        string          `json:"id"`
@@ -275,6 +280,8 @@ func validateTripLogistics(c *StopContent) error {
 		if err := validateEntryIdentity(&f.ID, seen); err != nil {
 			return err
 		}
+		ensureItineraryLegIDs(f)
+		legIDs := map[string]bool{}
 		f.Label = strings.TrimSpace(f.Label)
 		if f.Label == "" || utf8.RuneCountInString(f.Label) > 200 || len(f.Notes) > 10000 || len(f.HostNotes) > 10000 || len(f.Legs) == 0 || len(f.Legs) > 10 {
 			return bad("Provide a flight label and between one and ten connecting legs")
@@ -295,6 +302,12 @@ func validateTripLogistics(c *StopContent) error {
 		outside := false
 		for j := range f.Legs {
 			leg := &f.Legs[j]
+			if err := validateEntryIdentity(&leg.ID, legIDs); err != nil {
+				return bad("Each flight leg needs a distinct valid ID")
+			}
+			if len(leg.Provider) > 50 || len(leg.ProviderID) > 300 || len(leg.OperatingAirline) > 150 || len(leg.OperatingFlightNumber) > 30 {
+				return bad("Keep flight provider and operating carrier details within their limits")
+			}
 			if len(leg.Airline) > 150 || len(leg.FlightNumber) > 30 || len(leg.DepartureAirport) > 200 || len(leg.ArrivalAirport) > 200 || strings.TrimSpace(leg.DepartureAirport) == "" || strings.TrimSpace(leg.ArrivalAirport) == "" {
 				return bad("Each flight leg needs departure and arrival airports")
 			}

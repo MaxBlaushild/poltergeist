@@ -69,6 +69,7 @@ func NewServer(
 		s.calendar = travelcalendar.New(connection, s.GetAuthenticatedUser, webURL)
 		s.calendar.ConfigureDestinationSearch(googleDestinationSearch(s.googleMapsClient))
 		s.calendar.ConfigureLodgingPropertyProvider(googleLodgingPropertyProvider(s.googleMapsClient))
+		s.calendar.ConfigureFlightSearchProvider(flightAwareSearchProvider(os.Getenv("FLIGHTAWARE_API_KEY")))
 		if bucket := strings.TrimSpace(os.Getenv("TRAVEL_ANGELS_TRIP_MEDIA_BUCKET")); bucket != "" {
 			if storage, ok := s.awsClient.(aws.ObjectClient); ok {
 				s.calendar.ConfigureTripImageStorage(storage, bucket)

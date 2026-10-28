@@ -283,6 +283,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Not connected'), findsOneWidget);
       expect(_key('drive-connection-error'), findsNothing);
+      expect(_key('drive-connection-retry'), findsNothing);
+      expect(find.text('Refresh connection'), findsNothing);
       expect(
         tester.widget<Switch>(_key('drive-connection-toggle')).onChanged,
         isNotNull,
@@ -346,7 +348,7 @@ void main() {
     },
   );
 
-  testWidgets('a later refresh wins over an older status response', (
+  testWidgets('a later resume check wins over an older status response', (
     tester,
   ) async {
     final old = Completer<Map<String, dynamic>>();

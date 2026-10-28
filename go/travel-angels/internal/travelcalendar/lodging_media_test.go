@@ -21,18 +21,15 @@ type testLodgingProvider struct {
 	beforeReturn              func()
 	failed                    bool
 	bounded                   bool
-	photoNames                []string
+	propertyPhotos            []LodgingPropertyPhoto
 	lastPhotoName             string
 	searchQuery               string
 }
 
 func (p *testLodgingProvider) property(id string) *LodgingProperty {
 	property := &LodgingProperty{Provider: "google", PlaceID: id, Name: "Live hotel " + id, Address: "Live public property address", Rating: 4.8, RatingCount: 123, Photos: []LodgingPropertyPhoto{{Name: "places/" + id + "/photos/live-name", Width: 1200, Height: 800, GoogleMapsURI: "https://maps.google.com/photo", Attributions: []LodgingPhotoAttribution{{DisplayName: "Photographer", URI: "https://maps.google.com/contributor"}}}}}
-	if p.photoNames != nil {
-		property.Photos = nil
-		for _, name := range p.photoNames {
-			property.Photos = append(property.Photos, LodgingPropertyPhoto{Name: name, Attributions: []LodgingPhotoAttribution{{DisplayName: name + " photographer"}}})
-		}
+	if p.propertyPhotos != nil {
+		property.Photos = append([]LodgingPropertyPhoto{}, p.propertyPhotos...)
 	}
 	return property
 }
@@ -241,16 +238,53 @@ func TestLodgingProviderPhotosStayBoundToDisplayedAttribution(t *testing.T) {
 	path := "/calendar/stops/" + stop.ID.String() + "/lodging/" + id + "/property"
 	property := calendarResponse(t, f, "GET", path+"?stopToken="+stop.ShareToken, nil, uuid.Nil, "", 200)["property"].(map[string]interface{})
 	photoURL := property["photos"].([]interface{})[0].(map[string]interface{})["url"].(string)
-	originalName := "places/place-a/photos/live-name"
-	p.photoNames = []string{"places/place-a/photos/new-first", originalName}
+	original := p.property("place-a").Photos[0]
+	rotated := original
+	rotated.Name = "places/place-a/photos/rotated-name"
+	different := original
+	different.Name = "places/place-a/photos/new-first"
+	different.GoogleMapsURI = "https://maps.google.com/another-photo"
+	p.propertyPhotos = []LodgingPropertyPhoto{different, rotated}
 	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 200)
-	if p.lastPhotoName != originalName {
-		t.Fatal("reordered photo bytes no longer match displayed author attribution")
+	if p.lastPhotoName != rotated.Name {
+		t.Fatal("rotated/reordered photo did not resolve to the current resource matching displayed attribution")
 	}
-	p.photoNames = []string{"places/place-a/photos/new-first"}
+	changedAttribution := rotated
+	changedAttribution.Attributions = []LodgingPhotoAttribution{{DisplayName: "Different photographer", URI: "https://maps.google.com/different-contributor"}}
+	p.propertyPhotos = []LodgingPropertyPhoto{changedAttribution}
+	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 404)
+	p.propertyPhotos = []LodgingPropertyPhoto{different}
 	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 404)
 	if p.photos != 1 {
-		t.Fatal("removed provider image silently replaced with a different photo")
+		t.Fatal("removed photo or changed attribution was silently replaced")
+	}
+}
+
+func TestLodgingProviderPhotosWithoutMapsLinkRequireSameResourceAndAttribution(t *testing.T) {
+	f, stop, id := lodgingFixture(t)
+	p := &testLodgingProvider{}
+	original := p.property("place-a").Photos[0]
+	original.GoogleMapsURI = ""
+	p.propertyPhotos = []LodgingPropertyPhoto{original}
+	f.service.ConfigureLodgingPropertyProvider(p)
+	path := "/calendar/stops/" + stop.ID.String() + "/lodging/" + id + "/property"
+	property := calendarResponse(t, f, "GET", path+"?stopToken="+stop.ShareToken, nil, uuid.Nil, "", 200)["property"].(map[string]interface{})
+	photoURL := property["photos"].([]interface{})[0].(map[string]interface{})["url"].(string)
+	different := original
+	different.Name = "places/place-a/photos/different-resource"
+	p.propertyPhotos = []LodgingPropertyPhoto{different, original}
+	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 200)
+	if p.lastPhotoName != original.Name {
+		t.Fatal("photo without Maps link was replaced by array position")
+	}
+	p.propertyPhotos = []LodgingPropertyPhoto{different}
+	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 404)
+	changedAttribution := original
+	changedAttribution.Attributions = []LodgingPhotoAttribution{{DisplayName: "Different photographer"}}
+	p.propertyPhotos = []LodgingPropertyPhoto{changedAttribution}
+	testGetTripHero(t, f, photoURL+"&stopToken="+stop.ShareToken, uuid.Nil, 404)
+	if p.photos != 1 {
+		t.Fatal("photo without Maps link accepted an unbound resource or attribution")
 	}
 }
 

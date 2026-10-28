@@ -80,6 +80,7 @@ func (s *Service) RegisterRoutes(r *gin.Engine) {
 	g.GET("/shared/stops/:token", s.getSharedStop)
 	s.registerTripRoutes(g)
 	s.registerTripMediaRoutes(g)
+	s.registerFlightRoutes(g)
 	s.registerGuestRoutes(r)
 }
 func (s *Service) primaryCalendar(tx *gorm.DB, userID uuid.UUID) (*Calendar, error) {

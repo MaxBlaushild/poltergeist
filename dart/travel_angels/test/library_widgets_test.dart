@@ -230,7 +230,7 @@ void main() {
       auth.change(User(id: 'another-person', name: 'Nora'));
       await tester.pumpAndSettle();
       expect(_key('library-reader-content'), findsOneWidget);
-      await _tap(tester, _key('library-reader-more'));
+      expect(_key('library-reader-more'), findsNothing);
       expect(_key('library-reader-share'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       auth.dispose();
@@ -453,7 +453,7 @@ void main() {
       ]);
       await _mount(tester, _reader(service));
       await tester.pumpAndSettle();
-      await _tap(tester, _key('library-reader-more'));
+      expect(_key('library-reader-more'), findsNothing);
       for (final action in ['edit', 'share', 'delete']) {
         expect(_key('library-reader-$action'), findsNothing);
       }
@@ -465,7 +465,7 @@ void main() {
       service.documents['guide']!['userId'] = '';
       await _mount(tester, _reader(service, userId: ''));
       await tester.pumpAndSettle();
-      await _tap(tester, _key('library-reader-more'));
+      expect(_key('library-reader-more'), findsNothing);
       expect(_key('library-reader-share'), findsNothing);
       await tester.pumpWidget(const SizedBox());
 

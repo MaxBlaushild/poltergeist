@@ -95,56 +95,53 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadFriendsDocuments,
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 48,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: theme.colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _errorMessage!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.error,
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadFriendsDocuments,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 28,
-                  ),
-                  children: [
-                    // Discover header
-                    Text('Discover', style: theme.textTheme.headlineLarge),
-                    const SizedBox(height: 24),
-                    // Trending destinations widget at the top
-                    const TrendingDestinationsWidget(),
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 16),
-                    // From Your Network widget
-                    FromYourNetworkWidget(
-                      documents: _documents,
-                      buildDocumentCard: _buildDocumentCard,
+                    ElevatedButton(
+                      onPressed: _loadFriendsDocuments,
+                      child: const Text('Retry'),
                     ),
                   ],
                 ),
-        ),
+              )
+            : ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
+                ),
+                children: [
+                  // Discover header
+                  Text('Discover', style: theme.textTheme.headlineLarge),
+                  const SizedBox(height: 24),
+                  // Trending destinations widget at the top
+                  const TrendingDestinationsWidget(),
+                  const SizedBox(height: 16),
+                  // From Your Network widget
+                  FromYourNetworkWidget(
+                    documents: _documents,
+                    buildDocumentCard: _buildDocumentCard,
+                  ),
+                ],
+              ),
       ),
     );
   }

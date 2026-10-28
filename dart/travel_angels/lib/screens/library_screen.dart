@@ -250,184 +250,176 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: RefreshIndicator(
-      onRefresh: _load,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
-            child: Padding(
-              padding: EdgeInsets.all(
-                MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final documents = _filtered;
-                  final columns = constraints.maxWidth >= 1020
-                      ? 3
-                      : constraints.maxWidth >= 680
-                      ? 2
-                      : 1;
-                  final cardWidth =
-                      (constraints.maxWidth - 20 * (columns - 1)) / columns;
-                  final compact =
-                      constraints.maxWidth < 600 ||
-                      MediaQuery.textScalerOf(context).scale(14) > 21;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Travel library',
-                              style: Theme.of(context).textTheme.headlineMedium,
-                            ),
+    child: SingleChildScrollView(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Padding(
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final documents = _filtered;
+                final columns = constraints.maxWidth >= 1020
+                    ? 3
+                    : constraints.maxWidth >= 680
+                    ? 2
+                    : 1;
+                final cardWidth =
+                    (constraints.maxWidth - 20 * (columns - 1)) / columns;
+                final compact =
+                    constraints.maxWidth < 600 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 21;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Travel library',
+                            style: Theme.of(context).textTheme.headlineMedium,
                           ),
-                          if (!compact && !_loading && _error == null) ...[
-                            Text(
-                              '${documents.length} ${documents.length == 1 ? 'guide' : 'guides'}',
-                              style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        if (!compact && !_loading && _error == null) ...[
+                          Text(
+                            '${documents.length} ${documents.length == 1 ? 'guide' : 'guides'}',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          const SizedBox(width: 16),
+                        ],
+                        const SizedBox(width: 8),
+                        _addButton(compact),
+                        if (_scope == 'yours') _libraryOptions(),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: AppTheme.outline),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(child: _scopeTabs()),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            key: const ValueKey('library-search-toggle'),
+                            tooltip: _searchExpanded
+                                ? 'Hide search'
+                                : 'Search library',
+                            constraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
                             ),
-                            const SizedBox(width: 16),
-                          ],
-                          const SizedBox(width: 8),
-                          _addButton(compact),
-                          if (_scope == 'yours') _libraryOptions(),
+                            iconSize: 20,
+                            color:
+                                _searchExpanded ||
+                                    _search.text.trim().isNotEmpty
+                                ? AppTheme.rust
+                                : AppTheme.ink,
+                            icon: Icon(
+                              _searchExpanded ? Icons.close : Icons.search,
+                            ),
+                            onPressed: _toggleSearch,
+                          ),
+                          _formatMenu(),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Container(
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: AppTheme.outline),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(child: _scopeTabs()),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              key: const ValueKey('library-search-toggle'),
-                              tooltip: _searchExpanded
-                                  ? 'Hide search'
-                                  : 'Search library',
-                              constraints: const BoxConstraints(
-                                minWidth: 44,
-                                minHeight: 44,
-                              ),
-                              iconSize: 20,
-                              color:
-                                  _searchExpanded ||
-                                      _search.text.trim().isNotEmpty
-                                  ? AppTheme.rust
-                                  : AppTheme.ink,
-                              icon: Icon(
-                                _searchExpanded ? Icons.close : Icons.search,
-                              ),
-                              onPressed: _toggleSearch,
-                            ),
-                            _formatMenu(),
-                          ],
-                        ),
-                      ),
-                      if (_searchExpanded) ...[
-                        const SizedBox(height: 12),
-                        _searchField(),
-                      ],
-                      if (_format != 'all' ||
-                          (!_searchExpanded &&
-                              _search.text.trim().isNotEmpty)) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            if (_format != 'all')
-                              InputChip(
-                                label: Text(_formats[_format]!),
-                                deleteButtonTooltipMessage:
-                                    'Clear format filter',
-                                onDeleted: () =>
-                                    setState(() => _format = 'all'),
-                              ),
-                            if (!_searchExpanded &&
-                                _search.text.trim().isNotEmpty)
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: constraints.maxWidth,
-                                ),
-                                child: InputChip(
-                                  label: Text(
-                                    'Search: ${_search.text.trim()}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  deleteButtonTooltipMessage: 'Clear search',
-                                  onPressed: _toggleSearch,
-                                  onDeleted: () => setState(_search.clear),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      Semantics(
-                        liveRegion: true,
-                        label: _loading
-                            ? 'Loading guides'
-                            : '${documents.length} guides',
-                        child: _loading
-                            ? const Padding(
-                                padding: EdgeInsets.all(32),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            : _error != null
-                            ? _empty(_error!, retry: true)
-                            : documents.isEmpty
-                            ? _empty(
-                                _search.text.isNotEmpty || _format != 'all'
-                                    ? 'No guides match your search and filters.'
-                                    : switch (_scope) {
-                                        'saved' =>
-                                          'Save a guide to keep it close for your next trip.',
-                                        'yours' =>
-                                          'Bring in a favorite itinerary, spreadsheet, or a guide of your own.',
-                                        _ =>
-                                          'Guides shared by your friends will appear here.',
-                                      },
-                              )
-                            : Wrap(
-                                spacing: 20,
-                                runSpacing: 20,
-                                children: [
-                                  for (final document in documents)
-                                    SizedBox(
-                                      width: cardWidth,
-                                      child: LibraryDocumentCard(
-                                        key: ValueKey(
-                                          'library-card-${document.id}',
-                                        ),
-                                        document: document,
-                                        isOwner:
-                                            _identity?.isNotEmpty == true &&
-                                            document.userId == _identity,
-                                        saving: _saving.contains(document.id),
-                                        onOpen: () => _open(document),
-                                        onSave: () => _save(document),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                      ),
-                      const SizedBox(height: 32),
+                    ),
+                    if (_searchExpanded) ...[
+                      const SizedBox(height: 12),
+                      _searchField(),
                     ],
-                  );
-                },
-              ),
+                    if (_format != 'all' ||
+                        (!_searchExpanded &&
+                            _search.text.trim().isNotEmpty)) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          if (_format != 'all')
+                            InputChip(
+                              label: Text(_formats[_format]!),
+                              deleteButtonTooltipMessage: 'Clear format filter',
+                              onDeleted: () => setState(() => _format = 'all'),
+                            ),
+                          if (!_searchExpanded &&
+                              _search.text.trim().isNotEmpty)
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: constraints.maxWidth,
+                              ),
+                              child: InputChip(
+                                label: Text(
+                                  'Search: ${_search.text.trim()}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                deleteButtonTooltipMessage: 'Clear search',
+                                onPressed: _toggleSearch,
+                                onDeleted: () => setState(_search.clear),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Semantics(
+                      liveRegion: true,
+                      label: _loading
+                          ? 'Loading guides'
+                          : '${documents.length} guides',
+                      child: _loading
+                          ? const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          : _error != null
+                          ? _empty(_error!, retry: true)
+                          : documents.isEmpty
+                          ? _empty(
+                              _search.text.isNotEmpty || _format != 'all'
+                                  ? 'No guides match your search and filters.'
+                                  : switch (_scope) {
+                                      'saved' =>
+                                        'Save a guide to keep it close for your next trip.',
+                                      'yours' =>
+                                        'Bring in a favorite itinerary, spreadsheet, or a guide of your own.',
+                                      _ =>
+                                        'Guides shared by your friends will appear here.',
+                                    },
+                            )
+                          : Wrap(
+                              spacing: 20,
+                              runSpacing: 20,
+                              children: [
+                                for (final document in documents)
+                                  SizedBox(
+                                    width: cardWidth,
+                                    child: LibraryDocumentCard(
+                                      key: ValueKey(
+                                        'library-card-${document.id}',
+                                      ),
+                                      document: document,
+                                      isOwner:
+                                          _identity?.isNotEmpty == true &&
+                                          document.userId == _identity,
+                                      saving: _saving.contains(document.id),
+                                      onOpen: () => _open(document),
+                                      onSave: () => _save(document),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                );
+              },
             ),
           ),
         ),

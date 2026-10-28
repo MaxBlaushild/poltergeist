@@ -1,8 +1,10 @@
 import 'package:travel_angels/widgets/travel_lodging_editor.dart';
 export 'package:travel_angels/widgets/travel_lodging_card.dart'
     show TravelTripLodgingCard;
+export 'package:travel_angels/widgets/travel_flight_card.dart'
+    show TravelTripFlightCard;
+import 'package:travel_angels/widgets/travel_flight_lookup.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
 import 'package:travel_angels/widgets/travel_trip_design.dart';
 
@@ -11,174 +13,6 @@ String tripLogisticsAudience(dynamic visibility) => switch (visibility) {
   'hosts' => 'Hosts only',
   _ => 'Confirmed attendees and hosts',
 };
-
-class TravelTripFlightCard extends StatelessWidget {
-  const TravelTripFlightCard({super.key, required this.entry, this.actions});
-  final Map<String, dynamic> entry;
-  final Widget? actions;
-  String _time(Map<String, dynamic> leg, String prefix) {
-    final date = DateTime.tryParse(leg['${prefix}Date'] as String? ?? '');
-    return '${date == null ? 'Date TBD' : DateFormat.MMMd().format(date)}${(leg['${prefix}Time'] as String?)?.isNotEmpty == true ? ' · ${leg['${prefix}Time']}' : ' · Time TBD'}';
-  }
-
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 14),
-    padding: const EdgeInsets.all(22),
-    decoration: BoxDecoration(
-      color: tripPaper,
-      borderRadius: BorderRadius.circular(3),
-      border: Border.all(color: tripOutline),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            TripPill(
-              entry['kind'] == 'recommendation'
-                  ? 'Recommended flight'
-                  : 'Group flight',
-              icon: Icons.flight_outlined,
-            ),
-            TripPill(
-              '${entry['status'] ?? 'suggested'}',
-              color: tripMuted,
-              background: tripPaper,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          entry['label'] as String? ?? 'Getting there',
-          style: const TextStyle(
-            color: tripInk,
-            fontSize: 28,
-            fontFamily: tripDisplayFont,
-            height: 1.2,
-          ),
-        ),
-        for (final leg in tripMaps(entry['legs']))
-          Padding(
-            padding: const EdgeInsets.only(top: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${leg['airline'] ?? ''} ${leg['flightNumber'] ?? ''}'
-                          .trim()
-                          .isEmpty
-                      ? 'Flight to be decided'
-                      : '${leg['airline'] ?? ''} ${leg['flightNumber'] ?? ''}',
-                  style: const TextStyle(color: tripMuted, fontSize: 12),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (leg['departureAirport'] as String?)?.isNotEmpty ==
-                                    true
-                                ? leg['departureAirport'] as String
-                                : 'Departure TBD',
-                            style: const TextStyle(
-                              color: tripInk,
-                              fontSize: 28,
-                              fontFamily: tripDisplayFont,
-                              height: 1.15,
-                            ),
-                          ),
-                          Text(_time(leg, 'departure')),
-                          Text(
-                            leg['departureTimeZone'] as String? ?? '',
-                            style: const TextStyle(
-                              color: tripMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      child: Icon(
-                        Icons.arrow_forward,
-                        color: tripRust,
-                        size: 20,
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (leg['arrivalAirport'] as String?)?.isNotEmpty ==
-                                    true
-                                ? leg['arrivalAirport'] as String
-                                : 'Arrival TBD',
-                            style: const TextStyle(
-                              color: tripInk,
-                              fontSize: 28,
-                              fontFamily: tripDisplayFont,
-                              height: 1.15,
-                            ),
-                          ),
-                          Text(_time(leg, 'arrival')),
-                          Text(
-                            leg['arrivalTimeZone'] as String? ?? '',
-                            style: const TextStyle(
-                              color: tripMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        if ((entry['notes'] as String?)?.isNotEmpty == true)
-          Padding(
-            padding: const EdgeInsets.only(top: 18),
-            child: TripDescription(entry['notes'] as String),
-          ),
-        if ((entry['url'] as String?)?.isNotEmpty == true)
-          TextButton.icon(
-            onPressed: () => openTripLink(context, entry['url'] as String),
-            icon: const Icon(Icons.open_in_new, size: 16),
-            label: const Text('View flight details'),
-          ),
-        const Padding(
-          padding: EdgeInsets.only(top: 10),
-          child: Text(
-            'Times are local to each airport. Travel plans do not confirm ticket purchases.',
-            style: TextStyle(color: tripMuted, fontSize: 12),
-          ),
-        ),
-        if ((entry['hostNotes'] as String?)?.isNotEmpty == true)
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(
-              'Host notes: ${entry['hostNotes']}',
-              style: const TextStyle(color: tripMuted),
-            ),
-          ),
-        if (actions != null) ...[const Divider(height: 24), actions!],
-      ],
-    ),
-  );
-}
 
 class TravelTripLogisticsAudienceDialog extends StatefulWidget {
   const TravelTripLogisticsAudienceDialog({
@@ -401,7 +235,22 @@ class _TravelTripLogisticsEditorState extends State<TravelTripLogisticsEditor> {
           ? (value) =>
                 value == null || value.trim().isEmpty ? 'Enter $label.' : null
           : null,
-      onChanged: (value) => setState(() => record[key] = value),
+      onChanged: (value) => setState(() {
+        if (!_lodging &&
+            (_entry['legs'] as List? ?? []).any(
+              (leg) => identical(leg, record),
+            )) {
+          for (final field in [
+            'provider',
+            'providerId',
+            'operatingAirline',
+            'operatingFlightNumber',
+          ]) {
+            record.remove(field);
+          }
+        }
+        record[key] = value;
+      }),
     ),
   );
   Widget _select(
@@ -483,7 +332,7 @@ class _TravelTripLogisticsEditorState extends State<TravelTripLogisticsEditor> {
             _workingStop['revision'] is! int ||
             saved.isEmpty) {
           throw const TravelCalendarException(
-            'Refresh the saved stay before adding photos.',
+            'The saved stay details could not be confirmed.',
           );
         }
         final photo = _pendingPhotos.first;
@@ -499,7 +348,7 @@ class _TravelTripLogisticsEditorState extends State<TravelTripLogisticsEditor> {
         final updated = tripMap(uploaded['stop']);
         if (updated.isEmpty) {
           throw const TravelCalendarException(
-            'Refresh the stay to check the uploaded photo.',
+            'The uploaded photo could not be confirmed.',
           );
         }
         _workingStop = updated;
@@ -576,6 +425,36 @@ class _TravelTripLogisticsEditorState extends State<TravelTripLogisticsEditor> {
                         setState(() => _pendingPhotos = photos),
                   )
                 else ...[
+                  TravelFlightLookup(
+                    stopId: _workingStop['id'] as String,
+                    service: widget.service,
+                    busy: _busy,
+                    departureDate:
+                        tripDraft(_workingStop)['datePrecision'] == 'tbd'
+                        ? ''
+                        : tripDraft(_workingStop)['startDate'] as String? ?? '',
+                    onSelected: (leg) => setState(() {
+                      if (legs.length == 1 &&
+                          (legs.first['departureAirport'] as String? ?? '')
+                              .trim()
+                              .isEmpty &&
+                          (legs.first['arrivalAirport'] as String? ?? '')
+                              .trim()
+                              .isEmpty &&
+                          (legs.first['flightNumber'] as String? ?? '')
+                              .trim()
+                              .isEmpty) {
+                        legs[0] = leg;
+                      } else {
+                        legs.add(leg);
+                      }
+                      _entry = {..._entry, 'legs': legs};
+                      if ((_entry['label'] as String? ?? '').trim().isEmpty) {
+                        _entry['label'] =
+                            '${legs.first['departureAirport']} to ${legs.last['arrivalAirport']}';
+                      }
+                    }),
+                  ),
                   const Text(
                     'Save a draft, then publish when the plan is ready. These are travel plans, not reservations. Do not include confirmation numbers, tickets, passport or payment details.',
                   ),

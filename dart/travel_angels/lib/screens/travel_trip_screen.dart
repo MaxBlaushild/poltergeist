@@ -49,6 +49,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
   bool _showDraft = false;
   bool _sensitiveFlow = false;
   int _generation = 0;
+  int _flightRefresh = 0;
   AuthProvider? _auth;
   String? _identity;
   Timer? _refreshTimer;
@@ -149,6 +150,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
       }
       setState(() {
         _stop = stop;
+        _flightRefresh++;
         _error = null;
         _loading = false;
       });
@@ -526,6 +528,22 @@ class _TravelTripScreenState extends State<TravelTripScreen>
     }
     if (own['status'] == 'joined') return 'Change my dates';
     return 'Request to join';
+  }
+
+  Future<void> _joinForFlight() async {
+    if (_busy || _stop == null) return;
+    if (_host && _stop!['hostModel'] == true) {
+      await _hostAction('attendance');
+      return;
+    }
+    final action = _joinAction();
+    if (action != null) {
+      await _action(action);
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_unavailableLabel())));
+    }
   }
 
   Widget _joinButton() {
@@ -1078,7 +1096,17 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: TravelTripFlightCard(
+                          key: ValueKey(
+                            '${stop['id']}:${flights[i]['id']}:$_identity:$_showDraft',
+                          ),
                           entry: flights[i],
+                          refreshToken: _flightRefresh,
+                          stopId: stop['id'] as String,
+                          service: widget.service,
+                          accessQuery: widget.accessQuery,
+                          draft: _manage && _showDraft,
+                          onClaim: () => _action('claim'),
+                          onJoinTrip: _joinForFlight,
                           actions: _manage
                               ? _entryActions(
                                   'flight',
@@ -1154,11 +1182,6 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                     .clamp(56, 112),
                 title: const TravelAngelsWordmark(),
                 actions: [
-                  IconButton(
-                    tooltip: 'Refresh trip',
-                    onPressed: _busy ? null : () => _load(),
-                    icon: const Icon(Icons.refresh, size: 21),
-                  ),
                   if (_manage && !_busy) _hostMenu(),
                   const SizedBox(width: 12),
                 ],
@@ -1241,7 +1264,7 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                             actions: [
                               TextButton(
                                 onPressed: () => _load(),
-                                child: const Text('Refresh'),
+                                child: const Text('Try again'),
                               ),
                             ],
                           ),

@@ -218,7 +218,7 @@ void main() {
   );
 
   testWidgets(
-    'friend filter matches names and usernames and pagination survives refresh',
+    'friend filters and pagination survive returning from Find people',
     (tester) async {
       final service = _CircleFriends()
         ..friends = List.generate(12, (index) {
@@ -232,7 +232,8 @@ void main() {
       await _tap(tester, 'circle-page-next');
       expect(_key('circle-friend-friend11'), findsOneWidget);
       expect(_key('circle-friend-friend01'), findsNothing);
-      await _tap(tester, 'circle-refresh');
+      await _tap(tester, 'circle-find-people');
+      await _tap(tester, 'circle-people-close');
       expect(_key('circle-friend-friend11'), findsOneWidget);
       expect(service.friendLoads, 2);
 
@@ -242,7 +243,8 @@ void main() {
       expect(_key('circle-friend-friend03'), findsOneWidget);
       expect(_key('circle-friend-friend11'), findsNothing);
       expect(_key('circle-page-next'), findsNothing);
-      await _tap(tester, 'circle-refresh');
+      await _tap(tester, 'circle-find-people');
+      await _tap(tester, 'circle-people-close');
       expect(
         tester.widget<TextField>(_key('circle-search')).controller!.text,
         'ATLAS03',
@@ -258,7 +260,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(_key('circle-friend-friend01'), findsOneWidget);
       await _tap(tester, 'circle-tab-sent');
-      await _tap(tester, 'circle-refresh');
+      await _tap(tester, 'circle-find-people');
+      await _tap(tester, 'circle-people-close');
       expect(_key('circle-friend-friend01'), findsNothing);
       expect(tester.takeException(), isNull);
     },

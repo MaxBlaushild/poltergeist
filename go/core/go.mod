@@ -42,6 +42,8 @@ replace github.com/MaxBlaushild/poltergeist/pkg/logger => ../pkg/logger
 
 replace github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 
+replace github.com/MaxBlaushild/poltergeist/pkg/flightaware => ../pkg/flightaware
+
 replace github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
 
 replace github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
@@ -74,6 +76,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/bgi-site v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
+	github.com/MaxBlaushild/poltergeist/pkg/flightaware v0.0.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0
 	github.com/MaxBlaushild/poltergeist/reef-site v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/sonar v0.0.0
