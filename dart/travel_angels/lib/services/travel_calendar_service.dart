@@ -94,15 +94,89 @@ class TravelCalendarService {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? data,
-  }) => _request('POST', path, data: data);
+    Map<String, dynamic>? query,
+  }) => _request('POST', path, data: data, query: query);
 
-  Future<Map<String, dynamic>> put(String path, {Map<String, dynamic>? data}) =>
-      _request('PUT', path, data: data);
+  Future<Map<String, dynamic>> put(
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
+  }) => _request('PUT', path, data: data, query: query);
 
   Future<Map<String, dynamic>> delete(
     String path, {
     Map<String, dynamic>? data,
-  }) => _request('DELETE', path, data: data);
+    Map<String, dynamic>? query,
+  }) => _request('DELETE', path, data: data, query: query);
+
+  /// Originals use the private trip storage flow, with the current account and
+  /// trip access checked again by the server on every upload and download.
+  Future<Map<String, dynamic>> uploadTripDocument(
+    String stopId,
+    Uint8List bytes,
+    String filename, {
+    required String title,
+    Map<String, dynamic>? query,
+  }) {
+    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+      throw const TravelCalendarException('Choose a file up to 20 MB.');
+    }
+    return _request(
+      'POST',
+      '/calendar/stops/${Uri.encodeComponent(stopId)}/documents/upload',
+      query: query,
+      data: FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: filename),
+        'title': title,
+      }),
+    );
+  }
+
+  Future<Uint8List> loadTripDocumentFile(
+    String url, {
+    Map<String, dynamic>? query,
+  }) async {
+    final base = Uri.parse(_client.options.baseUrl);
+    final candidate = Uri.tryParse(url);
+    final allowedPath = RegExp(
+      r'^/travel-angels/calendar/stops/[A-Za-z0-9-]+/documents/[A-Za-z0-9-]+/file$',
+    );
+    if (candidate == null ||
+        candidate.hasFragment ||
+        candidate.hasQuery ||
+        candidate.userInfo.isNotEmpty ||
+        (candidate.hasScheme && !candidate.hasAuthority) ||
+        (candidate.hasAuthority &&
+            (candidate.scheme != base.scheme ||
+                candidate.host != base.host ||
+                candidate.port != base.port)) ||
+        !allowedPath.hasMatch(candidate.path)) {
+      throw const TravelCalendarException('This trip document is unavailable.');
+    }
+    try {
+      final response = await _client.get<List<int>>(
+        url,
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          headers: await _identityHeaders(),
+        ),
+      );
+      final bytes = response.data ?? const <int>[];
+      if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+        throw const TravelCalendarException(
+          'This trip document is unavailable.',
+        );
+      }
+      return Uint8List.fromList(bytes);
+    } on DioException catch (error) {
+      throw TravelCalendarException(
+        'This trip document is unavailable. It may have been removed or your access may have changed.',
+        statusCode: error.response?.statusCode,
+      );
+    }
+  }
 
   /// Upload directly to the protected trip endpoint. Media never inherits the
   /// public document library's sharing rules or exposes a permanent asset URL.

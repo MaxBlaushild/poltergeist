@@ -149,10 +149,14 @@ class TripTestService extends TravelCalendarService {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) => _write('POST', path, data);
   @override
-  Future<Map<String, dynamic>> put(String path, {Map<String, dynamic>? data}) =>
-      _write('PUT', path, data);
+  Future<Map<String, dynamic>> put(
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
+  }) => _write('PUT', path, data);
 }
 
 class TripTestAuth extends AuthProvider {

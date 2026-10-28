@@ -51,6 +51,7 @@ module "ecs" {
           resources = [
             "${aws_s3_bucket.travel_angels_trip_media.arn}/trip-heroes/*",
             "${aws_s3_bucket.travel_angels_trip_media.arn}/trip-lodging/*",
+            "${aws_s3_bucket.travel_angels_trip_media.arn}/trip-documents/*",
           ]
         },
         {
@@ -97,7 +98,7 @@ module "ecs" {
               }
             ]
           }
-          environment = [
+          environment = concat([
             {
               name  = "TRAVEL_ANGELS_TRIP_MEDIA_BUCKET"
               value = aws_s3_bucket.travel_angels_trip_media.id
@@ -213,7 +214,10 @@ module "ecs" {
               name  = "SLANT_PLATFORM_ID"
               value = var.slant_platform_id
             }
-          ]
+          ], var.travel_angels_web_url == "" ? [] : [{
+            name  = "TRAVEL_ANGELS_WEB_URL"
+            value = trimsuffix(var.travel_angels_web_url, "/")
+          }])
           secrets = concat([
             {
               name      = "DB_PASSWORD"

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/theme/app_theme.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -12,6 +13,9 @@ class LocationPicker extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
+  final LocationService? locationService;
+  final bool? showMap;
+  final VoidCallback? onLocationCleared;
 
   const LocationPicker({
     super.key,
@@ -19,6 +23,9 @@ class LocationPicker extends StatefulWidget {
     this.initialLatitude,
     this.initialLongitude,
     this.initialAddress,
+    this.locationService,
+    this.showMap,
+    this.onLocationCleared,
   });
 
   @override
@@ -27,9 +34,7 @@ class LocationPicker extends StatefulWidget {
 
 class _LocationPickerState extends State<LocationPicker> {
   final TextEditingController _searchController = TextEditingController();
-  final LocationService _locationService = LocationService(
-    APIClient(ApiConstants.baseUrl),
-  );
+  late final LocationService _locationService;
   GoogleMapController? _mapController;
   Timer? _debounceTimer;
 
@@ -38,10 +43,15 @@ class _LocationPickerState extends State<LocationPicker> {
   List<LocationCandidate> _searchResults = [];
   bool _isSearching = false;
   bool _showResults = false;
+  int _searchRevision = 0;
+  String? _searchError;
 
   @override
   void initState() {
     super.initState();
+    _locationService =
+        widget.locationService ??
+        LocationService(APIClient(ApiConstants.baseUrl));
     // Initialize with provided values if available
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
       _selectedLocation = LatLng(
@@ -75,100 +85,62 @@ class _LocationPickerState extends State<LocationPicker> {
 
   void _onSearchChanged(String value) {
     _debounceTimer?.cancel();
-
-    if (value.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _showResults = false;
-      });
-      return;
-    }
-
+    final revision = ++_searchRevision;
+    setState(() {
+      _searchResults = [];
+      _showResults = false;
+      _isSearching = false;
+      _searchError = null;
+      _selectedLocation = null;
+      _selectedAddress = null;
+    });
+    widget.onLocationCleared?.call();
+    if (value.trim().isEmpty) return;
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _performSearch(value);
+      _performSearch(value, revision: revision);
     });
   }
 
-  Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _showResults = false;
-        _isSearching = false;
-      });
-      return;
-    }
-
+  Future<void> _performSearch(String query, {int? revision}) async {
+    if (!mounted || query.trim().isEmpty) return;
+    _debounceTimer?.cancel();
+    final request = revision ?? ++_searchRevision;
     setState(() {
       _isSearching = true;
       _showResults = true;
+      _searchError = null;
     });
-
-    print('LocationPicker: Performing search for "$query"');
-
     try {
       final results = await _locationService.searchLocations(query.trim());
-      print('LocationPicker: Search returned ${results.length} results');
-
+      if (!mounted || request != _searchRevision) return;
       setState(() {
         _searchResults = results;
         _isSearching = false;
-        // Keep showResults true if we have results, false if empty
         _showResults = results.isNotEmpty;
+        _searchError = results.isEmpty
+            ? 'No locations found. Try a different search.'
+            : null;
       });
-
-      if (results.isEmpty && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No locations found. Try a different search term.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e, stackTrace) {
-      print('LocationPicker: Search error: $e');
-      print('LocationPicker: Stack trace: $stackTrace');
+    } catch (_) {
+      if (!mounted || request != _searchRevision) return;
       setState(() {
         _searchResults = [];
         _isSearching = false;
         _showResults = false;
+        _searchError = 'Locations could not be loaded. Try your search again.';
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error searching locations: ${e.toString()}'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Details',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Search Error'),
-                    content: SingleChildScrollView(
-                      child: Text('Error: $e\n\nStack trace: $stackTrace'),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      }
     }
   }
 
   void _selectLocation(LocationCandidate candidate) {
+    _debounceTimer?.cancel();
+    ++_searchRevision;
     setState(() {
       _selectedLocation = LatLng(candidate.latitude, candidate.longitude);
       _selectedAddress = candidate.formattedAddress;
       _showResults = false;
+      _isSearching = false;
+      _searchError = null;
       _searchController.text = candidate.formattedAddress;
     });
 
@@ -247,35 +219,30 @@ class _LocationPickerState extends State<LocationPicker> {
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       _searchController.clear();
-                      setState(() {
-                        _searchResults = [];
-                        _showResults = false;
-                      });
+                      _onSearchChanged('');
                     },
                   )
                 : null,
           ),
-          onChanged: (value) {
-            print('LocationPicker: TextField onChanged: "$value"');
-            _onSearchChanged(value);
-          },
+          onChanged: _onSearchChanged,
           onTap: () {
-            print(
-              'LocationPicker: TextField tapped, showing results: ${_searchResults.length}',
-            );
             if (_searchResults.isNotEmpty) {
               setState(() {
                 _showResults = true;
               });
             }
           },
-          onSubmitted: (value) {
-            print('LocationPicker: TextField submitted: "$value"');
-            if (value.trim().isNotEmpty) {
-              _performSearch(value.trim());
-            }
-          },
+          onSubmitted: _performSearch,
         ),
+
+        if (_searchError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _searchError!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
 
         // Search results dropdown - using Stack to ensure it appears above other content
         if (_showResults && _searchResults.isNotEmpty)
@@ -313,58 +280,59 @@ class _LocationPickerState extends State<LocationPicker> {
             ),
           ),
 
-        const SizedBox(height: 16),
-
         // Map - wrapped in a fixed-size container to prevent scroll issues
         // GoogleMap needs explicit constraints and should not be in a scrollable context
-        SizedBox(
-          height: 300,
-          width: double.infinity,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: GoogleMap(
-              initialCameraPosition: _initialCameraPosition,
-              onMapCreated: (GoogleMapController controller) {
-                _mapController = controller;
-                print('GoogleMap created successfully');
-                // If we have an initial location, center the map on it
-                if (_selectedLocation != null && mounted) {
-                  controller.animateCamera(
-                    CameraUpdate.newLatLngZoom(_selectedLocation!, 15),
-                  );
-                }
-              },
-              onTap: _onMapTap,
-              onCameraMove: _onCameraMove,
-              onCameraIdle: _onCameraIdle,
-              markers: _selectedLocation != null
-                  ? {
-                      Marker(
-                        markerId: const MarkerId('selected_location'),
-                        position: _selectedLocation!,
-                        draggable: true,
-                        onDragEnd: (LatLng newPosition) {
-                          if (mounted) {
-                            setState(() {
-                              _selectedLocation = newPosition;
-                              _selectedAddress =
-                                  '${newPosition.latitude}, ${newPosition.longitude}';
-                            });
-                            widget.onLocationSelected?.call(
-                              newPosition.latitude,
-                              newPosition.longitude,
-                              _selectedAddress!,
-                            );
-                          }
-                        },
-                      ),
-                    }
-                  : {},
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: true,
+        // Web uses server-side place search without a Maps JavaScript API key.
+        if (widget.showMap ?? !kIsWeb) ...[
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 300,
+            width: double.infinity,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: GoogleMap(
+                initialCameraPosition: _initialCameraPosition,
+                onMapCreated: (GoogleMapController controller) {
+                  _mapController = controller;
+                  // If we have an initial location, center the map on it
+                  if (_selectedLocation != null && mounted) {
+                    controller.animateCamera(
+                      CameraUpdate.newLatLngZoom(_selectedLocation!, 15),
+                    );
+                  }
+                },
+                onTap: _onMapTap,
+                onCameraMove: _onCameraMove,
+                onCameraIdle: _onCameraIdle,
+                markers: _selectedLocation != null
+                    ? {
+                        Marker(
+                          markerId: const MarkerId('selected_location'),
+                          position: _selectedLocation!,
+                          draggable: true,
+                          onDragEnd: (LatLng newPosition) {
+                            if (mounted) {
+                              setState(() {
+                                _selectedLocation = newPosition;
+                                _selectedAddress =
+                                    '${newPosition.latitude}, ${newPosition.longitude}';
+                              });
+                              widget.onLocationSelected?.call(
+                                newPosition.latitude,
+                                newPosition.longitude,
+                                _selectedAddress!,
+                              );
+                            }
+                          },
+                        ),
+                      }
+                    : {},
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: true,
+              ),
             ),
           ),
-        ),
+        ],
 
         // Selected address display
         if (_selectedAddress != null) ...[

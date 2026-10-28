@@ -63,6 +63,7 @@ class DestinationService extends TravelCalendarService {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     if (saveError != null) throw saveError!;
     saved.add({'path': path, ...?data});
@@ -70,8 +71,11 @@ class DestinationService extends TravelCalendarService {
   }
 
   @override
-  Future<Map<String, dynamic>> put(String path, {Map<String, dynamic>? data}) =>
-      post(path, data: data);
+  Future<Map<String, dynamic>> put(
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
+  }) => post(path, data: data);
 }
 
 class DestinationAuth extends AuthProvider {

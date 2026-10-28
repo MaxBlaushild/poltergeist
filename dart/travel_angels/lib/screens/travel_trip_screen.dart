@@ -12,6 +12,7 @@ import 'package:travel_angels/widgets/travel_trip_hosts.dart';
 import 'package:travel_angels/widgets/travel_trip_logistics.dart';
 import 'package:travel_angels/widgets/travel_trip_settings.dart';
 import 'package:travel_angels/widgets/travel_trip_library.dart';
+import 'package:travel_angels/widgets/travel_trip_documents.dart';
 
 /// The same canonical stop page serves public links and authenticated calendars.
 /// Only the server-filtered DTO is rendered; drafts require management access.
@@ -54,7 +55,13 @@ class _TravelTripScreenState extends State<TravelTripScreen>
   String? _identity;
   Timer? _refreshTimer;
   final _sections = {
-    for (final name in ['Overview', 'People', 'Lodging', 'Flights'])
+    for (final name in [
+      'Overview',
+      'People',
+      'Lodging',
+      'Flights',
+      'Documents',
+    ])
       name: GlobalKey(),
   };
 
@@ -144,6 +151,10 @@ class _TravelTripScreenState extends State<TravelTripScreen>
       if ((_manage && stop['canManage'] != true) ||
           (_stop?['canViewAttendees'] == true &&
               stop['canViewAttendees'] != true) ||
+          (_stop?['canViewDocuments'] == true &&
+              stop['canViewDocuments'] != true) ||
+          (_stop?['canContributeDocuments'] == true &&
+              stop['canContributeDocuments'] != true) ||
           (_stop?['rosterVersion'] != null &&
               _stop?['rosterVersion'] != stop['rosterVersion'])) {
         _dismissSensitiveFlow();
@@ -1120,6 +1131,23 @@ class _TravelTripScreenState extends State<TravelTripScreen>
                   ],
                 ),
         ),
+        const Divider(color: tripOutline),
+        Padding(
+          key: _sections['Documents'],
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: TravelTripDocuments(
+            key: ValueKey('documents-${stop['id']}-$_identity'),
+            stopId: stop['id'] as String,
+            userId: _identity,
+            service: widget.service,
+            accessQuery: widget.accessQuery,
+            canView: stop['canViewDocuments'] == true,
+            canContribute: stop['canContributeDocuments'] == true,
+            refreshToken: _flightRefresh,
+            onFlowChanged: (open) => _sensitiveFlow = open,
+            onJoin: _identity == null ? () => _action('claim') : _joinForFlight,
+          ),
+        ),
         if (_identity != null && _identity!.isNotEmpty) ...[
           const Divider(color: tripOutline),
           TravelTripLibrary(
@@ -1139,23 +1167,6 @@ class _TravelTripScreenState extends State<TravelTripScreen>
               child: const Text('Review host upgrade'),
             ),
           ),
-        const SizedBox(height: 36),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-          decoration: BoxDecoration(
-            color: tripInk,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: const Text(
-            'TRAVEL ANGELS · GO TOGETHER',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: tripCream,
-              fontSize: 12,
-              letterSpacing: 1.6,
-            ),
-          ),
-        ),
         const SizedBox(height: 36),
       ],
     );

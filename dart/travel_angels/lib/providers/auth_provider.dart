@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/services/auth_service.dart';
+import 'package:travel_angels/utils/auth_phone_number.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService;
@@ -9,6 +10,7 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = true;
   bool _isWaitingForVerificationCode = false;
   bool _isRegister = false;
+  String? _verificationPhoneNumber;
   String? _error;
   int _sessionRevision = 0;
   int _verificationRevision = 0;
@@ -24,6 +26,10 @@ class AuthProvider extends ChangeNotifier {
   bool get loading => _loading;
   bool get isWaitingForVerificationCode => _isWaitingForVerificationCode;
   bool get isRegister => _isRegister;
+  String? get verificationPhoneNumber => _verificationPhoneNumber;
+  bool get isTestVerification =>
+      _isWaitingForVerificationCode &&
+      AuthPhoneNumber.isTestAccount(_verificationPhoneNumber ?? '');
   String? get error => _error;
 
   bool get isAuthenticated => _user != null;
@@ -72,11 +78,13 @@ class AuthProvider extends ChangeNotifier {
         !_disposed && session == _sessionRevision && request == _codeRevision;
     _error = null;
     _isWaitingForVerificationCode = false;
+    _verificationPhoneNumber = null;
     notifyListeners();
 
     try {
       final userExists = await _authService.getVerificationCode(phoneNumber);
       if (!isCurrent()) return;
+      _verificationPhoneNumber = AuthPhoneNumber.normalize(phoneNumber);
       _isWaitingForVerificationCode = true;
       _isRegister = !userExists; // If user exists, it's login (not register)
       notifyListeners();
@@ -112,6 +120,7 @@ class AuthProvider extends ChangeNotifier {
       if (_disposed || session != _sessionRevision) return;
       _user = response.user;
       _isWaitingForVerificationCode = false;
+      _verificationPhoneNumber = null;
       notifyListeners();
 
       // Refresh user details from server to ensure we have all profile fields
@@ -128,6 +137,7 @@ class AuthProvider extends ChangeNotifier {
   void cancelVerificationCode() {
     ++_codeRevision;
     _isWaitingForVerificationCode = false;
+    _verificationPhoneNumber = null;
     _isRegister = false;
     _error = null;
     notifyListeners();
@@ -193,6 +203,7 @@ class AuthProvider extends ChangeNotifier {
     _user = null;
     _loading = false;
     _isWaitingForVerificationCode = false;
+    _verificationPhoneNumber = null;
     _isRegister = false;
     _error = null;
     if (!_disposed) notifyListeners();
@@ -214,6 +225,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// Extracts error message from DioException response body
   String _extractErrorMessage(dynamic error) {
+    if (error is FormatException) return error.message;
     if (error is DioException) {
       // Try to get error message from response body
       if (error.response?.data != null) {

@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/services/api_client.dart';
+import 'package:travel_angels/utils/auth_phone_number.dart';
 import 'package:dio/dio.dart';
 
 class AuthService {
@@ -11,17 +12,15 @@ class AuthService {
 
   AuthService(this._apiClient);
 
-  /// Formats phone number to ensure it starts with +
+  /// Canonicalizes international input without guessing its country code.
   String _formatPhoneNumber(String phoneNumber) {
-    // Remove all non-digit characters except +
-    String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-
-    // If it doesn't start with +, add it
-    if (!cleaned.startsWith('+')) {
-      cleaned = '+$cleaned';
+    final canonical = AuthPhoneNumber.normalize(phoneNumber);
+    if (canonical == null) {
+      throw const FormatException(
+        'Enter your phone number with its country code, such as +1 415 555 2671.',
+      );
     }
-
-    return cleaned;
+    return canonical;
   }
 
   /// Gets a verification code for the given phone number
@@ -29,6 +28,7 @@ class AuthService {
   Future<bool> getVerificationCode(String phoneNumber) async {
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
+      if (AuthPhoneNumber.isTestAccount(formattedPhone)) return true;
       final response = await _apiClient.post(
         ApiConstants.verificationCodeEndpoint,
         data: {'phoneNumber': formattedPhone, 'appName': ApiConstants.appName},

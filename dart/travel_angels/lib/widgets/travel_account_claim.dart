@@ -1,8 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/travel_calendar_service.dart';
+import 'package:travel_angels/utils/auth_phone_number.dart';
+import 'package:travel_angels/widgets/international_phone_field.dart';
 import 'package:travel_angels/widgets/travel_calendar_dialogs.dart';
 import 'package:travel_angels/widgets/travel_calendar_views.dart';
 
@@ -15,12 +18,18 @@ Future<bool> claimTravelAccount(
   final auth = context.read<AuthProvider>();
   await auth.verifyToken();
   if (!context.mounted) return false;
-  return await showDialog<bool>(
+  auth.cancelVerificationCode();
+  final claimed =
+      await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (_) => _TravelAccountClaimDialog(service: service),
       ) ??
       false;
+  // System Back can dismiss this route too. Never leave a hidden destination
+  // or test-account state for a subsequent sign-in screen to inherit.
+  if (context.mounted) auth.cancelVerificationCode();
+  return claimed;
 }
 
 class _TravelAccountClaimDialog extends StatefulWidget {
@@ -33,7 +42,8 @@ class _TravelAccountClaimDialog extends StatefulWidget {
 }
 
 class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
-  final _phone = TextEditingController();
+  String? _phoneNumber;
+  int _phoneInputRevision = 0;
   final _code = TextEditingController();
   bool _codeSent = false;
   bool _busy = false;
@@ -41,12 +51,12 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
 
   @override
   void dispose() {
-    _phone.dispose();
     _code.dispose();
     super.dispose();
   }
 
   Future<void> _continue() async {
+    if (_busy) return;
     final auth = context.read<AuthProvider>();
     setState(() {
       _busy = true;
@@ -55,14 +65,16 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
     try {
       if (!auth.isAuthenticated) {
         if (!_codeSent) {
-          final phone = _phone.text.trim();
-          if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone)) {
+          final phone = _phoneNumber;
+          if (phone == null) {
             throw const TravelCalendarException(
-              'Enter your phone number with its country code, such as +14155552671.',
+              'Enter a valid phone number for the selected country.',
             );
           }
           await auth.getVerificationCode(phone);
-          if (mounted) setState(() => _codeSent = true);
+          if (mounted) {
+            setState(() => _codeSent = auth.isWaitingForVerificationCode);
+          }
           return;
         }
         if (!RegExp(r'^\d{6}$').hasMatch(_code.text.trim())) {
@@ -70,7 +82,10 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
             'Enter the six-digit verification code.',
           );
         }
-        await auth.logister(_phone.text.trim(), _code.text.trim());
+        await auth.logister(
+          auth.verificationPhoneNumber ?? _phoneNumber ?? '',
+          _code.text.trim(),
+        );
         if (!auth.isAuthenticated) {
           throw const TravelCalendarException(
             'Please verify your phone number again.',
@@ -104,7 +119,13 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(
+          () => _error = error is DioException
+              ? auth.error ?? 'Unable to verify your account. Please try again.'
+              : error.toString(),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -147,7 +168,8 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
                               setState(() {
                                 _codeSent = false;
                                 _code.clear();
-                                _phone.clear();
+                                _phoneNumber = null;
+                                _phoneInputRevision++;
                                 _error = null;
                               });
                             }
@@ -156,31 +178,35 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
                   ),
                 ],
                 if (!signedIn) ...[
-                  TextField(
-                    controller: _phone,
+                  InternationalPhoneField(
+                    key: ValueKey(_phoneInputRevision),
                     enabled: !_busy && !_codeSent,
-                    keyboardType: TextInputType.phone,
-                    autofillHints: const [AutofillHints.telephoneNumber],
-                    decoration: const InputDecoration(
-                      labelText: 'Phone number',
-                      hintText: '+14155552671',
-                      border: OutlineInputBorder(),
-                    ),
+                    onChanged: (value) => setState(() => _phoneNumber = value),
                   ),
                   if (_codeSent) ...[
                     const SizedBox(height: 16),
+                    if (auth.isTestVerification) ...[
+                      const Text(
+                        'Test account: enter your configured 6-digit test code. No text message will be sent.',
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
                       controller: _code,
                       enabled: !_busy,
                       keyboardType: TextInputType.number,
-                      autofillHints: const [AutofillHints.oneTimeCode],
+                      autofillHints: auth.isTestVerification
+                          ? null
+                          : const [AutofillHints.oneTimeCode],
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(6),
                       ],
-                      decoration: const InputDecoration(
-                        labelText: 'Verification code',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: auth.isTestVerification
+                            ? 'Test code'
+                            : 'Verification code',
+                        border: const OutlineInputBorder(),
                       ),
                       onSubmitted: (_) => _busy ? null : _continue(),
                     ),
@@ -194,9 +220,14 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
                               setState(() {
                                 _codeSent = false;
                                 _code.clear();
+                                _error = null;
                               });
                             },
-                      child: const Text('Change number or resend code'),
+                      child: Text(
+                        auth.isTestVerification
+                            ? 'Change number'
+                            : 'Change number or resend code',
+                      ),
                     ),
                   ],
                 ],
@@ -215,7 +246,12 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+            onPressed: _busy
+                ? null
+                : () {
+                    auth.cancelVerificationCode();
+                    Navigator.of(context).pop(false);
+                  },
             child: const Text('Keep browsing'),
           ),
           FilledButton(
@@ -227,6 +263,8 @@ class _TravelAccountClaimDialogState extends State<_TravelAccountClaimDialog> {
                   ? 'Continue to review'
                   : _codeSent
                   ? 'Verify account'
+                  : AuthPhoneNumber.isTestAccount(_phoneNumber ?? '')
+                  ? 'Continue with test account'
                   : 'Send code',
             ),
           ),

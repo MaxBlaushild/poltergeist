@@ -39,6 +39,9 @@ dependencies:
   dio: ^5.4.0
   # Token storage (equivalent to localStorage)
   shared_preferences: ^2.2.2
+  # Country metadata and international phone parsing for sign-in
+  country_picker: ^2.0.28
+  phone_numbers_parser: ^9.0.28
   # JSON serialization annotations
   json_annotation: ^4.8.1
   # State management

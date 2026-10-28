@@ -39,6 +39,166 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test(
+    'trip files carry scoped access without sending credentials elsewhere',
+    () async {
+      SharedPreferences.setMockInitialValues({'token': 'account-token'});
+      final adapter = _Adapter(
+        (_) => ResponseBody.fromBytes(
+          [37, 80, 68, 70],
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/pdf'],
+          },
+        ),
+      );
+      final service = TravelCalendarService(
+        client: Dio(BaseOptions(baseUrl: 'https://example.test'))
+          ..httpClientAdapter = adapter,
+      );
+      const path =
+          '/travel-angels/calendar/stops/trip-123/documents/doc-123/file';
+      expect(
+        await service.loadTripDocumentFile(
+          path,
+          query: {'stopToken': 'trip-link'},
+        ),
+        [37, 80, 68, 70],
+      );
+      final request = adapter.requests.single;
+      expect(request.headers['Authorization'], 'Bearer account-token');
+      expect(request.queryParameters['stopToken'], 'trip-link');
+      expect(request.followRedirects, isFalse);
+      for (final url in [
+        'https://other.test$path',
+        '//other.test$path',
+        'http://example.test$path',
+        'https://user@example.test$path',
+        'https://example.test:444$path',
+        'file:$path',
+        '$path?redirect=https://other.test',
+        '$path#fragment',
+        '/travel-angels/calendar/stops/trip-123/hero/doc-123',
+        '/travel-angels/calendar/stops/trip-123/documents/doc-123/../../file',
+      ]) {
+        await expectLater(
+          service.loadTripDocumentFile(url),
+          throwsA(isA<TravelCalendarException>()),
+        );
+      }
+      expect(adapter.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'trip file access errors retain status and the account session',
+    () async {
+      SharedPreferences.setMockInitialValues({'token': 'account-token'});
+      for (final status in [302, 401, 403, 404]) {
+        final adapter = _Adapter(
+          (_) => ResponseBody.fromBytes(
+            [],
+            status,
+            headers: {
+              'location': ['https://other.test/file'],
+            },
+          ),
+        );
+        final service = TravelCalendarService(
+          client: Dio(BaseOptions(baseUrl: 'https://example.test'))
+            ..httpClientAdapter = adapter,
+        );
+        await expectLater(
+          service.loadTripDocumentFile(
+            '/travel-angels/calendar/stops/trip-123/documents/doc-123/file',
+          ),
+          throwsA(
+            isA<TravelCalendarException>().having(
+              (error) => error.statusCode,
+              'status',
+              status,
+            ),
+          ),
+        );
+        expect(adapter.requests, hasLength(1));
+      }
+      expect(
+        (await SharedPreferences.getInstance()).getString('token'),
+        'account-token',
+      );
+    },
+  );
+
+  test(
+    'trip document upload keeps originals and rejects oversized files locally',
+    () async {
+      final adapter = _Adapter(
+        (_) => _json({
+          'document': {'id': 'doc-123'},
+        }),
+      );
+      final service = TravelCalendarService(
+        client: Dio(BaseOptions(baseUrl: 'https://example.test'))
+          ..httpClientAdapter = adapter,
+      );
+      await service.uploadTripDocument(
+        'trip-123',
+        Uint8List.fromList([37, 80, 68, 70]),
+        'itinerary.pdf',
+        title: 'Our itinerary',
+        query: {'stopToken': 'trip-link'},
+      );
+      final request = adapter.requests.single;
+      expect(
+        request.path,
+        '/travel-angels/calendar/stops/trip-123/documents/upload',
+      );
+      expect(request.queryParameters['stopToken'], 'trip-link');
+      final form = request.data as FormData;
+      expect(Map.fromEntries(form.fields)['title'], 'Our itinerary');
+      expect(form.files.single.key, 'file');
+      expect(form.files.single.value.filename, 'itinerary.pdf');
+      expect(form.files.single.value.length, 4);
+      for (final bytes in [Uint8List(0), Uint8List(20 * 1024 * 1024 + 1)]) {
+        expect(
+          () => service.uploadTripDocument(
+            'trip-123',
+            bytes,
+            'large.pdf',
+            title: 'File',
+          ),
+          throwsA(isA<TravelCalendarException>()),
+        );
+      }
+      expect(adapter.requests, hasLength(1));
+    },
+  );
+
+  test('document mutations preserve trip link query access', () async {
+    final adapter = _Adapter((_) => _json({'ok': true}));
+    final service = TravelCalendarService(
+      client: Dio(BaseOptions(baseUrl: 'https://example.test'))
+        ..httpClientAdapter = adapter,
+    );
+    const path = '/calendar/stops/trip-123/documents/doc-123/comments';
+    const query = {'stopToken': 'trip-link'};
+    await service.post(path, data: {'body': 'Meet here'}, query: query);
+    await service.put(
+      '$path/comment-123',
+      data: {'body': 'Meet there'},
+      query: query,
+    );
+    await service.delete('$path/comment-123', query: query);
+    expect(adapter.requests.map((request) => request.method), [
+      'POST',
+      'PUT',
+      'DELETE',
+    ]);
+    for (final request in adapter.requests) {
+      expect(request.queryParameters['stopToken'], 'trip-link');
+    }
+  });
+
   test('trip images use guest credentials and reject foreign origins', () async {
     SharedPreferences.setMockInitialValues({
       'token': 'account-token',

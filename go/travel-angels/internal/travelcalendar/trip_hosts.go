@@ -522,6 +522,7 @@ func (s *Service) deleteTrip(c *gin.Context) {
 		return
 	}
 	var obsolete []TripMedia
+	var obsoleteDocuments []TripDocument
 	e := s.db.Transaction(func(tx *gorm.DB) error {
 		stop, e := s.lockedStop(tx, c.Param("id"))
 		if e != nil {
@@ -543,6 +544,9 @@ func (s *Service) deleteTrip(c *gin.Context) {
 		if e = tx.Select("id, storage_bucket, storage_key").Where("stop_id = ?", stop.ID).Find(&obsolete).Error; e != nil {
 			return e
 		}
+		if e = tx.Select("id, storage_bucket, storage_key").Where("stop_id = ? AND kind = 'file'", stop.ID).Find(&obsoleteDocuments).Error; e != nil {
+			return e
+		}
 		return tx.Delete(stop).Error
 	})
 	if e != nil {
@@ -550,6 +554,9 @@ func (s *Service) deleteTrip(c *gin.Context) {
 		return
 	}
 	s.deleteTripImageObjects(obsolete)
+	for i := range obsoleteDocuments {
+		s.deleteTripDocumentObject(&obsoleteDocuments[i])
+	}
 	c.JSON(200, gin.H{"deleted": true})
 }
 

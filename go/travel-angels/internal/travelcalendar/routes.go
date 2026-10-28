@@ -81,6 +81,7 @@ func (s *Service) RegisterRoutes(r *gin.Engine) {
 	s.registerTripRoutes(g)
 	s.registerTripMediaRoutes(g)
 	s.registerFlightRoutes(g)
+	s.registerTripDocumentRoutes(g)
 	s.registerGuestRoutes(r)
 }
 func (s *Service) primaryCalendar(tx *gorm.DB, userID uuid.UUID) (*Calendar, error) {
@@ -167,6 +168,7 @@ func (s *Service) stopDTO(stop *Stop, v Viewer) gin.H {
 	for key, value := range s.tripLogisticsDTO(stop, content, v, manager) {
 		dto[key] = value
 	}
+	dto["canViewDocuments"], dto["canContributeDocuments"] = s.tripDocumentCapabilities(s.db, stop, v)
 	return dto
 }
 func (s *Service) visibleStops(stops []Stop, v Viewer, c *gin.Context) []gin.H {

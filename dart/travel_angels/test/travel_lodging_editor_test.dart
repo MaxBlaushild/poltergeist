@@ -71,6 +71,7 @@ class _Service extends TravelCalendarService {
   Future<Map<String, dynamic>> put(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     writes.add(tripCopy(data!));
     final draft = tripCopy(data)..remove('revision');

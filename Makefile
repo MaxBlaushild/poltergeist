@@ -35,6 +35,10 @@ vampire-ascendancy/deploy:
 reef-site/web-deploy:
 	$(MAKE) -C js/packages/reef-site deploy
 
+.PHONY: travel-angels/web-deploy
+travel-angels/web-deploy:
+	bash deploy/travel-angels/deploy_web.sh
+
 # Bring a Vampire Ascendancy database up to date: run all migrations, then load
 # the seed — houses, characters (bios/secrets/missions), quiz, and one player
 # slot + sigil per character. Run this on a backend deploy so character content

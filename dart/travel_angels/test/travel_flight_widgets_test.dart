@@ -111,6 +111,7 @@ class _Service extends TravelCalendarService {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     posts.add({'path': path, 'data': tripCopy(data!)});
     if (postFailure != null) throw postFailure!;
@@ -124,6 +125,7 @@ class _Service extends TravelCalendarService {
   Future<Map<String, dynamic>> put(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     puts.add(tripCopy(data!));
     return {};

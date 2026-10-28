@@ -93,6 +93,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     requests.add({'method': 'POST', 'path': path, 'data': data});
     if (path == '/calendar-notifications/retry') return {'pending': 1};
@@ -115,6 +116,7 @@ class FakeTravelCalendarService extends TravelCalendarService {
   Future<Map<String, dynamic>> put(
     String path, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
   }) async {
     requests.add({'method': 'PUT', 'path': path, 'data': data});
     return {};

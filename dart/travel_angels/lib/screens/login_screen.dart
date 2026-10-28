@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:ui' show ImageDescriptor, ImmutableBuffer;
 import 'package:flutter/material.dart';
 import 'package:travel_angels/theme/app_theme.dart';
 import 'package:flutter/services.dart';
@@ -6,28 +6,44 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/media_service.dart';
+import 'package:travel_angels/services/location_service.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/widgets/location_picker.dart';
+import 'package:travel_angels/utils/auth_phone_number.dart';
+import 'package:travel_angels/widgets/international_phone_field.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.mediaService,
+    this.locationService,
+    this.showLocationMap,
+  });
+
+  final MediaService? mediaService;
+  final LocationService? locationService;
+  final bool? showLocationMap;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phoneController = TextEditingController();
+  String? _phoneNumber;
   final _codeController = TextEditingController();
   final _usernameController = TextEditingController();
   final _phoneFocusNode = FocusNode();
   final _codeFocusNode = FocusNode();
   final _usernameFocusNode = FocusNode();
 
-  bool _isPhoneValid = false;
+  bool _isRequestingCode = false;
+  bool _isSigningIn = false;
   bool _shouldSetProfile = false;
-  File? _profilePicture;
+  Uint8List? _profilePicture;
+  String? _profilePictureName;
+  bool _pickingProfilePicture = false;
+  int _usernameRevision = 0;
   bool _isValidatingUsername = false;
   String? _usernameValidationError;
   bool _isUsernameValid = false;
@@ -42,7 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _phoneController.dispose();
     _codeController.dispose();
     _usernameController.dispose();
     _bioController.dispose();
@@ -52,37 +67,38 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _validatePhoneNumber(String value) {
-    // Basic validation: non-empty and reasonable length (10-15 digits)
-    final digitsOnly = value.replaceAll(RegExp(r'[^\d]'), '');
-    setState(() {
-      _isPhoneValid = digitsOnly.length >= 10 && digitsOnly.length <= 15;
-    });
-  }
-
   Future<void> _handleGetCode() async {
-    if (!_isPhoneValid) return;
+    if (_phoneNumber == null || _isRequestingCode) return;
 
     final authProvider = context.read<AuthProvider>();
-    final phoneNumber = _phoneController.text.trim();
+    final phoneNumber = _phoneNumber!;
+    setState(() => _isRequestingCode = true);
 
     try {
       await authProvider.getVerificationCode(phoneNumber);
-      _codeFocusNode.requestFocus();
+      if (!mounted) return;
+      if (authProvider.isWaitingForVerificationCode) {
+        _codeFocusNode.requestFocus();
+      }
     } catch (e) {
       // Error is handled by AuthProvider and displayed via error getter
+    } finally {
+      if (mounted) setState(() => _isRequestingCode = false);
     }
   }
 
   Future<void> _handleLogister() async {
-    if (_codeController.text.length != 6) return;
+    if (_codeController.text.length != 6 || _isSigningIn) return;
 
     final authProvider = context.read<AuthProvider>();
-    final phoneNumber = _phoneController.text.trim();
+    final phoneNumber =
+        authProvider.verificationPhoneNumber ?? _phoneNumber ?? '';
     final code = _codeController.text.trim();
+    setState(() => _isSigningIn = true);
 
     try {
       await authProvider.logister(phoneNumber, code);
+      if (!mounted) return;
 
       // If registering, show profile setup step
       if (authProvider.isRegister) {
@@ -94,12 +110,16 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       // Error is handled by AuthProvider and displayed via error getter
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
     }
   }
 
   Future<void> _validateUsername(String username) async {
+    final revision = ++_usernameRevision;
     if (username.isEmpty) {
       setState(() {
+        _isValidatingUsername = false;
         _usernameValidationError = null;
         _isUsernameValid = false;
       });
@@ -109,6 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // Basic format validation (alphanumeric only)
     if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(username)) {
       setState(() {
+        _isValidatingUsername = false;
         _usernameValidationError =
             'Username must contain only letters and numbers';
         _isUsernameValid = false;
@@ -124,6 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
       final isValid = await authProvider.validateUsername(username);
+      if (!mounted || revision != _usernameRevision) return;
 
       setState(() {
         _isValidatingUsername = false;
@@ -133,6 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
     } catch (e) {
+      if (!mounted || revision != _usernameRevision) return;
       setState(() {
         _isValidatingUsername = false;
         _usernameValidationError = 'Failed to validate username';
@@ -142,24 +165,60 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _pickProfilePicture() async {
+    if (_pickingProfilePicture) return;
+    setState(() => _pickingProfilePicture = true);
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
         allowMultiple: false,
+        withData: true,
       );
-
-      if (result != null && result.files.single.path != null) {
-        setState(() {
-          _profilePicture = File(result.files.single.path!);
-        });
+      if (!mounted || result == null) return;
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException(
+          'This photo could not be read. Try another image.',
+        );
       }
-    } catch (e) {
-      // Handle error
+      if (bytes.length > 8 * 1024 * 1024) {
+        throw const FormatException('Choose a photo smaller than 8 MB.');
+      }
+      final buffer = await ImmutableBuffer.fromUint8List(bytes);
+      try {
+        final descriptor = await ImageDescriptor.encoded(buffer);
+        try {
+          if (descriptor.width * descriptor.height > 20000000) {
+            throw const FormatException(
+              'Choose a photo smaller than 20 megapixels.',
+            );
+          }
+        } finally {
+          descriptor.dispose();
+        }
+      } finally {
+        buffer.dispose();
+      }
+      if (!mounted) return;
+      setState(() {
+        _profilePicture = bytes;
+        _profilePictureName = file.name;
+      });
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is FormatException
+                  ? error.message
+                  : 'We could not open that photo. Choose a JPG, PNG, or WebP image.',
+            ),
+          ),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _pickingProfilePicture = false);
     }
   }
 
@@ -201,14 +260,16 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_profilePicture != null) {
       try {
         final apiClient = APIClient(ApiConstants.baseUrl);
-        final mediaService = MediaService(apiClient);
+        final mediaService = widget.mediaService ?? MediaService(apiClient);
         final user = authProvider.user;
 
         if (user != null && user.id != null) {
-          profilePictureUrl = await mediaService.uploadProfilePicture(
+          profilePictureUrl = await mediaService.uploadProfilePictureBytes(
             _profilePicture!,
+            _profilePictureName!,
             user.id!,
           );
+          if (!mounted) return;
 
           if (profilePictureUrl == null) {
             if (mounted) {
@@ -376,7 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     firstDate: DateTime(1900),
                     lastDate: DateTime.now(),
                   );
-                  if (picked != null) {
+                  if (mounted && picked != null) {
                     setState(() {
                       _dateOfBirth = picked;
                     });
@@ -445,6 +506,15 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               LocationPicker(
+                locationService: widget.locationService,
+                showMap: widget.showLocationMap,
+                onLocationCleared: () {
+                  setState(() {
+                    _selectedLatitude = null;
+                    _selectedLongitude = null;
+                    _selectedLocationAddress = null;
+                  });
+                },
                 onLocationSelected: (latitude, longitude, address) {
                   setState(() {
                     _selectedLatitude = latitude;
@@ -476,7 +546,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (_profilePicture != null) ...[
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
+                      child: Image.memory(
                         _profilePicture!,
                         width: 100,
                         height: 100,
@@ -487,7 +557,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _pickProfilePicture,
+                      onPressed: _pickingProfilePicture
+                          ? null
+                          : _pickProfilePicture,
                       icon: const Icon(Icons.image),
                       label: Text(
                         _profilePicture == null ? 'Pick Image' : 'Change Image',
@@ -529,37 +601,43 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 32),
             // Phone number input
-            TextField(
-              controller: _phoneController,
+            InternationalPhoneField(
+              label: 'Phone Number',
               focusNode: _phoneFocusNode,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-                hintText: 'Enter your phone number',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: _validatePhoneNumber,
+              enabled:
+                  !_isRequestingCode &&
+                  !_isSigningIn &&
+                  !authProvider.isWaitingForVerificationCode,
+              onChanged: (value) => setState(() => _phoneNumber = value),
             ),
             if (authProvider.isWaitingForVerificationCode) ...[
               const SizedBox(height: 16),
-              const Text(
-                "We've just sent a 6-digit verification code. It may take a moment to arrive.",
-                style: TextStyle(fontSize: 14, color: AppTheme.muted),
+              Text(
+                authProvider.isTestVerification
+                    ? 'Test account: enter your configured 6-digit test code. No text message will be sent.'
+                    : "We've just sent a 6-digit verification code. It may take a moment to arrive.",
+                style: const TextStyle(fontSize: 14, color: AppTheme.muted),
               ),
               const SizedBox(height: 16),
               // Verification code input
               TextField(
                 controller: _codeController,
                 focusNode: _codeFocusNode,
+                enabled: !_isSigningIn,
                 keyboardType: TextInputType.number,
+                autofillHints: authProvider.isTestVerification
+                    ? null
+                    : const [AutofillHints.oneTimeCode],
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(6),
                 ],
-                decoration: const InputDecoration(
-                  labelText: 'Verification code',
+                decoration: InputDecoration(
+                  labelText: authProvider.isTestVerification
+                      ? 'Test code'
+                      : 'Verification code',
                   hintText: 'Enter 6-digit code',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
                 textInputAction: TextInputAction.done,
                 onChanged: (_) => setState(() {}),
@@ -583,13 +661,20 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
             const SizedBox(height: 24),
             // Action buttons
-            if (!authProvider.isWaitingForVerificationCode && _isPhoneValid)
+            if (!authProvider.isWaitingForVerificationCode &&
+                _phoneNumber != null)
               ElevatedButton(
-                onPressed: _handleGetCode,
+                onPressed: _isRequestingCode ? null : _handleGetCode,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: const Text('Get code'),
+                child: Text(
+                  _isRequestingCode
+                      ? 'Please wait…'
+                      : AuthPhoneNumber.isTestAccount(_phoneNumber ?? '')
+                      ? 'Continue with test account'
+                      : 'Get code',
+                ),
               )
             else if (authProvider.isWaitingForVerificationCode)
               _verificationActions(authProvider),
@@ -599,7 +684,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: OutlinedButton(
-                  onPressed: _handleRetry,
+                  onPressed: _isRequestingCode ? null : _handleRetry,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -615,12 +700,20 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _verificationActions(AuthProvider authProvider) => LayoutBuilder(
     builder: (context, constraints) {
       final changePhone = OutlinedButton(
-        onPressed: _handleCancel,
+        onPressed: _isSigningIn ? null : _handleCancel,
         child: const Text('Change phone number', textAlign: TextAlign.center),
       );
       final submit = ElevatedButton(
-        onPressed: _codeController.text.length == 6 ? _handleLogister : null,
-        child: Text(authProvider.isRegister ? 'Register' : 'Login'),
+        onPressed: !_isSigningIn && _codeController.text.length == 6
+            ? _handleLogister
+            : null,
+        child: Text(
+          _isSigningIn
+              ? 'Signing in…'
+              : authProvider.isRegister
+              ? 'Register'
+              : 'Login',
+        ),
       );
       if (constraints.maxWidth < 420 ||
           MediaQuery.textScalerOf(context).scale(14) > 18) {
